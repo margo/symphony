@@ -7,6 +7,8 @@
 package model
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/exp/maps"
@@ -77,4 +79,24 @@ func (s *SummarySpec) UpdateTargetResult(target string, spec TargetResultSpec) {
 
 func (summary *SummaryResult) IsDeploymentFinished() bool {
 	return summary.State == SummaryStateDone
+}
+
+func (summary SummarySpec) GenerateStatusMessage() string {
+	if summary.AllAssignedDeployed {
+		return ""
+	}
+	errorMessage := "Failed to deploy"
+	if summary.SummaryMessage != "" {
+		errorMessage += fmt.Sprintf(": %s", summary.SummaryMessage)
+	}
+	errorMessage += ". "
+	targetErrors := make([]string, 0)
+	for target, result := range summary.TargetResults {
+		targetError := fmt.Sprintf("%s: \"%s\"", target, result.Message)
+		for component, componentResult := range result.ComponentResults {
+			targetError += fmt.Sprintf(" (%s.%s: %s)", target, component, componentResult.Message)
+		}
+		targetErrors = append(targetErrors, targetError)
+	}
+	return errorMessage + fmt.Sprintf("Detailed status: %s", strings.Join(targetErrors, ", "))
 }
