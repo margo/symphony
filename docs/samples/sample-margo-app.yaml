@@ -1,0 +1,12 @@
+apiVersion: margo.io/v1
+kind: ApplicationDescription
+metadata:
+  id: my-margo-app
+  name: My Margo App
+  description: |
+    margoSpec:
+      customField1: value1
+      customField2:
+        nested: true
+deploymentProfiles: []
+parameters: []

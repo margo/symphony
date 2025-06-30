@@ -14,7 +14,7 @@
     "currentSite": {
       "baseUrl": "http://localhost:8082/v1alpha2/",
       "username": "admin",
-      "password": ""
+      "password": "admin"
     }
   },
   "api": {
@@ -603,6 +603,43 @@
             }
           }
         ]
+      },
+      {
+        "type": "vendors.margo.northbound",
+        "route": "margo/northbound/v1",
+        "managers": [
+          {
+            "name": "margo-manager",
+            "type": "managers.margo",
+            "properties": {
+              "providers.persistentstate": "memory",
+              "singleton": "true"
+            },
+            "providers": {
+              "memory": {
+                "type": "providers.state.memory",
+                "config": {}
+              },
+              "graph": {
+                "type": "providers.graph.memory",
+                "config": {}
+              }
+            }
+          },
+          {
+            "name": "solutions-manager",
+            "type": "managers.symphony.solutions",
+            "properties": {
+              "providers.persistentstate": "k8s-state"
+            },
+            "providers": {
+              "k8s-state": {
+                "type": "providers.state.memory",
+                "config": {}
+              }
+            }
+          }
+        ]
       }
     ]
   },
@@ -619,68 +656,6 @@
               "Access-Control-Allow-Credentials": "true",
               "Access-Control-Allow-Methods": "HEAD,GET,POST,PUT,DELETE,OPTIONS",
               "Access-Control-Allow-Origin": "*"
-            }
-          },
-          {
-            "type": "middleware.http.jwt",
-            "properties": {
-              "ignorePaths": ["/v1alpha2/users/auth", "/v1alpha2/solution/instances", "/v1alpha2/agent/references", "/v1alpha2/greetings"],
-              "verifyKey": "SymphonyKey",
-              "enableRBAC": true,
-              "roles": [
-                {
-                  "role": "administrator",
-                  "claim": "user",
-                  "value": "admin"
-                },
-                {
-                  "role": "reader",
-                  "claim": "user",
-                  "value": "*"
-                },
-                {
-                  "role": "solution-creator",
-                  "claim": "user",
-                  "value": "developer"
-                },
-                {
-                  "role": "target-manager",
-                  "claim": "user",
-                  "value": "device-manager"
-                },
-                {
-                  "role": "operator",
-                  "claim": "user",
-                  "value": "solution-operator"
-                }
-              ],
-              "policy": {
-                "administrator": {
-                  "items": {
-                    "*": "*"
-                  }
-                },
-                "reader": {
-                  "items": {
-                    "*": "GET"
-                  }
-                },
-                "solution-creator": {
-                  "items": {
-                    "/v1alpha2/solutions": "*"
-                  }
-                },
-                "target-manager": {
-                  "items": {
-                    "/v1alpha2/targets": "*"
-                  }
-                },
-                "solution-operator": {
-                  "items": {
-                    "/v1alpha2/instances": "*"
-                  }
-                }
-              }
             }
           }
         ]
