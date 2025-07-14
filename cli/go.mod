@@ -47,7 +47,7 @@ require (
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/margo/dev-repo/sdk v0.0.0-20250708115317-836a4be5cd39
+	github.com/margo/dev-repo v0.0.0-20250714101308-49e72fbbe802
 	github.com/princjef/mageutil v1.0.0
 )
 

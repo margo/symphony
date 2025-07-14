@@ -13,9 +13,10 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	margoAPIModels "github.com/margo/dev-repo/sdk/api/wfm/northbound/models"
-	"github.com/margo/dev-repo/sdk/pkg/packageManager"
-	margoUtils "github.com/margo/dev-repo/sdk/utils"
+	margoAPIModels "github.com/margo/dev-repo/non-standard/generatedCode/models"
+	"github.com/margo/dev-repo/non-standard/pkg/packageManager"
+	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
+	margoGitHelper "github.com/margo/dev-repo/shared-lib/git"
 )
 
 var margoLog = logger.NewLogger("coa.runtime")
@@ -81,8 +82,11 @@ func (s *MargoManager) updatePkgInDB(context context.Context, id string, pkg mar
 	return err
 }
 
-func (s *MargoManager) deletePkgInDB(context context.Context, pkg margoAPIModels.AppPkg) error {
-	return nil
+func (s *MargoManager) deletePkgFromDB(context context.Context, pkgId string) error {
+	return s.StateProvider.Delete(context, states.DeleteRequest{
+		Metadata: appPkgMetadata,
+		ID:       pkgId,
+	})
 }
 
 func (s *MargoManager) listPkgFromDB(context context.Context, pkg margoAPIModels.AppPkg) error {
@@ -266,9 +270,9 @@ func (s *MargoManager) processGitRepository(ctx context.Context, pkgMgr *package
 	}
 
 	// Set up authentication
-	var gitAuth *margoUtils.GitAuth
+	var gitAuth *margoGitHelper.Auth
 	if gitRepo.AccessToken != nil && gitRepo.Username != nil {
-		gitAuth = &margoUtils.GitAuth{
+		gitAuth = &margoGitHelper.Auth{
 			Username: *gitRepo.Username,
 			Token:    *gitRepo.AccessToken,
 		}
@@ -478,10 +482,7 @@ func (s *MargoManager) performAsyncDeletion(pCtx context.Context, pkgId string, 
 
 	// Force delete from state provider
 	margoLog.InfofCtx(pCtx, "performAsyncDeletion: Removing package '%s' from state provider", pkgId)
-	err := s.StateProvider.Delete(pCtx, states.DeleteRequest{
-		Metadata: appPkgMetadata,
-		ID:       pkgId,
-	})
+	err := s.deletePkgFromDB(pCtx, pkgId)
 
 	if err != nil {
 		margoLog.ErrorfCtx(pCtx, "performAsyncDeletion: Failed to delete package '%s' from state provider: %v", pkgId, err)

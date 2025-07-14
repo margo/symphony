@@ -13,7 +13,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	"github.com/kr/pretty"
-	margoAPIModels "github.com/margo/dev-repo/sdk/api/wfm/northbound/models"
+	margoNonStdAPIModels "github.com/margo/dev-repo/non-standard/generatedCode/models"
 	"github.com/valyala/fasthttp"
 )
 
@@ -97,7 +97,7 @@ func (c *MargoNorthboundVendor) onboardAppPkg(request v1alpha2.COARequest) v1alp
 	margoLog.InfofCtx(pCtx, "V (MargoNorthboundVendor): onboardAppPkg, method: %s, %s", request.Method, string(request.Body))
 
 	// Parse request
-	var appPkgReq margoAPIModels.AppPkgOnboardingReq
+	var appPkgReq margoNonStdAPIModels.AppPkgOnboardingReq
 	if err := json.Unmarshal(request.Body, &appPkgReq); err != nil {
 		return createErrorResponse(span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}

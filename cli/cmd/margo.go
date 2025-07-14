@@ -14,8 +14,8 @@ import (
 
 	"github.com/eclipse-symphony/symphony/cli/utils"
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/margo/dev-repo/sdk/api/wfm/northbound/models"
-	margoCli "github.com/margo/dev-repo/sdk/cli/wfm"
+	margoCli "github.com/margo/dev-repo/non-standard/cli/wfm"
+	"github.com/margo/dev-repo/non-standard/generatedCode/models"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +43,7 @@ var (
 )
 
 var MargoCmd = &cobra.Command{
-	Use:   "margo",
+	Use:   "wfm",
 	Short: "Margo commands for managing margo applications",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("\n%sMargo CLI - Use subcommands: upload, delete, list, get%s\n\n", utils.ColorBlue(), utils.ColorReset())
