@@ -104,8 +104,12 @@ func (c *SymphonyManagerFactory) CreateManager(config cm.ManagerConfig) (cm.IMan
 		manager = &skills.SkillsManager{}
 	case "managers.symphony.trails":
 		manager = &trails.TrailsManager{}
-	case "managers.margo":
-		manager = &margo.MargoManager{}
+	case "managers.margo.apppkg":
+		manager = &margo.AppPkgManager{}
+	case "managers.margo.deployment":
+		manager = &margo.DeploymentManager{}
+	case "managers.margo.device":
+		manager = &margo.DeviceManager{}
 	}
 	if manager != nil && config.Properties["singleton"] == "true" {
 		c.SingletonsCache[config.Type] = manager

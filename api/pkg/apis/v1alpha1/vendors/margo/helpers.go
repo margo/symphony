@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	observ_utils "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/observability/utils"
-	margoAPIModels "github.com/margo/dev-repo/sdk/api/wfm/northbound/models"
+	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"go.opentelemetry.io/otel/trace"
 )
 
 // Helper method for error responses
-func createErrorResponse(span trace.Span, err error, message string, errorType v1alpha2.State) v1alpha2.COAResponse {
-	margoLog.InfofCtx(context.Background(), "err: %s, msg: %s", err.Error(), message)
-	errResp := &margoAPIModels.ErrorResponse{
+func createErrorResponse(logger logger.Logger, span trace.Span, err error, message string, errorType v1alpha2.State) v1alpha2.COAResponse {
+	logger.InfofCtx(context.Background(), "err: %s, msg: %s", err.Error(), message)
+	errResp := &margoNonStdAPI.ErrorResponse{
 		ErrorCode: err.Error(),
 		RequestId: "",
 		Details: &map[string]interface{}{

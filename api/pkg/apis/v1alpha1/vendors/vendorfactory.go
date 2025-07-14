@@ -66,8 +66,10 @@ func (c SymphonyVendorFactory) CreateVendor(config vendors.VendorConfig) (vendor
 		return &VisualizationClientVendor{}, nil
 	case "vendors.visualization":
 		return &VisualizationVendor{}, nil
-	case "vendors.margo.northbound":
-		return &margo.MargoNorthboundVendor{}, nil
+	case "vendors.margo.workload":
+		return &margo.WorkloadVendor{}, nil
+	case "vendors.margo.device":
+		return &margo.DeviceVendor{}, nil
 	default:
 		return nil, nil //Can't throw errors as other factories may create it...
 	}

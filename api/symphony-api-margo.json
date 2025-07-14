@@ -605,12 +605,30 @@
         ]
       },
       {
-        "type": "vendors.margo.nbi",
+        "type": "vendors.margo.workload",
         "route": "margo/nbi/v1",
         "managers": [
           {
-            "name": "margo-manager",
-            "type": "managers.margo",
+            "name": "margo-deployment-manager",
+            "type": "managers.margo.deployment",
+            "properties": {
+              "providers.persistentstate": "memory",
+              "singleton": "true"
+            },
+            "providers": {
+              "memory": {
+                "type": "providers.state.memory",
+                "config": {}
+              },
+              "graph": {
+                "type": "providers.graph.memory",
+                "config": {}
+              }
+            }
+          },
+          {
+            "name": "margo-apppkg-manager",
+            "type": "managers.margo.apppkg",
             "properties": {
               "providers.persistentstate": "memory",
               "singleton": "true"
@@ -635,6 +653,30 @@
             "providers": {
               "k8s-state": {
                 "type": "providers.state.memory",
+                "config": {}
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "vendors.margo.device",
+        "route": "margo/sbi/v1",
+        "managers": [
+          {
+            "name": "margo-device-manager",
+            "type": "managers.margo.device",
+            "properties": {
+              "providers.persistentstate": "memory",
+              "singleton": "true"
+            },
+            "providers": {
+              "memory": {
+                "type": "providers.state.memory",
+                "config": {}
+              },
+              "graph": {
+                "type": "providers.graph.memory",
                 "config": {}
               }
             }

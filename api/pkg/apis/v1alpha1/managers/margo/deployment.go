@@ -1,0 +1,310 @@
+package margo
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
+	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
+	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
+)
+
+var (
+	deploymentLogger    = logger.NewLogger("coa.runtime")
+	deploymentNamespace = "margo"
+	deploymentResource  = "app-deployments"
+	deploymentKind      = "ApplicationDeployment"
+	deploymentMetadata  = map[string]interface{}{
+		"version":   "v1",
+		"group":     model.MargoGroup,
+		"resource":  deploymentResource,
+		"namespace": deploymentNamespace,
+		"kind":      deploymentKind,
+	}
+)
+
+type DeploymentManager struct {
+	managers.Manager
+	StateProvider  states.IStateProvider
+	needValidate   bool
+	MargoValidator validation.MargoValidator
+}
+
+func (s *DeploymentManager) Init(context *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
+	err := s.Manager.Init(context, config, providers)
+	if err != nil {
+		return err
+	}
+	stateprovider, err := managers.GetPersistentStateProvider(config, providers)
+	if err == nil {
+		s.StateProvider = stateprovider
+	} else {
+		return err
+	}
+	s.needValidate = managers.NeedObjectValidate(config, providers)
+	if s.needValidate {
+		// Turn off validation of differnt types: https://github.com/eclipse-symphony/symphony/issues/445
+		s.MargoValidator = validation.NewMargoValidator()
+	}
+
+	context.Subscribe("deploymentStatusUpdates", v1alpha2.EventHandler{
+		Handler: s.onDeploymentStatusUpdate,
+		Group:   "events-from-device",
+	})
+	return nil
+}
+
+func (s *DeploymentManager) storeDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentResp) error {
+	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: deploymentMetadata,
+		Value: states.StateEntry{
+			ID:   id,
+			Body: deployment,
+		},
+	})
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "storeDeploymentInDB: Failed to upsert deployment '%s': %v", id, err)
+		return fmt.Errorf("failed to upsert deployment '%s': %w", id, err)
+	}
+	deploymentLogger.InfofCtx(ctx, "storeDeploymentInDB: deployment '%s' stored successfully", id)
+	return nil
+}
+
+func (s *DeploymentManager) updateDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentResp) error {
+	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: deploymentMetadata,
+		Value: states.StateEntry{
+			ID:   id,
+			Body: deployment,
+		},
+	})
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "updateDeploymentInDB: Failed to update deployment '%s': %v", id, err)
+		return fmt.Errorf("failed to update deployment '%s': %w", id, err)
+	}
+	deploymentLogger.InfofCtx(ctx, "updateDeploymentInDB: deployment '%s' updated successfully", id)
+	return nil
+}
+
+func (s *DeploymentManager) deleteDeploymentFromDB(ctx context.Context, deploymentId string) error {
+	err := s.StateProvider.Delete(ctx, states.DeleteRequest{
+		Metadata: deploymentMetadata,
+		ID:       deploymentId,
+	})
+
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "deleteDeploymentFromDB: Failed to delete deployment '%s': %v", deploymentId, err)
+		return fmt.Errorf("failed to delete deployment '%s': %w", deploymentId, err)
+	}
+
+	deploymentLogger.InfofCtx(ctx, "deleteDeploymentFromDB: deployment '%s' deleted successfully", deploymentId)
+	return nil
+}
+
+func (s *DeploymentManager) getDeploymentFromDB(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+	entry, err := s.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: deploymentMetadata,
+		ID:       deploymentId,
+	})
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "getDeploymentFromDB: Failed to get deployment '%s': %v", deploymentId, err)
+		return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
+	}
+
+	var deployment margoNonStdAPI.ApplicationDeploymentResp
+	jData, _ := json.Marshal(entry.Body)
+	err = json.Unmarshal(jData, &deployment)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "getDeploymentFromDB: Failed to unmarshal deployment '%s': %v", deploymentId, err)
+		return nil, fmt.Errorf("failed to unmarshal deployment '%s': %w", deploymentId, err)
+	}
+
+	deploymentLogger.InfofCtx(ctx, "getDeploymentFromDB: deployment '%s' retrieved successfully", deploymentId)
+	return &deployment, nil
+}
+
+// CreateDeployment handles the deployment of an application deployment.
+func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq margoNonStdAPI.ApplicationDeploymentRequest) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Starting deployment process for deployment '%s'", deploymentReq.Metadata.Name)
+
+	// Validate input parameters
+	if deploymentReq.Metadata.Name == "" {
+		deploymentLogger.ErrorfCtx(ctx, "CreateDeployment: deployment name is required but was empty")
+		return nil, fmt.Errorf("deployment name is required")
+	}
+
+	// Generate unique identifier for the deployment
+	now := time.Now().UTC()
+	deploymentId := margoUtils.GenerateAppDeploymentId()                         // Assuming you have a utility function for this
+	operation := margoNonStdAPI.DEPLOY                                           // Changed from ONBOARD to DEPLOY
+	operationState := margoNonStdAPI.ApplicationDeploymentOperationStatusPENDING // Changed from ApplicationPackageOperationStatusPENDING to ApplicationDeploymentOperationStatusPENDING
+
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Generated deployment ID '%s' for deployment '%s'", deploymentId, deploymentReq.Metadata.Name)
+	deploymentLogger.DebugfCtx(ctx, "CreateDeployment: Initial operation state set to '%s'", operationState)
+
+	// Convert ApplicationDeploymentRequest to ApplicationDeploymentResp
+	var deploymentResp margoNonStdAPI.ApplicationDeploymentResp
+	{
+		by, _ := json.Marshal(&deploymentReq)
+		json.Unmarshal(by, &deploymentResp)
+	}
+
+	deploymentResp.Metadata.Id = &deploymentId
+	deploymentResp.RecentOperation.Op = margoNonStdAPI.ApplicationPackageOperation(operation)                // Type conversion
+	deploymentResp.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatus(operationState) // Type conversion
+	deploymentResp.Metadata.CreationTimestamp = &now
+	deploymentState := margoNonStdAPI.UNKNOWN
+	deploymentResp.Status = &margoNonStdAPI.ApplicationDeploymentStatus{
+		ContextualInfo: &margoNonStdAPI.ContextualInfo{},
+		LastUpdateTime: &now,
+		State:          &deploymentState,
+	}
+
+	deploymentLogger.DebugfCtx(ctx, "CreateDeployment: deployment object prepared with ID '%s', Name '%s', Operation '%s', State '%s'",
+		*deploymentResp.Metadata.Id, deploymentResp.Metadata.Name, deploymentResp.RecentOperation.Op, deploymentResp.RecentOperation.Status)
+
+	// Store initial deployment record in database
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Storing initial deployment record in database")
+	if err := s.storeDeploymentInDB(ctx, *deploymentResp.Metadata.Id, deploymentResp); err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "CreateDeployment: Failed to store deployment in database: %v", err)
+		return nil, fmt.Errorf("failed to store app deployment in database: %w", err)
+	}
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully stored initial deployment record with ID '%s'", *deploymentResp.Metadata.Id)
+
+	// Publish event after successful creation
+	s.Manager.Context.Publish("newDeployment", v1alpha2.Event{
+		Body: deploymentResp,
+	})
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Published 'newDeployment' event for deployment '%s'", *deploymentResp.Metadata.Id)
+
+	// Create and return response
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully initiated deployment process for deployment '%s' with ID '%s'",
+		deploymentResp.Metadata.Name, *deploymentResp.Metadata.Id)
+	return &deploymentResp, nil
+}
+
+func (s *DeploymentManager) ListDeployments(ctx context.Context) (*margoNonStdAPI.ApplicationDeploymentListResp, error) {
+	var deployments []margoNonStdAPI.ApplicationDeploymentResp
+	entries, _, err := s.StateProvider.List(ctx, states.ListRequest{
+		Metadata: deploymentMetadata,
+	})
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "ListDeployments: Failed to list deployments: %v", err)
+		return nil, fmt.Errorf("failed to list deployments: %w", err)
+	}
+
+	for _, entry := range entries {
+		var deployment margoNonStdAPI.ApplicationDeploymentResp
+		jData, _ := json.Marshal(entry.Body)
+		err = json.Unmarshal(jData, &deployment)
+		if err == nil {
+			deployments = append(deployments, deployment)
+		} else {
+			deploymentLogger.WarnfCtx(ctx, "ListDeployments: Failed to unmarshal entry: %v", err)
+		}
+	}
+
+	toContinue := false
+	resp := margoNonStdAPI.ApplicationDeploymentListResp{
+		ApiVersion: "margo.org", // Update with your API version
+		Kind:       "ApplicationDeploymentList",
+		Items:      deployments,
+		Metadata: margoNonStdAPI.PaginationMetadata{
+			Continue:           &toContinue,
+			RemainingItemCount: nil,
+		},
+	}
+
+	deploymentLogger.InfofCtx(ctx, "ListDeployments: Listed %d deployments successfully", len(deployments))
+	return &resp, nil
+}
+
+func (s *DeploymentManager) GetDeployments(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+	deployment, err := s.getDeploymentFromDB(ctx, deploymentId)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "GetDeployments: Failed to get deployment '%s': %v", deploymentId, err)
+		return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
+	}
+
+	deploymentLogger.InfofCtx(ctx, "GetDeployments: deployment '%s' retrieved successfully", deploymentId)
+	return deployment, nil
+}
+
+// DeleteDeployment initiates the deletion process for an application deployment.
+func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Starting deletion process for deployment ID '%s'", deploymentId)
+
+	// Validate input parameter
+	if deploymentId == "" {
+		deploymentLogger.ErrorfCtx(ctx, "DeleteDeployment: deployment ID is required but was empty")
+		return nil, fmt.Errorf("deployment ID is required")
+	}
+
+	// Retrieve deployment from database to verify existence and get current state
+	deploymentLogger.DebugfCtx(ctx, "DeleteDeployment: Retrieving deployment from database")
+	deployment, err := s.getDeploymentFromDB(ctx, deploymentId)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "DeleteDeployment: Failed to retrieve deployment from database: %v", err)
+		return nil, fmt.Errorf("failed to check the latest state of the app deployment: %w", err)
+	}
+
+	if deployment == nil {
+		deploymentLogger.WarnfCtx(ctx, "DeleteDeployment: deployment with ID '%s' does not exist", deploymentId)
+		return nil, fmt.Errorf("deployment with id %s does not exist", deploymentId)
+	}
+
+	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Found deployment '%s' with current operation '%s' and state '%s'",
+		deployment.Metadata.Name, deployment.RecentOperation.Op, deployment.RecentOperation.Status)
+
+	// Update deployment state to indicate deletion is starting
+	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Initiating deletion operation for deployment '%s'", deployment.Metadata.Name)
+	now := time.Now().UTC()
+	deploymentLogger.DebugfCtx(ctx, "Setting operation to DELETE and status to PENDING")
+	deployment.RecentOperation.Op = margoNonStdAPI.ApplicationPackageOperation(margoNonStdAPI.DELETE)                                                // Changed from DEBOARD to DELETE
+	deployment.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatus(margoNonStdAPI.ApplicationDeploymentOperationStatusPENDING) // Changed from ApplicationPackageOperationStatusPENDING to ApplicationDeploymentOperationStatusPENDING
+	deployment.Status.LastUpdateTime = &now
+
+	deploymentLogger.DebugfCtx(ctx, "DeleteDeployment: Updating deployment state to Operation='%s', State='%s'",
+		deployment.RecentOperation.Op, deployment.RecentOperation.Status)
+
+	if err := s.updateDeploymentInDB(ctx, deploymentId, *deployment); err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "DeleteDeployment: Failed to update deployment state in database: %v", err)
+		return nil, fmt.Errorf("failed to change the app deployment operation state before triggering deletion: %w", err)
+	}
+
+	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Successfully updated deployment state to pending deletion")
+
+	// Start asynchronous deletion process
+	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Starting background deletion process for deployment '%s'", deploymentId)
+
+	// Publish event after successful deletion
+	s.Manager.Context.Publish("deleteDeployment", v1alpha2.Event{
+		Body: map[string]interface{}{
+			"deploymentId": deploymentId,
+		},
+	})
+	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Published 'deleteDeployment' event for deployment '%s'", deploymentId)
+
+	return deployment, nil
+}
+
+func (s *DeploymentManager) onDeploymentStatusUpdate(topic string, event v1alpha2.Event) error {
+	// update the status of the deployment in database
+	return nil
+}
+
+// Shutdown is required by the symphony's manager plugin interface
+func (s *DeploymentManager) Shutdown(ctx context.Context) error {
+	return nil
+}
