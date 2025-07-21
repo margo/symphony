@@ -1,0 +1,4 @@
+{
+  "go.buildFlags": ["-tags=unit", "-mod=mod"],
+  "go.testTags": "unit"
+}
