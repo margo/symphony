@@ -240,11 +240,11 @@ func (s *DeviceManager) compareAppState(context context.Context, pkgId string) (
 
 // PollDesiredState is not implemented.
 func (s *DeviceManager) PollDesiredState(ctx context.Context, deviceId string, currentStates margoStdAPI.CurrentAppStates) (margoStdAPI.DesiredAppStates, error) {
-	desiredStates := margoStdAPI.CurrentAppStates{}
+	potentialCandidates := margoStdAPI.CurrentAppStates{}
 	if len(currentStates) == 0 {
 		allDeployments, err := s.listAppStates(ctx, deviceId)
 		if err != nil {
-			return desiredStates, err
+			return potentialCandidates, err
 		}
 
 		for _, deploymentInDB := range allDeployments {
@@ -252,48 +252,47 @@ func (s *DeviceManager) PollDesiredState(ctx context.Context, deviceId string, c
 			if err != nil {
 				return nil, err
 			}
-			appState, err := pkg.ConvertAppDeploymentToAppState(dep, "", "")
-			if err != nil {
-				return desiredStates, err
+			var desiredState margoStdAPI.AppStateAppState
+			if deploymentInDB.RecentOperation.Op == margoNonStdAPI.DELETE {
+				desiredState = margoStdAPI.REMOVING
+			}
+			if deploymentInDB.RecentOperation.Op == margoNonStdAPI.DEPLOY {
+				desiredState = margoStdAPI.RUNNING
+			}
+			if deploymentInDB.RecentOperation.Op == margoNonStdAPI.UPDATE {
+				desiredState = margoStdAPI.UPDATING
 			}
 
-			desiredStates = append(desiredStates, appState)
+			appState, err := pkg.ConvertAppDeploymentToAppState(dep, "app-123", "v1", string(desiredState))
+			if err != nil {
+				return potentialCandidates, err
+			}
+
+			potentialCandidates = append(potentialCandidates, appState)
 		}
-		return desiredStates, nil
+		return potentialCandidates, nil
 	}
 
-	// for _, currentState := range currentStates {
-	// currentState.AppDeploymentYAML
-	// appDeploymentHashOnDevice := currentState.AppDeploymentYAMLHash
-	// appDeploymentOnDevice, err := pkg.ConvertAppStateToAppDeployment(currentState)
-	// if err != nil {
-	// 	return desiredStates, err
-	// }
+	finalCandidates := margoStdAPI.CurrentAppStates{}
+	for _, currentState := range currentStates {
+		for index, potentialCandiate := range potentialCandidates {
+			if potentialCandiate.AppId == currentState.AppId {
 
-	// deploymentInDB, err := s.getAppState(ctx, deviceId, *appDeploymentOnDevice.Metadata.Id)
-	// if err != nil {
-	// 	return desiredStates, err
-	// }
-	// // deploymentHashInDB := deploymentInDB.
+				// this is a scenario where the hash of the application has changed hence the device should use this new version
+				if potentialCandiate.AppDeploymentYAMLHash != currentState.AppDeploymentYAMLHash {
+					finalCandidates = append(finalCandidates, potentialCandidates[index])
+					continue
+				}
 
-	// deploymentDefinition, err := ConvertNBIAppDeploymentToSBIAppDeployment(deploymentInDB)
-	// if err != nil {
-	// 	return nil, err
-	// }
+				// this is a scenario where the state of the application is supposed to be changed, but the device has some different state
+				if string(potentialCandiate.AppState) != string(currentState.AppState) {
+					finalCandidates = append(finalCandidates, potentialCandidates[index])
+				}
 
-	// if apphashInDB != appDeploymentHashOnDevice {
-	// 	// state has changed, we need to send the new app deployment yaml with hash
-	// 	newAppState, err := pkg.ConvertAppDeploymentToAppState(deploymentDefinition, "", "")
-	// 	if err != nil {
-	// 		return desiredStates, err
-	// 	}
-
-	// 	desiredStates = append(desiredStates, newAppState)
-	// }
-
-	// if currentState.AppState == margoStdAPI.RUNNING && deploymentInDB.
-	// }
-	return desiredStates, nil
+			}
+		}
+	}
+	return finalCandidates, nil
 }
 
 // Shutdown is required by the symphony's manager plugin interface

@@ -10,6 +10,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	observ_utils "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/observability/utils"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
+	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -23,6 +24,25 @@ func createErrorResponse(logger logger.Logger, span trace.Span, err error, messa
 			"message": message,
 		},
 		Timestamp: time.Now().UTC(),
+	}
+
+	respBytes, _ := json.Marshal(errResp)
+	coaErr := v1alpha2.NewCOAError(err, message, errorType)
+
+	response := v1alpha2.COAResponse{
+		State: v1alpha2.GetErrorState(coaErr),
+		Body:  respBytes,
+	}
+
+	return observ_utils.CloseSpanWithCOAResponse(span, response)
+}
+
+// Helper method for error responses
+func createErrorResponse2(logger logger.Logger, span trace.Span, err error, message string, errorType v1alpha2.State) v1alpha2.COAResponse {
+	logger.InfofCtx(context.Background(), "err: %s, msg: %s", err.Error(), message)
+	errResp := &margoStdAPI.Error{
+		Code:    errorType.String(),
+		Message: err.Error(),
 	}
 
 	respBytes, _ := json.Marshal(errResp)

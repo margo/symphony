@@ -260,10 +260,10 @@ func (c *WorkloadVendor) deleteDeployment(request v1alpha2.COARequest) v1alpha2.
 		})
 	defer span.End()
 
-	pkgId := request.Parameters["__id"]
+	deploymentId := request.Parameters["__id"]
 	workloadVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): deleteDeployment, method: %s, metadata: %s, path: %s, parameters: %s", request.Method,
-		pretty.Sprint(request.Metadata), pretty.Sprint(request.Route), pretty.Sprint(request.Parameters), "pkgId", pkgId)
-	resp, err := c.DeploymentManager.DeleteDeployment(pCtx, pkgId)
+		pretty.Sprint(request.Metadata), pretty.Sprint(request.Route), pretty.Sprint(request.Parameters), "pkgId", deploymentId)
+	resp, err := c.DeploymentManager.DeleteDeployment(pCtx, deploymentId)
 	if err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to delete the app deployment", v1alpha2.InternalError)
 	}

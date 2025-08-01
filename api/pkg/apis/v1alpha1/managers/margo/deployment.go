@@ -161,9 +161,9 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq 
 	}
 
 	deploymentResp.Metadata.Id = &deploymentId
-	deploymentResp.RecentOperation = &margoNonStdAPI.ApplicationPackageRecentOperation{}
-	deploymentResp.RecentOperation.Op = margoNonStdAPI.ApplicationPackageOperation(operation)                // Type conversion
-	deploymentResp.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatus(operationState) // Type conversion
+	deploymentResp.RecentOperation = &margoNonStdAPI.ApplicationDeploymentRecentOperation{}
+	deploymentResp.RecentOperation.Op = operation
+	deploymentResp.RecentOperation.Status = operationState
 	deploymentResp.Metadata.CreationTimestamp = &now
 	deploymentState := margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
 	contextualInfo := "stored on wfm, yet to be synced with the device"
@@ -276,8 +276,8 @@ func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId s
 	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Initiating deletion operation for deployment '%s'", deployment.Metadata.Name)
 	now := time.Now().UTC()
 	deploymentLogger.DebugfCtx(ctx, "Setting operation to DELETE and status to PENDING")
-	deployment.RecentOperation.Op = margoNonStdAPI.ApplicationPackageOperation(margoNonStdAPI.DELETE)                                                // Changed from DEBOARD to DELETE
-	deployment.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatus(margoNonStdAPI.ApplicationDeploymentOperationStatusPENDING) // Changed from ApplicationPackageOperationStatusPENDING to ApplicationDeploymentOperationStatusPENDING
+	deployment.RecentOperation.Op = margoNonStdAPI.DELETE                                                                                               // Changed from DEBOARD to DELETE
+	deployment.RecentOperation.Status = margoNonStdAPI.ApplicationDeploymentOperationStatus(margoNonStdAPI.ApplicationDeploymentOperationStatusPENDING) // Changed from ApplicationPackageOperationStatusPENDING to ApplicationDeploymentOperationStatusPENDING
 	deployment.Status.LastUpdateTime = &now
 
 	deploymentLogger.DebugfCtx(ctx, "DeleteDeployment: Updating deployment state to Operation='%s', State='%s'",

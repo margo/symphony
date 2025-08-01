@@ -55,7 +55,7 @@ func (o *DeviceVendor) GetEndpoints() []v1alpha2.Endpoint {
 	return []v1alpha2.Endpoint{
 		{
 			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/wfm/states",
+			Route:   route + "/wfm/state",
 			Version: o.Version,
 			Handler: o.pollDesiredState,
 		},
@@ -79,15 +79,15 @@ func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.CO
 	// Parse request
 	var syncReq margoStdSbiAPI.StateJSONRequestBody
 	if err := json.Unmarshal(request.Body, &syncReq); err != nil {
-		return createErrorResponse(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
 	// Call MargoManager to sync state
 	desiredStates, err := c.DeviceManager.PollDesiredState(pCtx, deviceId, syncReq)
 	if err != nil {
-		return createErrorResponse(deviceVendorLogger, span, err, "Failed to sync state", v1alpha2.InternalError)
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to sync state", v1alpha2.InternalError)
 	}
 
 	// Create success response
-	return createSuccessResponse(span, v1alpha2.Accepted, &desiredStates)
+	return createSuccessResponse(span, v1alpha2.OK, &desiredStates)
 }
