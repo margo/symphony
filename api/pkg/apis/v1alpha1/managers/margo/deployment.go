@@ -295,9 +295,7 @@ func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId s
 
 	// Publish event after successful deletion
 	s.Manager.Context.Publish("deleteDeployment", v1alpha2.Event{
-		Body: map[string]interface{}{
-			"deploymentId": deploymentId,
-		},
+		Body: deployment,
 	})
 	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Published 'deleteDeployment' event for deployment '%s'", deploymentId)
 

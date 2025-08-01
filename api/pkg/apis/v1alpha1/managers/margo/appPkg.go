@@ -8,7 +8,6 @@ import (
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
-	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
@@ -58,32 +57,6 @@ func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.Ma
 		// Turn off validation of differnt types: https://github.com/eclipse-symphony/symphony/issues/445
 		s.MargoValidator = validation.NewMargoValidator()
 	}
-
-	context.Subscribe("deploymentStatusUpdates", v1alpha2.EventHandler{
-		Handler: func(topic string, event v1alpha2.Event) error {
-			switch topic {
-			case "NewDeployment":
-				// event.Body
-			case "UpdateDeployment":
-			case "DeleteDeployment":
-			}
-			return nil
-		},
-		Group: "job",
-	})
-
-	context.Subscribe("onNewDeployment", v1alpha2.EventHandler{
-		Handler: func(topic string, event v1alpha2.Event) error {
-			switch topic {
-			case "NewDeployment":
-				// event.Body
-			case "UpdateDeployment":
-			case "DeleteDeployment":
-			}
-			return nil
-		},
-		Group: "job",
-	})
 
 	return nil
 }
