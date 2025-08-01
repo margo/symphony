@@ -425,18 +425,20 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 
 	// Set headers
 	t.AppendHeader(table.Row{
-		"ID", "Name", "Pkg", "Device", "State", "Created", "Updated",
+		"ID", "Name", "Pkg", "Device", "Op", "OpStatus", "RunningState" /*"Created",*/, "Updated",
 	})
 
 	// Add data rows
 	for _, dep := range resp.Items {
 		row := table.Row{
 			truncateString(*dep.Metadata.Id, 48),
-			truncateString(dep.Metadata.Name, 20),
-			dep.Spec.AppPackageRef.Id,
-			dep.Spec.DeviceRef.Id,
+			truncateString(dep.Metadata.Name, 10),
+			truncateString(dep.Spec.AppPackageRef.Id, 10),
+			truncateString(*dep.Spec.DeviceRef.Id, 10),
+			string(dep.RecentOperation.Op),
+			string(dep.RecentOperation.Status),
 			string(*dep.Status.State),
-			formatTime(*dep.Metadata.CreationTimestamp),
+			// formatTime(*dep.Metadata.CreationTimestamp),
 			formatTime(*dep.Status.LastUpdateTime),
 		}
 
@@ -456,9 +458,11 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 		{Number: 2, WidthMax: 25}, // Name
 		{Number: 3, WidthMax: 35}, // Pkg
 		{Number: 4, WidthMax: 35}, // Device
-		{Number: 5, WidthMax: 12}, // State
-		{Number: 6, WidthMax: 16}, // Created
-		{Number: 7, WidthMax: 16}, // Updated
+		{Number: 5, WidthMax: 12}, // Op
+		{Number: 6, WidthMax: 12}, // OpStatus
+		{Number: 7, WidthMax: 12}, // RunningState
+		// {Number: 8, WidthMax: 16}, // Created
+		{Number: 9, WidthMax: 16}, // Updated
 	})
 
 	t.Render()

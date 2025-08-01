@@ -21,7 +21,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -52,7 +51,8 @@ require (
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/dev-repo v0.0.0-20250801060717-d764ef28a28b
+	github.com/kr/pretty v0.3.1
+	github.com/margo/dev-repo v0.0.0-20250801072343-b47e46f09286
 	github.com/princjef/mageutil v1.0.0
 )
 
