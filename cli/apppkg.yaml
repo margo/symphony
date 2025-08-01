@@ -1,0 +1,13 @@
+apiVersion: non-margo.org
+kind: ApplicationPackage
+metadata:
+  name: my-web-app-pkg
+  labels:
+    env: dev
+  annotations:
+    description: "A web application for managing user accounts"
+spec:
+  sourceType: GIT_REPO
+  source:
+    url: "https://github.com/user/my-app.git"
+    branch: "main"

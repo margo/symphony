@@ -2,6 +2,7 @@ package margo
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutions"
@@ -69,20 +70,20 @@ func (o *WorkloadVendor) GetEndpoints() []v1alpha2.Endpoint {
 	return []v1alpha2.Endpoint{
 		{
 			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/app-pkgs",
+			Route:   route + "/app-packages",
 			Version: o.Version,
 			Handler: o.onboardAppPkg,
 		},
 		{
 			Methods:    []string{fasthttp.MethodGet},
-			Route:      route + "/app-pkgs",
+			Route:      route + "/app-packages",
 			Version:    o.Version,
 			Handler:    o.listAppPkgs,
 			Parameters: []string{"id?", "name?", "type?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodDelete},
-			Route:      route + "/app-pkgs",
+			Route:      route + "/app-packages",
 			Version:    o.Version,
 			Handler:    o.deleteAppPkg,
 			Parameters: []string{"id?"},
@@ -155,6 +156,7 @@ func (c *WorkloadVendor) listAppPkgs(request v1alpha2.COARequest) v1alpha2.COARe
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to list app packages", v1alpha2.InternalError)
 	}
 
+	fmt.Println("-------", pretty.Sprint(appPkgs), "---------------------------------------")
 	return createSuccessResponse(span, v1alpha2.OK, appPkgs)
 }
 

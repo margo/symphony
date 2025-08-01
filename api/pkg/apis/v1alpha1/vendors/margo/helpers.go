@@ -37,18 +37,18 @@ func createErrorResponse(logger logger.Logger, span trace.Span, err error, messa
 }
 
 func createSuccessResponse[T any](span trace.Span, state v1alpha2.State, data *T) v1alpha2.COAResponse {
-	response := struct {
-		Data      *T        `json:"data,omitempty"`
-		RequestId string    `json:"requestId"`
-		Timestamp time.Time `json:"timestamp"`
-	}{
-		Data:      data,
-		RequestId: "",
-		Timestamp: time.Now().UTC(),
-	}
-	// ... rest unchanged
+	// response := struct {
+	// 	Data      *T        `json:"data,omitempty"`
+	// 	RequestId string    `json:"requestId"`
+	// 	Timestamp time.Time `json:"timestamp"`
+	// }{
+	// 	Data:      data,
+	// 	RequestId: "",
+	// 	Timestamp: time.Now().UTC(),
+	// }
+	// // ... rest unchanged
 
-	respBytes, _ := json.Marshal(response)
+	respBytes, _ := json.Marshal(data)
 
 	coaResponse := v1alpha2.COAResponse{
 		State:       state,

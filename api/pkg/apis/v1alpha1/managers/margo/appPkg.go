@@ -14,6 +14,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/kr/pretty"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/non-standard/pkg/packageManager"
 	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
@@ -93,7 +94,7 @@ func (s *AppPkgManager) storePkgInDB(context context.Context, id string, pkg mar
 		Metadata: appPkgMetadata,
 		Value: states.StateEntry{
 			ID:   id,
-			Body: pkg,
+			Body: &pkg,
 		},
 	})
 	return err
@@ -105,7 +106,7 @@ func (s *AppPkgManager) updatePkgInDB(context context.Context, id string, pkg ma
 		Metadata: appPkgMetadata,
 		Value: states.StateEntry{
 			ID:   id,
-			Body: pkg,
+			Body: &pkg,
 		},
 	})
 	return err
@@ -118,8 +119,8 @@ func (s *AppPkgManager) deletePkgFromDB(context context.Context, pkgId string) e
 	})
 }
 
-func (s *AppPkgManager) listPkgFromDB(context context.Context, pkg margoNonStdAPI.ApplicationPackageResp) error {
-	return nil
+func (s *AppPkgManager) listPkgFromDB(context context.Context) (*margoNonStdAPI.ApplicationPackageListResp, error) {
+	return nil, nil
 }
 
 func (s *AppPkgManager) getPkgFromDB(context context.Context, pkgId string) (*margoNonStdAPI.ApplicationPackageResp, error) {
@@ -169,6 +170,7 @@ func (s *AppPkgManager) OnboardAppPkg(ctx context.Context, req margoNonStdAPI.Ap
 	appPkgLogger.DebugfCtx(ctx, "OnboardAppPkg: Initial operation state set to '%s'", operationState)
 
 	appPkg.Metadata.Id = &appPkgId
+	appPkg.RecentOperation = &margoNonStdAPI.ApplicationPackageRecentOperation{}
 	appPkg.RecentOperation.Op = operation
 	appPkg.RecentOperation.Status = operationState
 	appPkg.Metadata.CreationTimestamp = &now
@@ -182,7 +184,7 @@ func (s *AppPkgManager) OnboardAppPkg(ctx context.Context, req margoNonStdAPI.Ap
 		appPkg.Metadata.Id, appPkg.Metadata.Name, appPkg.RecentOperation.Op, appPkg.RecentOperation.Status)
 
 	// Store initial package record in database
-	appPkgLogger.InfofCtx(ctx, "OnboardAppPkg: Storing initial package record in database")
+	appPkgLogger.InfofCtx(ctx, "OnboardAppPkg: Storing initial package record in database ------------ %s", pretty.Sprint(appPkg))
 	if err := s.storePkgInDB(ctx, *appPkg.Metadata.Id, appPkg); err != nil {
 		appPkgLogger.ErrorfCtx(ctx, "OnboardAppPkg: Failed to store package in database: %v", err)
 		return nil, fmt.Errorf("failed to store app pkg in database: %w", err)
@@ -221,7 +223,7 @@ func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNon
 
 	// Ensure final state update regardless of success or failure
 	defer func() {
-		appPkgLogger.DebugfCtx(ctx, "processPackageAsync: Finalizing package state for ID '%s'", appPkg.Metadata.Id)
+		appPkgLogger.DebugfCtx(ctx, "processPackageAsync: Finalizing package state for ID %s", *appPkg.Metadata.Id)
 
 		appPkg.Status.ContextualInfo = &margoNonStdAPI.ContextualInfo{
 			Message: &operationContextualInfo,
@@ -238,12 +240,12 @@ func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNon
 
 		now := time.Now().UTC()
 		appPkg.Status.LastUpdateTime = &now
-		appPkgLogger.DebugfCtx(ctx, "processPackageAsync: Updating package final state to '%s' in database", appPkg.RecentOperation.Status)
+		appPkgLogger.DebugfCtx(ctx, "processPackageAsync: Updating package final state to %w in database", appPkg.RecentOperation.Status)
 
 		if updateErr := s.updatePkgInDB(ctx, *appPkg.Metadata.Id, appPkg); updateErr != nil {
 			appPkgLogger.ErrorfCtx(ctx, "processPackageAsync: Error occurred while updating package state in database: %v", updateErr)
 		} else {
-			appPkgLogger.InfofCtx(ctx, "processPackageAsync: Successfully updated final package state to '%s'", appPkg.RecentOperation.Status)
+			appPkgLogger.InfofCtx(ctx, "processPackageAsync: Successfully updated final package state to %w", appPkg.RecentOperation.Status)
 		}
 	}()
 
@@ -367,6 +369,9 @@ func (s *AppPkgManager) ListAppPkgs(context context.Context) (*margoNonStdAPI.Ap
 	}
 
 	for _, entry := range entries {
+		if entry.ID == "" {
+			continue
+		}
 		var appPkg margoNonStdAPI.ApplicationPackageResp
 		jData, _ := json.Marshal(entry.Body)
 		err = json.Unmarshal(jData, &appPkg)
@@ -375,23 +380,25 @@ func (s *AppPkgManager) ListAppPkgs(context context.Context) (*margoNonStdAPI.Ap
 		}
 	}
 
+	fmt.Println("--------- app pkgs in database ----------", pretty.Sprint(appPkgs))
+
 	toContinue := false
 	resp := margoNonStdAPI.ApplicationPackageListResp{
 		ApiVersion: "margo.org",
 		Kind:       "ApplicationPackageList",
-		Items:      make([]margoNonStdAPI.ApplicationPackageResp, len(appPkgs)),
+		Items:      make([]margoNonStdAPI.ApplicationPackageResp, 0),
 		Metadata: &margoNonStdAPI.PaginationMetadata{
 			Continue:           &toContinue,
 			RemainingItemCount: nil,
 		},
 	}
 	for _, pkg := range appPkgs {
-		var summary margoNonStdAPI.ApplicationPackageResp
+		var pkgRespItem margoNonStdAPI.ApplicationPackageResp
 		{
-			bytes, _ := json.Marshal(pkg)
-			_ = json.Unmarshal(bytes, &summary)
+			bytes, _ := json.Marshal(&pkg)
+			_ = json.Unmarshal(bytes, &pkgRespItem)
 		}
-		resp.Items = append(resp.Items, summary)
+		resp.Items = append(resp.Items, pkgRespItem)
 	}
 
 	return &resp, nil

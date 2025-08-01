@@ -39,6 +39,7 @@ require (
 	golang.org/x/text v0.24.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	helm.sh/helm/v3 v3.18.2 // indirect
 	k8s.io/apimachinery v0.33.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
@@ -50,9 +51,9 @@ require (
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/margo/dev-repo v0.0.0-20250801035855-b5e58e1e8d10
+	github.com/ghodss/yaml v1.0.0
+	github.com/margo/dev-repo v0.0.0-20250801050205-b0fa7e668f04
 	github.com/princjef/mageutil v1.0.0
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
