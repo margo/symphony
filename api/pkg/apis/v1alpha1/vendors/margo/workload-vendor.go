@@ -53,7 +53,7 @@ func (e *WorkloadVendor) Init(config vendors.VendorConfig, factories []managers.
 	if e.AppPkgManager == nil {
 		return v1alpha2.NewCOAError(nil, "margo app pkg manager is not supplied", v1alpha2.MissingConfig)
 	}
-	if e.AppPkgManager == nil {
+	if e.DeploymentManager == nil {
 		return v1alpha2.NewCOAError(nil, "margo deployment manager is not supplied", v1alpha2.MissingConfig)
 	}
 	if e.SolutionsManager == nil {

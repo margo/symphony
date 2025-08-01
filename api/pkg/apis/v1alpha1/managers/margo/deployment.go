@@ -161,12 +161,17 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq 
 	}
 
 	deploymentResp.Metadata.Id = &deploymentId
+	deploymentResp.RecentOperation = &margoNonStdAPI.ApplicationPackageRecentOperation{}
 	deploymentResp.RecentOperation.Op = margoNonStdAPI.ApplicationPackageOperation(operation)                // Type conversion
 	deploymentResp.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatus(operationState) // Type conversion
 	deploymentResp.Metadata.CreationTimestamp = &now
-	deploymentState := margoNonStdAPI.UNKNOWN
+	deploymentState := margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
+	contextualInfo := "stored on wfm, yet to be synced with the device"
 	deploymentResp.Status = &margoNonStdAPI.ApplicationDeploymentStatus{
-		ContextualInfo: &margoNonStdAPI.ContextualInfo{},
+		ContextualInfo: &margoNonStdAPI.ContextualInfo{
+			Code:    nil,
+			Message: &contextualInfo,
+		},
 		LastUpdateTime: &now,
 		State:          &deploymentState,
 	}

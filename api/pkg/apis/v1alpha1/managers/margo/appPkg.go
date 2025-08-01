@@ -101,6 +101,7 @@ func (s *AppPkgManager) storePkgInDB(context context.Context, id string, pkg mar
 }
 
 func (s *AppPkgManager) updatePkgInDB(context context.Context, id string, pkg margoNonStdAPI.ApplicationPackageResp) error {
+	fmt.Println("----------------------------- update pkg in db -------------------------", pretty.Sprint(pkg))
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: appPkgMetadata,
@@ -223,25 +224,28 @@ func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNon
 
 	// Ensure final state update regardless of success or failure
 	defer func() {
+		now := time.Now().UTC()
 		appPkgLogger.DebugfCtx(ctx, "processPackageAsync: Finalizing package state for ID %s", *appPkg.Metadata.Id)
 
+		if err != nil {
+			appPkg.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatusFAILED
+			status := margoNonStdAPI.ApplicationPackageStatusStateFAILED
+			appPkg.Status.State = &status
+			appPkgLogger.WarnfCtx(ctx, "processPackageAsync: Setting package state to Failed due to error: %v", err)
+			operationContextualInfo = fmt.Sprintf("cause: %s", err.Error())
+		} else {
+			appPkg.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatusCOMPLETED
+			status := margoNonStdAPI.ApplicationPackageStatusStateONBOARDED
+			appPkg.Status.State = &status
+			appPkgLogger.InfofCtx(ctx, "processPackageAsync: Setting package state to Completed")
+		}
 		appPkg.Status.ContextualInfo = &margoNonStdAPI.ContextualInfo{
 			Message: &operationContextualInfo,
 			Code:    nil,
 		}
 
-		if err != nil {
-			appPkg.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatusFAILED
-			appPkgLogger.WarnfCtx(ctx, "processPackageAsync: Setting package state to Failed due to error: %v", err)
-		} else {
-			appPkg.RecentOperation.Status = margoNonStdAPI.ApplicationPackageOperationStatusCOMPLETED
-			appPkgLogger.InfofCtx(ctx, "processPackageAsync: Setting package state to Completed")
-		}
-
-		now := time.Now().UTC()
 		appPkg.Status.LastUpdateTime = &now
 		appPkgLogger.DebugfCtx(ctx, "processPackageAsync: Updating package final state to %w in database", appPkg.RecentOperation.Status)
-
 		if updateErr := s.updatePkgInDB(ctx, *appPkg.Metadata.Id, appPkg); updateErr != nil {
 			appPkgLogger.ErrorfCtx(ctx, "processPackageAsync: Error occurred while updating package state in database: %v", updateErr)
 		} else {
