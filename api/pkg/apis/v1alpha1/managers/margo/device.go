@@ -93,6 +93,12 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 		s.MargoValidator = validation.NewMargoValidator()
 	}
 
+	// // subscribe to events
+	// context.Subscribe("newAppPackage", v1alpha2.EventHandler{
+	// 	Handler: s.onNewAppPackage,
+	// 	Group:   "events-from-deployment-manager",
+	// })
+
 	// subscribe to events
 	context.Subscribe("newDeployment", v1alpha2.EventHandler{
 		Handler: s.onNewDeploymentEvent,
