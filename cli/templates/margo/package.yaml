@@ -12,3 +12,5 @@ spec:
     #url: "https://github.com/user/my-app.git"
     url: "http://172.19.59.148:3000/margouser/package-repo"
     branch: "master"
+    #commit: <commit id>
+    #token: <pass-pat>
