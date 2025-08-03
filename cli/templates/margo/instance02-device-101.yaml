@@ -1,7 +1,7 @@
 apiVersion: non-margo.org
 kind: ApplicationDeployment
 metadata:
-  name: my-app-deployment
+  name: instance02
 spec:
   appPackageRef:
     id: 69391e61-22be-4603-890b-bcbcc32be6cb

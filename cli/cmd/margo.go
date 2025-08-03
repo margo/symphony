@@ -9,7 +9,6 @@ import (
 	"github.com/eclipse-symphony/symphony/cli/utils"
 	"github.com/ghodss/yaml"
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/kr/pretty"
 	nbi "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	margoCli "github.com/margo/dev-repo/poc/wfm/cli"
 	"github.com/spf13/cobra"
@@ -220,7 +219,7 @@ func onboardAppPkg(appPkg *nbi.ApplicationPackageRequest) error {
 		return nil
 	}
 
-	fmt.Println("response", pretty.Sprint(*resp))
+	// fmt.Println("response", pretty.Sprint(*resp))
 	// fmt.Println("pkgId", *resp.Metadata.Id, "pkgName", resp.Metadata.Name, "pkgVersion", resp.Spec)
 	return nil
 }
@@ -380,7 +379,7 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 				version = gitRepo.Url
 			}
 		}
-		fmt.Println("-----------------------pkg------------------", pretty.Sprint(pkg))
+		// fmt.Println("-----------------------pkg------------------", pretty.Sprint(pkg))
 		row := table.Row{
 			truncateString(*pkg.Metadata.Id, 40),
 			truncateString(pkg.Metadata.Name, 20),
