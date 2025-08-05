@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"math/rand"
 	"strings"
+	"time"
 
+	"github.com/Nerzal/gocloak/v13"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -39,6 +43,11 @@ type DeviceManager struct {
 	StateProvider  states.IStateProvider
 	needValidate   bool
 	MargoValidator validation.MargoValidator
+	// keycloak related
+	keycloakURL   string
+	adminUsername string
+	adminPassword string
+	realm         string
 }
 
 func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
@@ -46,6 +55,25 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 	if err != nil {
 		return err
 	}
+	// Initialize Keycloak configuration
+	s.keycloakURL = config.Properties["keycloakURL"]
+	s.adminUsername = config.Properties["adminUsername"]
+	s.adminPassword = config.Properties["adminPassword"]
+	s.realm = config.Properties["realm"]
+	// Validate required Keycloak configuration
+	if s.keycloakURL == "" {
+		return fmt.Errorf("keycloak.url is required for device onboarding")
+	}
+	if s.adminUsername == "" {
+		return fmt.Errorf("keycloak.admin.username is required for device onboarding")
+	}
+	if s.adminPassword == "" {
+		return fmt.Errorf("keycloak.admin.password is required for device onboarding")
+	}
+	if s.realm == "" {
+		s.realm = "master" // default realm
+	}
+
 	stateprovider, err := managers.GetPersistentStateProvider(config, providers)
 	if err == nil {
 		s.StateProvider = stateprovider
@@ -236,6 +264,86 @@ func (s *DeviceManager) getAppState(context context.Context, deviceId string, de
 // compareAppState is not implemented.
 func (s *DeviceManager) compareAppState(context context.Context, pkgId string) (*margoStdAPI.AppState, error) {
 	return nil, nil
+}
+
+func (dm *DeviceManager) OnboardDevice(ctx context.Context) (*DeviceOnboardingData, error) {
+	// Generate unique client ID for the device
+	clientID := fmt.Sprintf("device-%s-%d", generateDeviceID(), time.Now().Unix())
+
+	// Create Keycloak admin client
+	client := gocloak.NewClient(dm.keycloakURL)
+
+	// Get admin token
+	token, err := client.LoginAdmin(ctx, dm.adminUsername, dm.adminPassword, dm.realm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate with Keycloak: %w", err)
+	}
+
+	// Generate client secret
+	clientSecret := generateClientSecret()
+
+	// Define client configuration
+	keycloakClient := gocloak.Client{
+		ClientID:                  &clientID,
+		Secret:                    &clientSecret,
+		Enabled:                   gocloak.BoolP(true),
+		PublicClient:              gocloak.BoolP(false),
+		ServiceAccountsEnabled:    gocloak.BoolP(true),
+		StandardFlowEnabled:       gocloak.BoolP(false),
+		DirectAccessGrantsEnabled: gocloak.BoolP(true),
+		Protocol:                  gocloak.StringP("openid-connect"),
+		Attributes: &map[string]string{
+			"device.onboarded": "true",
+			"created.by":       "device-manager",
+		},
+	}
+
+	// Create client in Keycloak
+	createdClientID, err := client.CreateClient(ctx, token.AccessToken, dm.realm, keycloakClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Keycloak client: %w", err)
+	}
+
+	// Verify client was created successfully
+	if createdClientID == "" {
+		return nil, fmt.Errorf("client creation returned empty ID")
+	}
+
+	// Construct token endpoint URL
+	tokenEndpointURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token",
+		strings.TrimSuffix(dm.keycloakURL, "/"), dm.realm)
+
+	// Log successful onboarding
+	log.Printf("Successfully onboarded device with client ID: %s", clientID)
+
+	return &DeviceOnboardingData{
+		ClientId:         clientID,
+		ClientSecret:     clientSecret,
+		TokenEndpointUrl: tokenEndpointURL,
+	}, nil
+}
+
+// Helper function to generate unique device ID
+func generateDeviceID() string {
+	return fmt.Sprintf("%x", rand.Uint64())
+}
+
+// Helper function to generate secure client secret
+func generateClientSecret() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const secretLength = 32
+
+	b := make([]byte, secretLength)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
+type DeviceOnboardingData struct {
+	ClientId         string
+	ClientSecret     string
+	TokenEndpointUrl string
 }
 
 // PollDesiredState is not implemented.

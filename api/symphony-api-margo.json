@@ -377,6 +377,7 @@
         "route": "users",
         "properties": {
           "test-users": "true"
+         
         },
         "managers": [
           {
@@ -668,7 +669,11 @@
             "type": "managers.margo.device",
             "properties": {
               "providers.persistentstate": "memory",
-              "singleton": "true"
+              "singleton": "true",
+              "keycloakURL": "http://172.19.59.148:8083",
+          "realm": "master",
+          "adminUsername": "admin",
+          "adminPassword": "admin"
             },
             "providers": {
               "memory": {
