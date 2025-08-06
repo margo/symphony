@@ -29,6 +29,21 @@ type DeviceOnboardingResponse struct {
 	TokenEndpointUrl string `json:"tokenEndpointUrl"`
 }
 
+// struct for the token request
+type TokenRequest struct {
+	ClientId         string `json:"clientId"`
+	ClientSecret     string `json:"clientSecret"`
+	TokenEndpointUrl string `json:"tokenEndpointUrl"`
+}
+
+// struct for the token response
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
 func (o *DeviceVendor) GetInfo() vendors.VendorInfo {
 	return vendors.VendorInfo{
 		Version:  o.Vendor.Version,
@@ -73,38 +88,86 @@ func (o *DeviceVendor) GetEndpoints() []v1alpha2.Endpoint {
 			Version: o.Version,
 			Handler: o.onboardDevice,
 		},
+		{
+			Methods: []string{fasthttp.MethodPost},
+			Route:   route + "/auth/token",
+			Version: o.Version,
+			Handler: o.getToken,
+		},
 	}
+}
+
+// Handler func for getToken
+func (c *DeviceVendor) getToken(request v1alpha2.COARequest) v1alpha2.COAResponse {
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "getToken",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
+
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getToken, method: %s", request.Method)
+
+	// Parse request
+	var tokenReq TokenRequest
+	if err := json.Unmarshal(request.Body, &tokenReq); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the token request", v1alpha2.BadRequest)
+	}
+
+	// Validate required fields
+	if tokenReq.ClientId == "" || tokenReq.ClientSecret == "" || tokenReq.TokenEndpointUrl == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "ClientId, ClientSecret, and TokenEndpointUrl are required", v1alpha2.BadRequest),
+			"Missing required fields", v1alpha2.BadRequest)
+	}
+
+	// Call DeviceManager to get token from Keycloak
+	tokenData, err := c.DeviceManager.GetToken(pCtx, tokenReq.ClientId, tokenReq.ClientSecret, tokenReq.TokenEndpointUrl)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get token from Keycloak", v1alpha2.InternalError)
+	}
+
+	// Create response
+	response := TokenResponse{
+		AccessToken:  tokenData.AccessToken,
+		TokenType:    tokenData.TokenType,
+		ExpiresIn:    tokenData.ExpiresIn,
+		RefreshToken: tokenData.RefreshToken,
+	}
+
+	return createSuccessResponse(span, v1alpha2.OK, &response)
 }
 
 // Handler func for onboardDevice
 func (c *DeviceVendor) onboardDevice(request v1alpha2.COARequest) v1alpha2.COAResponse {
-    pCtx, span := observability.StartSpan("Margo Device Vendor",
-        request.Context,
-        &map[string]string{
-            "method": "onboardDevice",
-            "route":  request.Route,
-            "verb":   request.Method,
-        })
-    defer span.End()
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "onboardDevice",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
 
-    deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onboardDevice, method: %s", request.Method)
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onboardDevice, method: %s", request.Method)
 
-    // Call DeviceManager to handle Keycloak onboarding
-    onboardingData, err := c.DeviceManager.OnboardDevice(pCtx)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
-    }
+	// Call DeviceManager to handle Keycloak onboarding
+	onboardingData, err := c.DeviceManager.OnboardDevice(pCtx)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
+	}
 
-    // Create response
-    response := DeviceOnboardingResponse{
-        ClientId:         onboardingData.ClientId,
-        ClientSecret:     onboardingData.ClientSecret,
-        TokenEndpointUrl: onboardingData.TokenEndpointUrl,
-    }
+	// Create response
+	response := DeviceOnboardingResponse{
+		ClientId:         onboardingData.ClientId,
+		ClientSecret:     onboardingData.ClientSecret,
+		TokenEndpointUrl: onboardingData.TokenEndpointUrl,
+	}
 
-    return createSuccessResponse(span, v1alpha2.OK, &response)
+	return createSuccessResponse(span, v1alpha2.OK, &response)
 }
-
 
 func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",

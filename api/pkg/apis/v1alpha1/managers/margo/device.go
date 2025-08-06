@@ -38,6 +38,13 @@ var (
 	}
 )
 
+type TokenData struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int
+	TokenType    string
+}
+
 type DeviceManager struct {
 	managers.Manager
 	StateProvider  states.IStateProvider
@@ -266,6 +273,22 @@ func (s *DeviceManager) compareAppState(context context.Context, pkgId string) (
 	return nil, nil
 }
 
+func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret, tokenEndpointUrl string) (*TokenData, error) {
+	client := gocloak.NewClient(dm.keycloakURL)
+
+	token, err := client.LoginClient(ctx, clientId, clientSecret, dm.realm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate with Keycloak: %w", err)
+	}
+
+	return &TokenData{
+		AccessToken:  token.AccessToken,
+		RefreshToken: token.RefreshToken,
+		ExpiresIn:    token.ExpiresIn,
+		TokenType:    token.TokenType,
+	}, nil
+}
+
 func (dm *DeviceManager) OnboardDevice(ctx context.Context) (*DeviceOnboardingData, error) {
 	// Generate unique client ID for the device
 	clientID := fmt.Sprintf("device-%s-%d", generateDeviceID(), time.Now().Unix())
@@ -309,17 +332,13 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context) (*DeviceOnboardingDa
 		return nil, fmt.Errorf("client creation returned empty ID")
 	}
 
-	// Construct token endpoint URL
-	tokenEndpointURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token",
-		strings.TrimSuffix(dm.keycloakURL, "/"), dm.realm)
-
 	// Log successful onboarding
 	log.Printf("Successfully onboarded device with client ID: %s", clientID)
 
 	return &DeviceOnboardingData{
 		ClientId:         clientID,
 		ClientSecret:     clientSecret,
-		TokenEndpointUrl: tokenEndpointURL,
+		TokenEndpointUrl: dm.keycloakURL,
 	}, nil
 }
 
