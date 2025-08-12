@@ -13,24 +13,25 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/valyala/fasthttp v1.50.0
-	k8s.io/api v0.33.0
-	k8s.io/apimachinery v0.33.0
-	k8s.io/client-go v0.33.0
+	k8s.io/api v0.33.2
+	k8s.io/apimachinery v0.33.2
+	k8s.io/client-go v0.33.2
 
 )
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
+	github.com/Nerzal/gocloak/v13 v13.9.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/packages/mage v0.0.0-00010101000000-000000000000
 	github.com/eclipse/paho.mqtt.golang v1.4.2
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20250801072343-b47e46f09286
+	github.com/margo/dev-repo v0.0.0-20250812055159-820a8d3f4721
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
-	helm.sh/helm/v3 v3.18.2
+	helm.sh/helm/v3 v3.18.4
 )
 
 require (
@@ -38,7 +39,6 @@ require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/Nerzal/gocloak/v13 v13.9.0 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
@@ -110,7 +110,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gotest.tools/v3 v3.4.0 // indirect
-	oras.land/oras-go/v2 v2.5.0 // indirect
+	oras.land/oras-go/v2 v2.6.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
 
@@ -133,7 +133,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/evanphx/json-patch v5.9.11+incompatible // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
-	github.com/fatih/color v1.13.0 // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-gorp/gorp/v3 v3.1.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -176,12 +176,12 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	google.golang.org/grpc v1.71.1 // indirect
-	k8s.io/apiextensions-apiserver v0.33.0 // indirect
-	k8s.io/apiserver v0.33.0 // indirect
-	k8s.io/cli-runtime v0.33.0
-	k8s.io/component-base v0.33.0 // indirect
+	k8s.io/apiextensions-apiserver v0.33.2 // indirect
+	k8s.io/apiserver v0.33.2 // indirect
+	k8s.io/cli-runtime v0.33.2
+	k8s.io/component-base v0.33.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
-	k8s.io/kubectl v0.33.0 // indirect
+	k8s.io/kubectl v0.33.2 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/kustomize/api v0.19.0 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.19.0 // indirect
@@ -197,7 +197,7 @@ require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fasthttp/router v1.4.20 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -218,12 +218,12 @@ require (
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0
-	golang.org/x/crypto v0.37.0 // indirect
-	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/oauth2 v0.28.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.31.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/term v0.32.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

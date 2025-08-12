@@ -18,6 +18,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/kr/pretty"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
@@ -35,6 +36,17 @@ var (
 		"resource":  deviceResource,
 		"namespace": deviceNamespace,
 		"kind":      deviceKind,
+	}
+
+	deviceAppNamespace = "margoApp"
+	deviceAppResource  = "deviceApp"
+	deviceAppKind      = "DeviceApp"
+	deviceAppMetadata  = map[string]interface{}{
+		"version":   "v1",
+		"group":     model.MargoGroup,
+		"resource":  deviceAppResource,
+		"namespace": deviceAppNamespace,
+		"kind":      deviceAppKind,
 	}
 )
 
@@ -177,7 +189,7 @@ func (s *DeviceManager) saveAppState(context context.Context, deviceId string, d
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
-		Metadata: deviceMetadata,
+		Metadata: deviceAppMetadata,
 		Value: states.StateEntry{
 			ID:   compositeKey,
 			Body: deployment,
@@ -196,7 +208,7 @@ func (s *DeviceManager) updateAppState(context context.Context, deviceId string,
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
-		Metadata: deviceMetadata,
+		Metadata: deviceAppMetadata,
 		Value: states.StateEntry{
 			ID:   compositeKey,
 			Body: deployment,
@@ -214,7 +226,7 @@ func (s *DeviceManager) updateAppState(context context.Context, deviceId string,
 func (s *DeviceManager) removeAppState(context context.Context, deviceId string, deploymentId string) error {
 	compositeKey := s.getCompositeKey(deviceId, deploymentId)
 	err := s.StateProvider.Delete(context, states.DeleteRequest{
-		Metadata: deviceMetadata,
+		Metadata: deviceAppMetadata,
 		ID:       compositeKey,
 	})
 	if err != nil {
@@ -229,13 +241,13 @@ func (s *DeviceManager) removeAppState(context context.Context, deviceId string,
 func (s *DeviceManager) listAppStates(context context.Context, deviceId string) ([]margoNonStdAPI.ApplicationDeploymentResp, error) {
 	var deployments []margoNonStdAPI.ApplicationDeploymentResp
 	entries, _, err := s.StateProvider.List(context, states.ListRequest{
-		Metadata: deviceMetadata,
+		Metadata: deviceAppMetadata,
 	})
 	if err != nil {
 		deviceLogger.ErrorfCtx(context, "GetDeploymentsByDevice: Failed to list deployments for device '%s': %v", deviceId, err)
 		return nil, fmt.Errorf("failed to list deployments for device '%s': %w", deviceId, err)
 	}
-
+	fmt.Println("Entries found: ", pretty.Sprint(entries))
 	for _, entry := range entries {
 		var appState margoNonStdAPI.ApplicationDeploymentResp
 		jData, _ := json.Marshal(entry.Body)
@@ -254,7 +266,7 @@ func (s *DeviceManager) listAppStates(context context.Context, deviceId string) 
 func (s *DeviceManager) getAppState(context context.Context, deviceId string, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
 	compositeKey := s.getCompositeKey(deviceId, deploymentId)
 	entry, err := s.StateProvider.Get(context, states.GetRequest{
-		Metadata: deviceMetadata,
+		Metadata: deviceAppMetadata,
 		ID:       compositeKey,
 	})
 	if err != nil {
@@ -272,6 +284,121 @@ func (s *DeviceManager) getAppState(context context.Context, deviceId string, de
 
 	deviceLogger.InfofCtx(context, "getAppState: App state for deployment '%s' on device '%s' retrieved successfully", deploymentId, deviceId)
 	return &appState, nil
+}
+
+// reportDeviceCapabilities handles the POST /device/{deviceId}/capabilities endpoint
+// This creates new device capabilities entry
+func (s *DeviceManager) ReportDeviceCapabilities(ctx context.Context, deviceId string, capabilities margoStdAPI.DeviceCapabilities) error {
+	deviceLogger.InfofCtx(ctx, "ReportDeviceCapabilities: Reporting capabilities for device '%s'", deviceId)
+
+	// Validate input
+	if deviceId == "" {
+		deviceLogger.ErrorfCtx(ctx, "ReportDeviceCapabilities: Device ID is required")
+		return fmt.Errorf("device ID is required")
+	}
+
+	// Create composite key for capabilities
+	capabilitiesKey := s.getCapabilitiesKey(deviceId)
+
+	// Check if capabilities already exist (for POST, we expect them not to exist)
+	_, err := s.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: deviceMetadata,
+		ID:       capabilitiesKey,
+	})
+	if err == nil {
+		deviceLogger.ErrorfCtx(ctx, "ReportDeviceCapabilities: Capabilities already exist for device '%s'", deviceId)
+		return fmt.Errorf("capabilities already exist for device '%s', use PUT to update", deviceId)
+	}
+
+	// Save capabilities to state provider
+	_, err = s.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: deviceMetadata,
+		Value: states.StateEntry{
+			ID:   capabilitiesKey,
+			Body: capabilities,
+		},
+	})
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "ReportDeviceCapabilities: Failed to save capabilities for device '%s': %v", deviceId, err)
+		return fmt.Errorf("failed to save capabilities for device '%s': %w", deviceId, err)
+	}
+
+	deviceLogger.InfofCtx(ctx, "ReportDeviceCapabilities: Successfully reported capabilities for device '%s'", deviceId)
+	return nil
+}
+
+// updateDeviceCapabilities handles the PUT /device/{deviceId}/capabilities endpoint
+// This updates existing device capabilities entry
+func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceId string, capabilities margoStdAPI.DeviceCapabilities) error {
+	deviceLogger.InfofCtx(ctx, "UpdateDeviceCapabilities: Updating capabilities for device '%s'", deviceId)
+
+	// Validate input
+	if deviceId == "" {
+		deviceLogger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Device ID is required")
+		return fmt.Errorf("device ID is required")
+	}
+
+	// Create composite key for capabilities
+	capabilitiesKey := s.getCapabilitiesKey(deviceId)
+
+	// Check if capabilities exist (for PUT, we expect them to exist)
+	_, err := s.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: deviceMetadata,
+		ID:       capabilitiesKey,
+	})
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Capabilities not found for device '%s': %v", deviceId, err)
+		return fmt.Errorf("capabilities not found for device '%s': %w", deviceId, err)
+	}
+
+	// Update capabilities in state provider
+	_, err = s.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: deviceMetadata,
+		Value: states.StateEntry{
+			ID:   capabilitiesKey,
+			Body: capabilities,
+		},
+	})
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to update capabilities for device '%s': %v", deviceId, err)
+		return fmt.Errorf("failed to update capabilities for device '%s': %w", deviceId, err)
+	}
+
+	deviceLogger.InfofCtx(ctx, "UpdateDeviceCapabilities: Successfully updated capabilities for device '%s'", deviceId)
+	return nil
+}
+
+// getDeviceCapabilities retrieves device capabilities from state provider
+func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceId string) (*margoStdAPI.DeviceCapabilities, error) {
+	deviceLogger.InfofCtx(ctx, "GetDeviceCapabilities: Retrieving capabilities for device '%s'", deviceId)
+
+	capabilitiesKey := s.getCapabilitiesKey(deviceId)
+	entry, err := s.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: deviceMetadata,
+		ID:       capabilitiesKey,
+	})
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "GetDeviceCapabilities: Failed to get capabilities for device '%s': %v", deviceId, err)
+		return nil, fmt.Errorf("failed to get capabilities for device '%s': %w", deviceId, err)
+	}
+
+	var capabilities margoStdAPI.DeviceCapabilities
+	jData, _ := json.Marshal(entry.Body)
+	err = json.Unmarshal(jData, &capabilities)
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "GetDeviceCapabilities: Failed to unmarshal capabilities for device '%s': %v", deviceId, err)
+		return nil, fmt.Errorf("failed to unmarshal capabilities for device '%s': %w", deviceId, err)
+	}
+
+	deviceLogger.InfofCtx(ctx, "GetDeviceCapabilities: Successfully retrieved capabilities for device '%s'", deviceId)
+	return &capabilities, nil
+}
+
+// Helper function to generate capabilities key
+func (s *DeviceManager) getCapabilitiesKey(deviceId string) string {
+	return fmt.Sprintf("%s-capabilities", deviceId)
 }
 
 // compareAppState is not implemented.

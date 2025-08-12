@@ -16,7 +16,7 @@ require (
 	github.com/eclipse-symphony/symphony/coa v0.0.0 // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -34,13 +34,13 @@ require (
 	github.com/valyala/fasthttp v1.50.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	helm.sh/helm/v3 v3.18.2 // indirect
-	k8s.io/apimachinery v0.33.0 // indirect
+	helm.sh/helm/v3 v3.18.4 // indirect
+	k8s.io/apimachinery v0.33.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
@@ -52,7 +52,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20250801072343-b47e46f09286
+	github.com/margo/dev-repo v0.0.0-20250812055159-820a8d3f4721
 	github.com/princjef/mageutil v1.0.0
 )
 
