@@ -2,6 +2,7 @@ package margo
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -94,6 +95,133 @@ func (o *DeviceVendor) GetEndpoints() []v1alpha2.Endpoint {
 			Version: o.Version,
 			Handler: o.getToken,
 		},
+		// Endpoints for device capabilities
+		{
+			Methods: []string{fasthttp.MethodPost},
+			Route:   route + "/device/{deviceId}/capabilities",
+			Version: o.Version,
+			Handler: o.reportDeviceCapabilities,
+			Parameters: []string{"deviceId?"},
+		},
+		{
+			Methods: []string{fasthttp.MethodPut},
+			Route:   route + "/device/{deviceId}/capabilities",
+			Version: o.Version,
+			Handler: o.updateDeviceCapabilities,
+			Parameters: []string{"deviceId?"},
+		},
+	}
+}
+
+// Handler for POST /device/{deviceId}/capabilities
+func (c *DeviceVendor) reportDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "reportDeviceCapabilities",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
+
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): reportDeviceCapabilities, method: %s", request.Method)
+
+	// Extract deviceId from URL parameters
+	fmt.Println("<---------------Request Prameteres----------------->", request.Parameters)
+	deviceId := request.Parameters["__deviceId"]
+	if deviceId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
+			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
+
+	// Parse request body using the correct DeviceCapabilities type
+	var capabilities margoStdSbiAPI.DeviceCapabilities
+	if err := json.Unmarshal(request.Body, &capabilities); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device capabilities", v1alpha2.BadRequest)
+	}
+
+	// Validate required fields
+	if capabilities.Properties.Id == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
+			"Missing device ID in capabilities", v1alpha2.BadRequest)
+	}
+
+	// Validate deviceId matches the one in properties
+	if capabilities.Properties.Id != deviceId {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "device ID mismatch", v1alpha2.BadRequest),
+			"Device ID in URL does not match device ID in capabilities", v1alpha2.BadRequest)
+	}
+
+	// Call DeviceManager to report capabilities
+	err := c.DeviceManager.ReportDeviceCapabilities(pCtx, deviceId, capabilities)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
+	}
+
+	// Need to Return 201 Created - currently used the 200 status code
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        []byte(`{"message": "Device capabilities reported successfully"}`),
+		ContentType: "application/json",
+	}
+}
+
+// Handler for PUT /device/{deviceId}/capabilities
+func (c *DeviceVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "updateDeviceCapabilities",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
+
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
+
+	// Extract deviceId from URL parameters
+	deviceId := request.Parameters["deviceId"]
+	if deviceId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
+			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
+
+	// Parse request body using the correct DeviceCapabilities type
+	var capabilities margoStdSbiAPI.DeviceCapabilities
+	if err := json.Unmarshal(request.Body, &capabilities); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device capabilities", v1alpha2.BadRequest)
+	}
+
+	// Validate required fields
+	if capabilities.Properties.Id == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
+			"Missing device ID in capabilities", v1alpha2.BadRequest)
+	}
+
+	// Validate deviceId matches the one in properties
+	if capabilities.Properties.Id != deviceId {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "device ID mismatch", v1alpha2.BadRequest),
+			"Device ID in URL does not match device ID in capabilities", v1alpha2.BadRequest)
+	}
+
+	// Call DeviceManager to update capabilities
+	err := c.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceId, capabilities)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update device capabilities", v1alpha2.InternalError)
+	}
+
+	// Need to Return 201 Created - currently used the 200 status code
+	
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        []byte(`{"message": "Device capabilities updated successfully"}`),
+		ContentType: "application/json",
 	}
 }
 
