@@ -1,23 +1,28 @@
 apiVersion: non-margo.org
 kind: ApplicationDeployment
 metadata:
-  name: instance-01
+  name: instance01
 spec:
   appPackageRef:
-    id: 4f6769e8-4b1f-4b04-83f1-fe2b47e4d0d1
+    id: 69391e61-22be-4603-890b-bcbcc32be6cb
   deviceRef:
     id: device-101
   deploymentProfile:
     type: helm.v3
     components:
-      - name: digitron-orchestrator
-        properties:
-          repository: oci://northstarida.azurecr.io/charts/northstarida-digitron-orchestrator
-          revision: 1.0.9
+      - name: nginx
+        properties:  
+          repository: oci://ghcr.io/nginxinc/charts/nginx-ingress
+          revision: "1.2.2"
           wait: true
   parameters:
-    pollFrequency:
-      value: "60"
+    workerProcesses:
+      value: "auto"
       targets:
-        - pointer: settings.pollFrequency
-          components: [digitron-orchestrator]
+      - pointer: config.workerProcesses
+        components: ["nginx"]
+    clientMaxBodySize:
+      value: "1m"
+      targets:
+      - pointer: config.clientMaxBodySize
+        components: ["nginx"]
