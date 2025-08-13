@@ -54,6 +54,8 @@ func (e *WorkloadVendor) Init(config vendors.VendorConfig, factories []managers.
 			e.SolutionsManager = c
 		case *catalogs.CatalogsManager:
 			e.CatalogsManager = c
+		case *solutioncontainers.SolutionContainersManager:
+			e.SolutionContainerManager = c
 		}
 	}
 	if e.AppPkgManager == nil {
@@ -62,9 +64,15 @@ func (e *WorkloadVendor) Init(config vendors.VendorConfig, factories []managers.
 	if e.DeploymentManager == nil {
 		return v1alpha2.NewCOAError(nil, "margo deployment manager is not supplied", v1alpha2.MissingConfig)
 	}
-	// if e.SolutionsManager == nil {
-	// 	return v1alpha2.NewCOAError(nil, "solutions manager is not supplied", v1alpha2.MissingConfig)
-	// }
+	if e.SolutionsManager == nil {
+		return v1alpha2.NewCOAError(nil, "solutions manager is not supplied", v1alpha2.MissingConfig)
+	}
+	if e.CatalogsManager == nil {
+		return v1alpha2.NewCOAError(nil, "catalogs manager is not supplied", v1alpha2.MissingConfig)
+	}
+	if e.SolutionContainerManager == nil {
+		return v1alpha2.NewCOAError(nil, "solutions container manager is not supplied", v1alpha2.MissingConfig)
+	}
 	return nil
 }
 
