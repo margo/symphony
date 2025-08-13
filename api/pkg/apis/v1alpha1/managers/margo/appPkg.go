@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/catalogs"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutioncontainers"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutions"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
@@ -188,7 +191,12 @@ func (s *AppPkgManager) getPkgFromDB(context context.Context, pkgId string) (*ma
 }
 
 // OnboardAppPkg handles the complete application package onboarding process.
-func (s *AppPkgManager) OnboardAppPkg(ctx context.Context, req margoNonStdAPI.ApplicationPackageRequest) (*margoNonStdAPI.ApplicationPackageResp, error) {
+func (s *AppPkgManager) OnboardAppPkg(
+	ctx context.Context,
+	req margoNonStdAPI.ApplicationPackageRequest,
+	solutionsManager *solutions.SolutionsManager,
+	solutionContainerManager *solutioncontainers.SolutionContainersManager,
+	catalogsManager *catalogs.CatalogsManager) (*margoNonStdAPI.ApplicationPackageResp, error) {
 	startTime := time.Now()
 	appPkgLogger.Info("Starting package onboarding process",
 		"packageName", req.Metadata.Name,
@@ -262,7 +270,7 @@ func (s *AppPkgManager) OnboardAppPkg(ctx context.Context, req margoNonStdAPI.Ap
 		"packageName", appPkg.Metadata.Name)
 	go func() {
 		time.Sleep(time.Second * 8)
-		s.processPackageAsync(ctx, appPkg)
+		s.processPackageAsync(ctx, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
 	}()
 
 	onboardingDuration := time.Since(startTime)
@@ -275,7 +283,12 @@ func (s *AppPkgManager) OnboardAppPkg(ctx context.Context, req margoNonStdAPI.Ap
 }
 
 // processPackageAsync handles the asynchronous package processing workflow.
-func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNonStdAPI.ApplicationPackageResp) {
+func (s *AppPkgManager) processPackageAsync(
+	ctx context.Context,
+	appPkg margoNonStdAPI.ApplicationPackageResp,
+	solutionsManager *solutions.SolutionsManager,
+	solutionContainerManager *solutioncontainers.SolutionContainersManager,
+	catalogsManager *catalogs.CatalogsManager) {
 	processStart := time.Now()
 	appPkgLogger.Info("Starting async package processing",
 		"packageId", *appPkg.Metadata.Id,
@@ -324,6 +337,7 @@ func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNon
 				"finalStatus", appPkg.RecentOperation.Status)
 		}
 	}()
+
 	// Initialize package manager
 	appPkgLogger.Debug("Initializing package manager for processing")
 	pkgMgr := packageManager.NewPackageManager()
@@ -333,7 +347,7 @@ func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNon
 		"sourceType", appPkg.Spec.SourceType)
 	switch appPkg.Spec.SourceType {
 	case margoNonStdAPI.GITREPO:
-		err = s.processGitRepository(ctx, pkgMgr, appPkg, &operationContextualInfo)
+		err = s.processGitRepository(ctx, pkgMgr, appPkg, &operationContextualInfo, solutionsManager, solutionContainerManager, catalogsManager)
 	default:
 		err = fmt.Errorf("unsupported source type: %s", appPkg.Spec.SourceType)
 		operationContextualInfo = fmt.Sprintf("Unsupported source type: %s", appPkg.Spec.SourceType)
@@ -344,7 +358,14 @@ func (s *AppPkgManager) processPackageAsync(ctx context.Context, appPkg margoNon
 }
 
 // processGitRepository handles Git repository source processing.
-func (s *AppPkgManager) processGitRepository(ctx context.Context, pkgMgr *packageManager.PackageManager, spec margoNonStdAPI.ApplicationPackageResp, operationContextualInfo *string) error {
+func (s *AppPkgManager) processGitRepository(
+	ctx context.Context,
+	pkgMgr *packageManager.PackageManager,
+	spec margoNonStdAPI.ApplicationPackageResp,
+	operationContextualInfo *string,
+	solutionsManager *solutions.SolutionsManager,
+	solutionContainerManager *solutioncontainers.SolutionContainersManager,
+	catalogsManager *catalogs.CatalogsManager) error {
 	gitProcessStart := time.Now()
 	appPkgLogger.Info("Starting Git repository processing", "packageId", *spec.Metadata.Id, "gitProcessStart", gitProcessStart)
 
@@ -492,7 +513,7 @@ func (s *AppPkgManager) processGitRepository(ctx context.Context, pkgMgr *packag
 	appPkgLogger.Info("Storing Symphony objects in state provider",
 		"packageId", *spec.Metadata.Id)
 
-	if err := s.storeSymphonyObjects(ctx, catalog, solution, solutionContainer); err != nil {
+	if err := s.storeSymphonyObjects(ctx, catalog, solution, solutionContainer, solutionsManager, solutionContainerManager, catalogsManager); err != nil {
 		*operationContextualInfo = fmt.Sprintf("Failed to store Symphony objects: %s", err.Error())
 		appPkgLogger.Error("Failed to store Symphony objects",
 			"packageId", *spec.Metadata.Id,
@@ -882,7 +903,14 @@ func (s *AppPkgManager) convertDeploymentProfilesToComponents(ctx context.Contex
 }
 
 // storeSymphonyObjects stores the converted Symphony objects in the appropriate systems
-func (s *AppPkgManager) storeSymphonyObjects(ctx context.Context, catalog *model.CatalogState, solution *model.SolutionState, container *model.SolutionContainerState) error {
+func (s *AppPkgManager) storeSymphonyObjects(
+	ctx context.Context,
+	catalog *model.CatalogState,
+	solution *model.SolutionState,
+	container *model.SolutionContainerState,
+	solutionsManager *solutions.SolutionsManager,
+	solutionContainerManager *solutioncontainers.SolutionContainersManager,
+	catalogsManager *catalogs.CatalogsManager) error {
 	appPkgLogger.Info("Storing Symphony objects",
 		"catalogId", catalog.ObjectMeta.Name,
 		"solutionId", solution.ObjectMeta.Name,
@@ -890,7 +918,7 @@ func (s *AppPkgManager) storeSymphonyObjects(ctx context.Context, catalog *model
 
 	// Store Catalog
 	appPkgLogger.Debug("Storing Catalog object", "catalogId", catalog.ObjectMeta.Name)
-	if err := s.storeCatalogObject(ctx, catalog); err != nil {
+	if err := catalogsManager.UpsertState(ctx, catalog.ObjectMeta.Name, *catalog); err != nil {
 		appPkgLogger.Error("Failed to store Catalog object",
 			"catalogId", catalog.ObjectMeta.Name,
 			"error", err)
@@ -899,7 +927,7 @@ func (s *AppPkgManager) storeSymphonyObjects(ctx context.Context, catalog *model
 
 	// Store Solution
 	appPkgLogger.Debug("Storing Solution object", "solutionId", solution.ObjectMeta.Name)
-	if err := s.storeSolutionObject(ctx, solution); err != nil {
+	if err := solutionsManager.UpsertState(ctx, solution.ObjectMeta.Name, *solution); err != nil {
 		appPkgLogger.Error("Failed to store Solution object",
 			"solutionId", solution.ObjectMeta.Name,
 			"error", err)
@@ -908,7 +936,7 @@ func (s *AppPkgManager) storeSymphonyObjects(ctx context.Context, catalog *model
 
 	// Store SolutionContainer
 	appPkgLogger.Debug("Storing SolutionContainer object", "containerId", container.ObjectMeta.Name)
-	if err := s.storeSolutionContainerObject(ctx, container); err != nil {
+	if err := solutionContainerManager.UpsertState(ctx, container.ObjectMeta.Name, *container); err != nil {
 		appPkgLogger.Error("Failed to store SolutionContainer object",
 			"containerId", container.ObjectMeta.Name,
 			"error", err)

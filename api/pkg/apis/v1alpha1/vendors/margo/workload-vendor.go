@@ -136,7 +136,7 @@ func (c *WorkloadVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COA
 	}
 
 	// Onboard app package
-	appPkg, err := c.AppPkgManager.OnboardAppPkg(pCtx, appPkgReq)
+	appPkg, err := c.AppPkgManager.OnboardAppPkg(pCtx, appPkgReq, c.SolutionsManager, c.SolutionContainerManager, c.CatalogsManager)
 	if err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to onboard the app", v1alpha2.InternalError)
 	}
