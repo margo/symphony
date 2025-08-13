@@ -764,6 +764,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.CatalogSpec{
+			RootResource: appDesc.Metadata.Name,
 			Properties: map[string]interface{}{
 				"displayName": appDesc.Metadata.Name,
 				"description": appDesc.Metadata.Description,
@@ -813,8 +814,9 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.SolutionSpec{
-			DisplayName: appDesc.Metadata.Name,
-			Components:  components,
+			RootResource: appDesc.Metadata.Name,
+			DisplayName:  appDesc.Metadata.Name,
+			Components:   components,
 		},
 	}
 
@@ -949,99 +951,6 @@ func (s *AppPkgManager) storeSymphonyObjects(
 		"containerId", container.ObjectMeta.Name)
 
 	return nil
-}
-
-// storeCatalogObject stores a Catalog object in the state provider
-func (s *AppPkgManager) storeCatalogObject(ctx context.Context, catalog *model.CatalogState) error {
-	catalogMetadata := map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  "catalogs",
-		"namespace": catalog.ObjectMeta.Namespace,
-		"kind":      "Catalog",
-	}
-
-	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: catalogMetadata,
-		Value: states.StateEntry{
-			ID:   catalog.ObjectMeta.Name,
-			Body: catalog,
-		},
-	})
-
-	if err != nil {
-		appPkgLogger.Error("Failed to upsert catalog in state provider",
-			"catalogId", catalog.ObjectMeta.Name,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Successfully stored catalog in state provider",
-			"catalogId", catalog.ObjectMeta.Name)
-	}
-
-	return err
-}
-
-// storeSolutionObject stores a Solution object in the state provider
-func (s *AppPkgManager) storeSolutionObject(ctx context.Context, solution *model.SolutionState) error {
-	solutionMetadata := map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  "solutions",
-		"namespace": solution.ObjectMeta.Namespace,
-		"kind":      "Solution",
-	}
-
-	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: solutionMetadata,
-		Value: states.StateEntry{
-			ID:   solution.ObjectMeta.Name,
-			Body: solution,
-		},
-	})
-
-	if err != nil {
-		appPkgLogger.Error("Failed to upsert solution in state provider",
-			"solutionId", solution.ObjectMeta.Name,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Successfully stored solution in state provider",
-			"solutionId", solution.ObjectMeta.Name)
-	}
-
-	return err
-}
-
-// storeSolutionContainerObject stores a SolutionContainer object in the state provider
-func (s *AppPkgManager) storeSolutionContainerObject(ctx context.Context, container *model.SolutionContainerState) error {
-	containerMetadata := map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  "solutioncontainers",
-		"namespace": container.ObjectMeta.Namespace,
-		"kind":      "SolutionContainer",
-	}
-
-	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: containerMetadata,
-		Value: states.StateEntry{
-			ID:   container.ObjectMeta.Name,
-			Body: container,
-		},
-	})
-
-	if err != nil {
-		appPkgLogger.Error("Failed to upsert solution container in state provider",
-			"containerId", container.ObjectMeta.Name,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Successfully stored solution container in state provider",
-			"containerId", container.ObjectMeta.Name)
-	}
-
-	return err
 }
 
 // DeleteAppPkg handles application package deletion
