@@ -757,10 +757,11 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 		"appName", appDesc.Metadata.Name)
 
 	catalogId := "cat-" + appDesc.Metadata.Id
+	metadataName := appDesc.Metadata.Name + appDesc.Metadata.Id + "-v-1"
 
 	catalog := &model.CatalogState{
 		ObjectMeta: model.ObjectMeta{
-			Name:      catalogId,
+			Name:      metadataName,
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.CatalogSpec{
@@ -797,7 +798,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 		"appId", appDesc.Metadata.Id,
 		"catalogId", catalogId)
 
-	solutionId := "sol-" + appDesc.Metadata.Id
+	solutionId := appDesc.Metadata.Name + appDesc.Metadata.Id + "-v-1"
 
 	// Convert deployment profiles to components
 	components, err := s.convertDeploymentProfilesToComponents(ctx, appDesc.DeploymentProfiles)
