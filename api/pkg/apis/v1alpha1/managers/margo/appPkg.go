@@ -516,23 +516,14 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*Applicatio
 		"packagePath", pkgPath)
 
 	// Look for application description YAML file
-	descriptionFile := filepath.Join(pkgPath, "application.yaml")
+	descriptionFile := filepath.Join(pkgPath, "margo.yaml")
 	if _, err := os.Stat(descriptionFile); os.IsNotExist(err) {
 		// Try alternative names
-		altFiles := []string{"app.yaml", "application.yml", "app.yml"}
 		found := false
-		for _, altFile := range altFiles {
-			altPath := filepath.Join(pkgPath, altFile)
-			if _, err := os.Stat(altPath); err == nil {
-				descriptionFile = altPath
-				found = true
-				break
-			}
-		}
 		if !found {
 			appPkgLogger.Error("Application description file not found",
 				"packagePath", pkgPath,
-				"searchedFiles", append([]string{"application.yaml"}, altFiles...))
+				"searchedFiles", "margo.yaml")
 			return nil, nil, fmt.Errorf("application description file not found in package")
 		}
 	}
