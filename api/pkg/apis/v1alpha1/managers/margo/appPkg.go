@@ -756,8 +756,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 		"appId", appDesc.Metadata.Id,
 		"appName", appDesc.Metadata.Name)
 
-	catalogId := "cat-" + appDesc.Metadata.Id
-	metadataName := appDesc.Metadata.Name + appDesc.Metadata.Id + "-v-1"
+	metadataName := appDesc.Metadata.Id + "-v-1"
 
 	catalog := &model.CatalogState{
 		ObjectMeta: model.ObjectMeta{
@@ -765,7 +764,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.CatalogSpec{
-			RootResource: appDesc.Metadata.Name,
+			RootResource: appDesc.Metadata.Id,
 			Properties: map[string]interface{}{
 				"displayName": appDesc.Metadata.Name,
 				"description": appDesc.Metadata.Description,
@@ -782,7 +781,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 	}
 
 	appPkgLogger.Debug("Catalog object created successfully",
-		"catalogId", catalogId,
+		"catalog", metadataName,
 		"appId", appDesc.Metadata.Id)
 
 	return catalog, nil
@@ -798,7 +797,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 		"appId", appDesc.Metadata.Id,
 		"catalogId", catalogId)
 
-	solutionId := appDesc.Metadata.Name + appDesc.Metadata.Id + "-v-1"
+	solutionId := appDesc.Metadata.Id + "-v-1"
 
 	// Convert deployment profiles to components
 	components, err := s.convertDeploymentProfilesToComponents(ctx, appDesc.DeploymentProfiles)
@@ -815,7 +814,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.SolutionSpec{
-			RootResource: appDesc.Metadata.Name,
+			RootResource: appDesc.Metadata.Id,
 			DisplayName:  appDesc.Metadata.Name,
 			Components:   components,
 		},
