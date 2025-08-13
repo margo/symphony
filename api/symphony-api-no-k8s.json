@@ -12,7 +12,7 @@
       "version": "0.45.1"
     },
     "currentSite": {
-      "baseUrl": "http://localhost:8082/v1alpha2/",
+      "baseUrl": "172.19.59.148:8082/v1alpha2/",
       "username": "admin",
       "password": "admin"
     }
