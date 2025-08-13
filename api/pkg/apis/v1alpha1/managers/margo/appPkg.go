@@ -767,16 +767,18 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 			CatalogType:  "solution",
 			RootResource: appDesc.Metadata.Id,
 			Properties: map[string]interface{}{
-				"displayName": appDesc.Metadata.Name,
-				"description": appDesc.Metadata.Description,
-				"version":     appDesc.Metadata.Version,
-				"sourcePackage": map[string]interface{}{
-					"sourceType":  convCtx.SourceType,
-					"sourceInfo":  convCtx.SourceInfo,
-					"packageName": convCtx.SourcePackageName,
+				"spec": map[string]interface{}{
+					"displayName": appDesc.Metadata.Name,
+					"description": appDesc.Metadata.Description,
+					"version":     appDesc.Metadata.Version,
+					"sourcePackage": map[string]interface{}{
+						"sourceType":  convCtx.SourceType,
+						"sourceInfo":  convCtx.SourceInfo,
+						"packageName": convCtx.SourcePackageName,
+					},
+					"metadata":      appDesc.Metadata,
+					"resourceCount": len(resources),
 				},
-				"metadata":      appDesc.Metadata,
-				"resourceCount": len(resources),
 			},
 		},
 	}
