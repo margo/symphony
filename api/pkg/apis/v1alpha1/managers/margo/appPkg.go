@@ -19,6 +19,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/kr/pretty"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/non-standard/pkg/packageManager"
 	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
@@ -822,6 +823,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.SolutionSpec{
+			Version:      appDesc.Metadata.Version,
 			RootResource: appDesc.Metadata.Id,
 			DisplayName:  appDesc.Metadata.Name,
 			Components:   components,
@@ -831,7 +833,8 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 	appPkgLogger.Debug("Solution object created successfully",
 		"solutionId", solutionId,
 		"appId", appDesc.Metadata.Id,
-		"componentCount", len(components))
+		"componentCount", len(components),
+		"entireSolution", pretty.Sprint(solution))
 
 	return solution, nil
 }
