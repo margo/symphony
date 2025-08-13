@@ -764,6 +764,7 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 			Namespace: appPkgNamespace,
 		},
 		Spec: &model.CatalogSpec{
+			CatalogType:  "solution",
 			RootResource: appDesc.Metadata.Id,
 			Properties: map[string]interface{}{
 				"displayName": appDesc.Metadata.Name,
