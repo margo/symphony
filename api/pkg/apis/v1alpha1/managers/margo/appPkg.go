@@ -375,17 +375,25 @@ func (s *AppPkgManager) processGitRepository(ctx context.Context, pkgMgr *packag
 		appPkgLogger.Debug("No Git authentication provided, using anonymous access", "packageId", *spec.Metadata.Id)
 	}
 
+	branch := "main"
+	if gitRepo.Branch != nil {
+		branch = *gitRepo.Branch
+	}
+	subPath := ""
+	if gitRepo.SubPath != nil {
+		subPath = *gitRepo.SubPath
+	}
 	// Download package from Git repository
 	appPkgLogger.Info("Downloading package from Git repository",
 		"packageId", *spec.Metadata.Id,
 		"gitUrl", gitRepo.Url,
-		"branch", gitRepo.Branch,
-		"subPath", gitRepo.SubPath)
+		"branch", branch,
+		"subPath", subPath)
 
 	pkgPath, downloadedAppPkg, err := pkgMgr.LoadPackageFromGit(
 		gitRepo.Url,
-		*gitRepo.Branch,
-		*gitRepo.SubPath,
+		branch,
+		subPath,
 		gitAuth,
 	)
 	if err != nil {
