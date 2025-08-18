@@ -97,18 +97,25 @@ func (o *DeviceVendor) GetEndpoints() []v1alpha2.Endpoint {
 		},
 		// Endpoints for device capabilities
 		{
-			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/device/{deviceId}/capabilities",
-			Version: o.Version,
-			Handler: o.reportDeviceCapabilities,
+			Methods:    []string{fasthttp.MethodPost},
+			Route:      route + "/device/{deviceId}/capabilities",
+			Version:    o.Version,
+			Handler:    o.reportDeviceCapabilities,
 			Parameters: []string{"deviceId?"},
 		},
 		{
-			Methods: []string{fasthttp.MethodPut},
-			Route:   route + "/device/{deviceId}/capabilities",
-			Version: o.Version,
-			Handler: o.updateDeviceCapabilities,
+			Methods:    []string{fasthttp.MethodPut},
+			Route:      route + "/device/{deviceId}/capabilities",
+			Version:    o.Version,
+			Handler:    o.updateDeviceCapabilities,
 			Parameters: []string{"deviceId?"},
+		},
+		{
+			Methods:    []string{fasthttp.MethodPost},
+			Route:      route + "/device/{deviceId}/deployment/{deploymentId}/status",
+			Version:    o.Version,
+			Handler:    o.onDeploymentStatusUpdate,
+			Parameters: []string{"deviceId?", "deploymentId?"},
 		},
 	}
 }
@@ -217,7 +224,7 @@ func (c *DeviceVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1a
 	}
 
 	// Need to Return 201 Created - currently used the 200 status code
-	
+
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.OK,
 		Body:        []byte(`{"message": "Device capabilities updated successfully"}`),
@@ -325,4 +332,41 @@ func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.CO
 
 	// Create success response
 	return createSuccessResponse(span, v1alpha2.OK, &desiredStates)
+}
+
+func (c *DeviceVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1alpha2.COAResponse {
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "onDeploymentStatusUpdate",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
+
+	deviceId := request.Parameters["__deviceId"]
+	if deviceId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
+			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
+	deploymentId := request.Parameters["__deploymentId"]
+	if deploymentId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "deploymentId is required", v1alpha2.BadRequest),
+			"Missing deploymentId parameter", v1alpha2.BadRequest)
+	}
+
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onDeploymentStatusUpdate, method: %s, %s", request.Method, string(request.Body))
+	// Parse request
+	var statusReq margoStdSbiAPI.DeploymentStatus
+	if err := json.Unmarshal(request.Body, &statusReq); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
+	}
+
+	if err := c.DeviceManager.OnDeploymentStatus(pCtx, deviceId, deploymentId, string(statusReq.Status.State)); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update the status", v1alpha2.BadRequest)
+	}
+
+	return createSuccessResponse(span, 201, (*int)(nil))
 }

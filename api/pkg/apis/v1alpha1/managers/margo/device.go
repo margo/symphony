@@ -172,9 +172,29 @@ func (s *DeviceManager) onUpdateDeploymentEvent(topic string, event v1alpha2.Eve
 
 // Called when device reports status update for the deployments
 func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploymentId string, status string) error {
-	// Update device DB with new status
-	// ...
-	// Notify deployment manager
+	if deviceId == "" || deploymentId == "" || status == "" {
+		return fmt.Errorf("deviceId, deploymentId, and status are required")
+	}
+
+	// Update deployment status in database
+	allDeployments, _ := s.GetDeploymentsByDevice(ctx, deviceId)
+	var deployment *margoNonStdAPI.ApplicationDeploymentResp
+	for _, deploymentInDB := range allDeployments {
+		if deploymentInDB.Metadata.Id == &deploymentId {
+			deployment = &deploymentInDB
+			break
+		}
+	}
+	if deployment == nil {
+		return fmt.Errorf("deployment: %s doesnot seem to be under device: %s", deploymentId, deviceId)
+	}
+	// Missing: Validate status values
+	deployment.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&status)
+
+	if err := s.saveAppState(ctx, deviceId, *deployment); err != nil {
+		return fmt.Errorf("failed to store update the app status in database, %s", err.Error())
+	}
+
 	s.Manager.Context.Publish("deploymentStatusUpdates", v1alpha2.Event{
 		Body: map[string]interface{}{
 			"deploymentId": deploymentId,
