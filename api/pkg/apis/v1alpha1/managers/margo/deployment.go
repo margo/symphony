@@ -304,6 +304,25 @@ func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId s
 
 func (s *DeploymentManager) onDeploymentStatusUpdate(topic string, event v1alpha2.Event) error {
 	// update the status of the deployment in database
+	deviceLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Received event on topic '%s'", topic)
+
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	if !ok {
+		deviceLogger.ErrorfCtx(context.Background(), "onDeploymentStatusUpdate: Invalid event body: deployment is missing or not of the correct type")
+		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	deviceId := *deploymentResp.Spec.DeviceRef.Id
+
+	// Save app state to device's local database
+	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(context.Background(), "onDeploymentStatusUpdate: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
+		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
 	return nil
 }
 

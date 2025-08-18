@@ -195,11 +195,10 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 		return fmt.Errorf("failed to store update the app status in database, %s", err.Error())
 	}
 
+	appState, _ := s.getAppState(ctx, deviceId, deploymentId)
+
 	s.Manager.Context.Publish("deploymentStatusUpdates", v1alpha2.Event{
-		Body: map[string]interface{}{
-			"deploymentId": deploymentId,
-			"status":       status,
-		},
+		Body: appState,
 	})
 	return nil
 }
