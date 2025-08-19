@@ -138,7 +138,7 @@ func (c *WorkloadVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COA
 	workloadVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): onboardAppPkg, method: %s, %s", request.Method, string(request.Body))
 
 	// Parse request
-	var appPkgReq margoNonStdAPI.ApplicationPackageRequest
+	var appPkgReq margoNonStdAPI.ApplicationPackageManifestRequest
 	if err := json.Unmarshal(request.Body, &appPkgReq); err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
@@ -245,13 +245,18 @@ func (c *WorkloadVendor) createDeployment(request v1alpha2.COARequest) v1alpha2.
 	workloadVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): createDeployment, method: %s, %s", request.Method, string(request.Body))
 
 	// Parse request
-	var deploymentReq margoNonStdAPI.ApplicationDeploymentRequest
+	var deploymentReq margoNonStdAPI.ApplicationDeploymentManifestRequest
 	if err := json.Unmarshal(request.Body, &deploymentReq); err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
+	existingAppPkg, err := c.AppPkgManager.GetAppPkg(pCtx, deploymentReq.Spec.AppPackageRef.Id)
+	if err != nil {
+		return createErrorResponse(workloadVendorLogger, span, err, "referenced app package doesn't exist", v1alpha2.BadRequest)
+	}
+
 	// Onboard app package
-	appPkg, err := c.DeploymentManager.CreateDeployment(pCtx, deploymentReq)
+	appPkg, err := c.DeploymentManager.CreateDeployment(pCtx, deploymentReq, *existingAppPkg)
 	if err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to create the app deployment", v1alpha2.InternalError)
 	}

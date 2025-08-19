@@ -129,7 +129,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 func (s *DeviceManager) onNewDeploymentEvent(topic string, event v1alpha2.Event) error {
 	deviceLogger.InfofCtx(context.Background(), "onNewDeploymentEvent: Received event on topic '%s'", topic)
 
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
 	if !ok {
 		deviceLogger.ErrorfCtx(context.Background(), "onNewDeploymentEvent: Invalid event body: deployment is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -153,7 +153,7 @@ func (s *DeviceManager) onNewDeploymentEvent(topic string, event v1alpha2.Event)
 func (s *DeviceManager) onUpdateDeploymentEvent(topic string, event v1alpha2.Event) error {
 	deploymentLogger.InfofCtx(context.Background(), "onUpdateDeploymentEvent: Received event on topic '%s'", topic)
 
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
 	if !ok {
 		deviceLogger.ErrorfCtx(context.Background(), "onUpdateDeploymentEvent: Invalid event body: deployment is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -178,7 +178,7 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 
 	// Update deployment status in database
 	allDeployments, _ := s.GetDeploymentsByDevice(ctx, deviceId)
-	var deployment *margoNonStdAPI.ApplicationDeploymentResp
+	var deployment *margoNonStdAPI.ApplicationDeploymentManifestResp
 	for _, deploymentInDB := range allDeployments {
 		if deploymentInDB.Metadata.Id == &deploymentId {
 			deployment = &deploymentInDB
@@ -204,7 +204,7 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 }
 
 // saveAppState saves the application deployment state to the state provider.
-func (s *DeviceManager) saveAppState(context context.Context, deviceId string, deployment margoNonStdAPI.ApplicationDeploymentResp) error {
+func (s *DeviceManager) saveAppState(context context.Context, deviceId string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
@@ -223,7 +223,7 @@ func (s *DeviceManager) saveAppState(context context.Context, deviceId string, d
 }
 
 // updateAppState updates the application deployment state in the state provider.
-func (s *DeviceManager) updateAppState(context context.Context, deviceId string, deployment margoNonStdAPI.ApplicationDeploymentResp) error {
+func (s *DeviceManager) updateAppState(context context.Context, deviceId string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
@@ -257,8 +257,8 @@ func (s *DeviceManager) removeAppState(context context.Context, deviceId string,
 }
 
 // listAppStates is not implemented.
-func (s *DeviceManager) listAppStates(context context.Context, deviceId string) ([]margoNonStdAPI.ApplicationDeploymentResp, error) {
-	var deployments []margoNonStdAPI.ApplicationDeploymentResp
+func (s *DeviceManager) listAppStates(context context.Context, deviceId string) ([]margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
+	var deployments []margoNonStdAPI.ApplicationDeploymentManifestResp
 	entries, _, err := s.StateProvider.List(context, states.ListRequest{
 		Metadata: deviceAppDeploymentMetadata,
 	})
@@ -268,7 +268,7 @@ func (s *DeviceManager) listAppStates(context context.Context, deviceId string) 
 	}
 	fmt.Println("Entries found: ", pretty.Sprint(entries))
 	for _, entry := range entries {
-		var appState margoNonStdAPI.ApplicationDeploymentResp
+		var appState margoNonStdAPI.ApplicationDeploymentManifestResp
 		jData, _ := json.Marshal(entry.Body)
 		err = json.Unmarshal(jData, &appState)
 		if err != nil {
@@ -282,7 +282,7 @@ func (s *DeviceManager) listAppStates(context context.Context, deviceId string) 
 }
 
 // getAppState retrieves the application deployment state from the state provider.
-func (s *DeviceManager) getAppState(context context.Context, deviceId string, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+func (s *DeviceManager) getAppState(context context.Context, deviceId string, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
 	compositeKey := s.getCompositeKey(deviceId, deploymentId)
 	entry, err := s.StateProvider.Get(context, states.GetRequest{
 		Metadata: deviceAppDeploymentMetadata,
@@ -293,7 +293,7 @@ func (s *DeviceManager) getAppState(context context.Context, deviceId string, de
 		return nil, fmt.Errorf("failed to get app state for deployment '%s' on device '%s': %w", deploymentId, deviceId, err)
 	}
 
-	var appState margoNonStdAPI.ApplicationDeploymentResp
+	var appState margoNonStdAPI.ApplicationDeploymentManifestResp
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &appState)
 	if err != nil {
@@ -585,8 +585,8 @@ func (s *DeviceManager) getCompositeKey(deviceId string, deploymentId string) st
 }
 
 // GetDeploymentsByDevice retrieves all deployments for a given device ID.
-func (s *DeviceManager) GetDeploymentsByDevice(ctx context.Context, deviceId string) ([]margoNonStdAPI.ApplicationDeploymentResp, error) {
-	var deployments []margoNonStdAPI.ApplicationDeploymentResp
+func (s *DeviceManager) GetDeploymentsByDevice(ctx context.Context, deviceId string) ([]margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
+	var deployments []margoNonStdAPI.ApplicationDeploymentManifestResp
 	entries, _, err := s.StateProvider.List(ctx, states.ListRequest{
 		Metadata: deviceMetadata,
 	})
@@ -597,7 +597,7 @@ func (s *DeviceManager) GetDeploymentsByDevice(ctx context.Context, deviceId str
 
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.ID, deviceId+"-") {
-			var deployment margoNonStdAPI.ApplicationDeploymentResp
+			var deployment margoNonStdAPI.ApplicationDeploymentManifestResp
 			jData, _ := json.Marshal(entry.Body)
 			err = json.Unmarshal(jData, &deployment)
 			if err == nil {
@@ -613,7 +613,7 @@ func (s *DeviceManager) GetDeploymentsByDevice(ctx context.Context, deviceId str
 }
 
 // ConvertNBIAppDeploymentToSBIAppDeployment converts AppDeployment to AppState.
-func ConvertNBIAppDeploymentToSBIAppDeployment(appDeployment *margoNonStdAPI.ApplicationDeploymentResp) (*sbi.AppDeployment, error) {
+func ConvertNBIAppDeploymentToSBIAppDeployment(appDeployment *margoNonStdAPI.ApplicationDeploymentManifestResp) (*sbi.AppDeployment, error) {
 	var appDeploymentOnSBI sbi.AppDeployment
 	{
 		by, err := json.Marshal(appDeployment)

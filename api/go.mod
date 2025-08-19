@@ -28,7 +28,7 @@ require (
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20250812055159-820a8d3f4721
+	github.com/margo/dev-repo v0.0.0-20250819114134-782243c6dd2d
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	gopkg.in/yaml.v2 v2.4.0

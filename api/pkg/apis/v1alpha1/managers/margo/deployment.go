@@ -94,7 +94,7 @@ func (s *DeploymentManager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (s *DeploymentManager) storeDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentResp) error {
+func (s *DeploymentManager) storeDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
 	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: deploymentMetadata,
@@ -111,7 +111,7 @@ func (s *DeploymentManager) storeDeploymentInDB(ctx context.Context, id string, 
 	return nil
 }
 
-func (s *DeploymentManager) updateDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentResp) error {
+func (s *DeploymentManager) updateDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
 	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: deploymentMetadata,
@@ -143,7 +143,7 @@ func (s *DeploymentManager) deleteDeploymentFromDB(ctx context.Context, deployme
 	return nil
 }
 
-func (s *DeploymentManager) getDeploymentFromDB(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+func (s *DeploymentManager) getDeploymentFromDB(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
 	entry, err := s.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: deploymentMetadata,
 		ID:       deploymentId,
@@ -153,7 +153,7 @@ func (s *DeploymentManager) getDeploymentFromDB(ctx context.Context, deploymentI
 		return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
 	}
 
-	var deployment margoNonStdAPI.ApplicationDeploymentResp
+	var deployment margoNonStdAPI.ApplicationDeploymentManifestResp
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &deployment)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *DeploymentManager) getDeploymentFromDB(ctx context.Context, deploymentI
 }
 
 // CreateDeployment handles the deployment of an application deployment.
-func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq margoNonStdAPI.ApplicationDeploymentRequest) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq margoNonStdAPI.ApplicationDeploymentManifestRequest, existingAppPkg ApplicationPackage) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Starting deployment process for deployment '%s'", deploymentReq.Metadata.Name)
 
 	// Validate input parameters
@@ -177,15 +177,15 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq 
 
 	// Generate unique identifier for the deployment
 	now := time.Now().UTC()
-	deploymentId := margoUtils.GenerateAppDeploymentId()                         // Assuming you have a utility function for this
-	operation := margoNonStdAPI.DEPLOY                                           // Changed from ONBOARD to DEPLOY
-	operationState := margoNonStdAPI.ApplicationDeploymentOperationStatusPENDING // Changed from ApplicationPackageOperationStatusPENDING to ApplicationDeploymentOperationStatusPENDING
+	deploymentId := margoUtils.GenerateAppDeploymentId()
+	operation := margoNonStdAPI.DEPLOY
+	operationState := margoNonStdAPI.ApplicationDeploymentOperationStatusPENDING
 
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Generated deployment ID '%s' for deployment '%s'", deploymentId, deploymentReq.Metadata.Name)
 	deploymentLogger.DebugfCtx(ctx, "CreateDeployment: Initial operation state set to '%s'", operationState)
 
-	// Convert ApplicationDeploymentRequest to ApplicationDeploymentResp
-	var deploymentResp margoNonStdAPI.ApplicationDeploymentResp
+	// Convert ApplicationDeploymentManifestRequest to ApplicationDeploymentResp
+	var deploymentResp margoNonStdAPI.ApplicationDeploymentManifestResp
 	{
 		by, _ := json.Marshal(&deploymentReq)
 		json.Unmarshal(by, &deploymentResp)
@@ -205,6 +205,62 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq 
 		},
 		LastUpdateTime: &now,
 		State:          &deploymentState,
+	}
+
+	for _, profile := range existingAppPkg.Description.DeploymentProfiles {
+		if profile.Type == margoNonStdAPI.AppDeploymentProfileType(deploymentReq.Spec.DeploymentProfile.Type) &&
+			margoNonStdAPI.DeploymentExecutionProfileType(profile.Type) == margoNonStdAPI.DeploymentExecutionProfileTypeHelmV3 {
+
+			// Create a map of app description components for efficient lookup
+			appDescComponents := make(map[string]margoNonStdAPI.HelmApplicationDeploymentProfileComponent)
+			for _, componentInAppDescription := range profile.Components {
+				componentAsHelm, err := componentInAppDescription.AsHelmApplicationDeploymentProfileComponent()
+				if err != nil {
+					deploymentLogger.Warn("Failed to parse helm component from app description, skipping",
+						"error", err)
+					continue
+				}
+				appDescComponents[componentAsHelm.Name] = componentAsHelm
+			}
+
+			// Process each component in deployment request
+			for i, component := range deploymentReq.Spec.DeploymentProfile.Components {
+				helmComponent, err := component.AsHelmDeploymentProfileComponent()
+				if err != nil {
+					deploymentLogger.Warn("Failed to parse helm component from deployment request, skipping",
+						"componentIndex", i,
+						"error", err)
+					continue
+				}
+
+				// Find matching component in app description by name
+				if appDescComponent, exists := appDescComponents[helmComponent.Name]; exists {
+					deploymentLogger.Debug("Merging component properties",
+						"componentName", helmComponent.Name)
+
+					// Merge properties: start with app description, override with deployment request
+					mergedProperties := s.mergeHelmComponentProperties(appDescComponent, helmComponent)
+					helmComponent.Properties = mergedProperties.Properties
+
+					// Update the component back in the deployment request
+					if err := deploymentReq.Spec.DeploymentProfile.Components[i].FromHelmDeploymentProfileComponent(helmComponent); err != nil {
+						deploymentLogger.Error("Failed to update merged component in deployment request",
+							"componentName", helmComponent.Name,
+							"error", err)
+						return nil, fmt.Errorf("failed to update component %s: %w", helmComponent.Name, err)
+					}
+
+					deploymentLogger.Debug("Successfully merged and updated component",
+						"componentName", helmComponent.Name)
+				} else {
+					deploymentLogger.Warn("Component in deployment request not found in app description",
+						"componentName", helmComponent.Name,
+						"availableComponents", s.getAppDescComponentNames(appDescComponents))
+				}
+			}
+
+			break // Found matching profile, exit loop
+		}
 	}
 
 	deploymentLogger.DebugfCtx(ctx, "CreateDeployment: deployment object prepared with ID '%s', Name '%s', Operation '%s', State '%s'",
@@ -230,8 +286,56 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq 
 	return &deploymentResp, nil
 }
 
+// mergeHelmComponentProperties merges properties with deployment request taking precedence
+func (s *DeploymentManager) mergeHelmComponentProperties(
+	appDescProps margoNonStdAPI.HelmApplicationDeploymentProfileComponent,
+	deploymentProps margoNonStdAPI.HelmDeploymentProfileComponent) margoNonStdAPI.HelmDeploymentProfileComponent {
+
+	merged := margoNonStdAPI.HelmDeploymentProfileComponent{}
+
+	// Start with app description properties as defaults
+	merged.Properties.Repository = appDescProps.Properties.Repository
+	if appDescProps.Properties.Revision != nil {
+		revision := *appDescProps.Properties.Revision
+		merged.Properties.Revision = &revision
+	}
+	if appDescProps.Properties.Timeout != nil {
+		timeout := *appDescProps.Properties.Timeout
+		merged.Properties.Timeout = &timeout
+	}
+	if appDescProps.Properties.Wait != nil {
+		wait := *appDescProps.Properties.Wait
+		merged.Properties.Wait = &wait
+	}
+
+	// Override with deployment request properties (these have precedence)
+	if deploymentProps.Properties.Repository != "" {
+		merged.Properties.Repository = deploymentProps.Properties.Repository
+	}
+	if deploymentProps.Properties.Revision != nil {
+		merged.Properties.Revision = deploymentProps.Properties.Revision
+	}
+	if deploymentProps.Properties.Timeout != nil {
+		merged.Properties.Timeout = deploymentProps.Properties.Timeout
+	}
+	if deploymentProps.Properties.Wait != nil {
+		merged.Properties.Wait = deploymentProps.Properties.Wait
+	}
+
+	return merged
+}
+
+// getAppDescComponentNames extracts component names for logging
+func (s *DeploymentManager) getAppDescComponentNames(components map[string]margoNonStdAPI.HelmApplicationDeploymentProfileComponent) []string {
+	names := make([]string, 0, len(components))
+	for name := range components {
+		names = append(names, name)
+	}
+	return names
+}
+
 func (s *DeploymentManager) ListDeployments(ctx context.Context) (*margoNonStdAPI.ApplicationDeploymentListResp, error) {
-	var deployments []margoNonStdAPI.ApplicationDeploymentResp
+	var deployments []margoNonStdAPI.ApplicationDeploymentManifestResp
 	entries, _, err := s.StateProvider.List(ctx, states.ListRequest{
 		Metadata: deploymentMetadata,
 	})
@@ -241,7 +345,7 @@ func (s *DeploymentManager) ListDeployments(ctx context.Context) (*margoNonStdAP
 	}
 
 	for _, entry := range entries {
-		var deployment margoNonStdAPI.ApplicationDeploymentResp
+		var deployment margoNonStdAPI.ApplicationDeploymentManifestResp
 		jData, _ := json.Marshal(entry.Body)
 		err = json.Unmarshal(jData, &deployment)
 		if err == nil {
@@ -266,7 +370,7 @@ func (s *DeploymentManager) ListDeployments(ctx context.Context) (*margoNonStdAP
 	return &resp, nil
 }
 
-func (s *DeploymentManager) GetDeployments(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+func (s *DeploymentManager) GetDeployments(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
 	deployment, err := s.getDeploymentFromDB(ctx, deploymentId)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "GetDeployments: Failed to get deployment '%s': %v", deploymentId, err)
@@ -278,7 +382,7 @@ func (s *DeploymentManager) GetDeployments(ctx context.Context, deploymentId str
 }
 
 // DeleteDeployment initiates the deletion process for an application deployment.
-func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
+func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
 	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Starting deletion process for deployment ID '%s'", deploymentId)
 
 	// Validate input parameter
@@ -337,7 +441,7 @@ func (s *DeploymentManager) onDeploymentStatusUpdate(topic string, event v1alpha
 	// update the status of the deployment in database
 	deviceLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Received event on topic '%s'", topic)
 
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
 	if !ok {
 		deviceLogger.ErrorfCtx(context.Background(), "onDeploymentStatusUpdate: Invalid event body: deployment is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -361,7 +465,7 @@ func (s *DeploymentManager) onAppPkgAddition(topic string, event v1alpha2.Event)
 	// update the status of the deployment in database
 	deviceLogger.InfofCtx(context.Background(), "onAppPkgAddition: Received event on topic '%s'", topic)
 
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
 	if !ok {
 		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgAddition: Invalid event body: deployment is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -385,7 +489,7 @@ func (s *DeploymentManager) onAppPkgDeletion(topic string, event v1alpha2.Event)
 	// update the status of the deployment in database
 	deviceLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Received event on topic '%s'", topic)
 
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
 	if !ok {
 		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgDeletion: Invalid event body: deployment is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -409,7 +513,7 @@ func (s *DeploymentManager) onAppPkgUpdate(topic string, event v1alpha2.Event) e
 	// update the status of the deployment in database
 	deviceLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Received event on topic '%s'", topic)
 
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
 	if !ok {
 		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgUpdate: Invalid event body: deployment is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
