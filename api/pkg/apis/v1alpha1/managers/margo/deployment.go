@@ -30,6 +30,17 @@ var (
 		"namespace": deploymentNamespace,
 		"kind":      deploymentKind,
 	}
+
+	pkgCatalogNamespace = "margo-catalog"
+	pkgCatalogResource  = "margo-catalog"
+	pkgCatalogKind      = "MargoCatalog"
+	pkgCatalogMetadata  = map[string]interface{}{
+		"version":   "v1",
+		"group":     model.MargoGroup,
+		"resource":  pkgCatalogResource,
+		"namespace": pkgCatalogNamespace,
+		"kind":      pkgCatalogKind,
+	}
 )
 
 type DeploymentManager struct {
@@ -60,6 +71,26 @@ func (s *DeploymentManager) Init(context *contexts.VendorContext, config manager
 		Handler: s.onDeploymentStatusUpdate,
 		Group:   "events-from-device",
 	})
+
+	context.Subscribe("appPkgAddition", v1alpha2.EventHandler{
+		Handler: s.onAppPkgAddition,
+		Group:   "events-from-app-catalog",
+	})
+
+	context.Subscribe("appPkgDeletion", v1alpha2.EventHandler{
+		Handler: s.onAppPkgDeletion,
+		Group:   "events-from-app-catalog",
+	})
+
+	context.Subscribe("appPkgUpdate", v1alpha2.EventHandler{
+		Handler: s.onAppPkgUpdate,
+		Group:   "events-from-app-catalog",
+	})
+	return nil
+}
+
+// Shutdown is required by the symphony's manager plugin interface
+func (s *DeploymentManager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
@@ -326,7 +357,74 @@ func (s *DeploymentManager) onDeploymentStatusUpdate(topic string, event v1alpha
 	return nil
 }
 
-// Shutdown is required by the symphony's manager plugin interface
-func (s *DeploymentManager) Shutdown(ctx context.Context) error {
+func (s *DeploymentManager) onAppPkgAddition(topic string, event v1alpha2.Event) error {
+	// update the status of the deployment in database
+	deviceLogger.InfofCtx(context.Background(), "onAppPkgAddition: Received event on topic '%s'", topic)
+
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	if !ok {
+		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgAddition: Invalid event body: deployment is missing or not of the correct type")
+		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgAddition: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	deviceId := *deploymentResp.Spec.DeviceRef.Id
+
+	// Save app state to device's local database
+	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(context.Background(), "onAppPkgAddition: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
+		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgAddition: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	return nil
+}
+
+func (s *DeploymentManager) onAppPkgDeletion(topic string, event v1alpha2.Event) error {
+	// update the status of the deployment in database
+	deviceLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Received event on topic '%s'", topic)
+
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	if !ok {
+		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgDeletion: Invalid event body: deployment is missing or not of the correct type")
+		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	deviceId := *deploymentResp.Spec.DeviceRef.Id
+
+	// Save app state to device's local database
+	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(context.Background(), "onAppPkgDeletion: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
+		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	return nil
+}
+
+func (s *DeploymentManager) onAppPkgUpdate(topic string, event v1alpha2.Event) error {
+	// update the status of the deployment in database
+	deviceLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Received event on topic '%s'", topic)
+
+	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentResp)
+	if !ok {
+		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgUpdate: Invalid event body: deployment is missing or not of the correct type")
+		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	deviceId := *deploymentResp.Spec.DeviceRef.Id
+
+	// Save app state to device's local database
+	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
+	if err != nil {
+		deploymentLogger.ErrorfCtx(context.Background(), "onAppPkgUpdate: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
+		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
+	}
+
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
 	return nil
 }

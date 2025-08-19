@@ -14,6 +14,7 @@ import (
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutions"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
@@ -272,6 +273,10 @@ func (s *AppPkgManager) OnboardAppPkg(
 	go func() {
 		time.Sleep(time.Second * 8)
 		s.processPackageAsync(ctx, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
+		// Publish event after successful creation
+		s.Manager.Context.Publish("appPkgAddition", v1alpha2.Event{
+			Body: appPkg,
+		})
 	}()
 
 	onboardingDuration := time.Since(startTime)
@@ -796,7 +801,6 @@ func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
 	return catalog, nil
 }
 
-// convertApplicationDescriptionToSolution converts application description to Solution object
 func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 	ctx context.Context,
 	appDesc ApplicationDescription,
@@ -808,12 +812,9 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 
 	solutionId := appDesc.Metadata.Id + "-v-1"
 
-	// Convert deployment profiles to components
+	// Convert deployment profiles to components with proper Symphony structure
 	components, err := s.convertDeploymentProfilesToComponents(ctx, appDesc.DeploymentProfiles)
 	if err != nil {
-		appPkgLogger.Error("Failed to convert deployment profiles to components",
-			"appId", appDesc.Metadata.Id,
-			"error", err)
 		return nil, fmt.Errorf("failed to convert deployment profiles: %w", err)
 	}
 
@@ -827,6 +828,12 @@ func (s *AppPkgManager) convertApplicationDescriptionToSolution(
 			RootResource: appDesc.Metadata.Id,
 			DisplayName:  appDesc.Metadata.Name,
 			Components:   components,
+			Metadata: map[string]string{
+				"description":   appDesc.Metadata.Description,
+				"applicationId": appDesc.Metadata.Id,
+				"catalogRef":    catalogId,
+				"profileCount":  fmt.Sprintf("%d", len(appDesc.DeploymentProfiles)),
+			},
 		},
 	}
 

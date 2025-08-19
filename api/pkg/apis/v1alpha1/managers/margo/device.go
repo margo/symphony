@@ -38,15 +38,15 @@ var (
 		"kind":      deviceKind,
 	}
 
-	deviceAppNamespace = "margoApp"
-	deviceAppResource  = "deviceApp"
-	deviceAppKind      = "DeviceApp"
-	deviceAppMetadata  = map[string]interface{}{
+	deviceAppDeploymentNamespace = "margoApp"
+	deviceAppDeploymentResource  = "deviceApp"
+	deviceAppDeploymentKind      = "DeviceApp"
+	deviceAppDeploymentMetadata  = map[string]interface{}{
 		"version":   "v1",
 		"group":     model.MargoGroup,
-		"resource":  deviceAppResource,
-		"namespace": deviceAppNamespace,
-		"kind":      deviceAppKind,
+		"resource":  deviceAppDeploymentResource,
+		"namespace": deviceAppDeploymentNamespace,
+		"kind":      deviceAppDeploymentKind,
 	}
 )
 
@@ -208,7 +208,7 @@ func (s *DeviceManager) saveAppState(context context.Context, deviceId string, d
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
-		Metadata: deviceAppMetadata,
+		Metadata: deviceAppDeploymentMetadata,
 		Value: states.StateEntry{
 			ID:   compositeKey,
 			Body: deployment,
@@ -227,7 +227,7 @@ func (s *DeviceManager) updateAppState(context context.Context, deviceId string,
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
-		Metadata: deviceAppMetadata,
+		Metadata: deviceAppDeploymentMetadata,
 		Value: states.StateEntry{
 			ID:   compositeKey,
 			Body: deployment,
@@ -245,7 +245,7 @@ func (s *DeviceManager) updateAppState(context context.Context, deviceId string,
 func (s *DeviceManager) removeAppState(context context.Context, deviceId string, deploymentId string) error {
 	compositeKey := s.getCompositeKey(deviceId, deploymentId)
 	err := s.StateProvider.Delete(context, states.DeleteRequest{
-		Metadata: deviceAppMetadata,
+		Metadata: deviceAppDeploymentMetadata,
 		ID:       compositeKey,
 	})
 	if err != nil {
@@ -260,7 +260,7 @@ func (s *DeviceManager) removeAppState(context context.Context, deviceId string,
 func (s *DeviceManager) listAppStates(context context.Context, deviceId string) ([]margoNonStdAPI.ApplicationDeploymentResp, error) {
 	var deployments []margoNonStdAPI.ApplicationDeploymentResp
 	entries, _, err := s.StateProvider.List(context, states.ListRequest{
-		Metadata: deviceAppMetadata,
+		Metadata: deviceAppDeploymentMetadata,
 	})
 	if err != nil {
 		deviceLogger.ErrorfCtx(context, "GetDeploymentsByDevice: Failed to list deployments for device '%s': %v", deviceId, err)
@@ -285,7 +285,7 @@ func (s *DeviceManager) listAppStates(context context.Context, deviceId string) 
 func (s *DeviceManager) getAppState(context context.Context, deviceId string, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentResp, error) {
 	compositeKey := s.getCompositeKey(deviceId, deploymentId)
 	entry, err := s.StateProvider.Get(context, states.GetRequest{
-		Metadata: deviceAppMetadata,
+		Metadata: deviceAppDeploymentMetadata,
 		ID:       compositeKey,
 	})
 	if err != nil {

@@ -16,13 +16,8 @@ spec:
           revision: "1.2.2"
           wait: true
   parameters:
-    workerProcesses:
-      value: "auto"
+    type:
+      value: "NodePort"
       targets:
-      - pointer: config.workerProcesses
-        components: ["nginx"]
-    clientMaxBodySize:
-      value: "1m"
-      targets:
-      - pointer: config.clientMaxBodySize
+      - pointer: controller.service.type
         components: ["nginx"]
