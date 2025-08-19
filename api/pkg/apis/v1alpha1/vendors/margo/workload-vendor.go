@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/catalogs"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutioncontainers"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutions"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
@@ -22,9 +24,11 @@ var workloadVendorLogger = logger.NewLogger("coa.runtime")
 
 type WorkloadVendor struct {
 	vendors.Vendor
-	AppPkgManager     *margo.AppPkgManager
-	DeploymentManager *margo.DeploymentManager
-	SolutionsManager  *solutions.SolutionsManager
+	AppPkgManager            *margo.AppPkgManager
+	DeploymentManager        *margo.DeploymentManager
+	SolutionsManager         *solutions.SolutionsManager
+	SolutionContainerManager *solutioncontainers.SolutionContainersManager
+	CatalogsManager          *catalogs.CatalogsManager
 }
 
 func (o *WorkloadVendor) GetInfo() vendors.VendorInfo {
@@ -48,6 +52,10 @@ func (e *WorkloadVendor) Init(config vendors.VendorConfig, factories []managers.
 			e.DeploymentManager = c
 		case *solutions.SolutionsManager:
 			e.SolutionsManager = c
+		case *catalogs.CatalogsManager:
+			e.CatalogsManager = c
+		case *solutioncontainers.SolutionContainersManager:
+			e.SolutionContainerManager = c
 		}
 	}
 	if e.AppPkgManager == nil {
@@ -58,6 +66,12 @@ func (e *WorkloadVendor) Init(config vendors.VendorConfig, factories []managers.
 	}
 	if e.SolutionsManager == nil {
 		return v1alpha2.NewCOAError(nil, "solutions manager is not supplied", v1alpha2.MissingConfig)
+	}
+	if e.CatalogsManager == nil {
+		return v1alpha2.NewCOAError(nil, "catalogs manager is not supplied", v1alpha2.MissingConfig)
+	}
+	if e.SolutionContainerManager == nil {
+		return v1alpha2.NewCOAError(nil, "solutions container manager is not supplied", v1alpha2.MissingConfig)
 	}
 	return nil
 }
@@ -130,10 +144,26 @@ func (c *WorkloadVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COA
 	}
 
 	// Onboard app package
-	appPkg, err := c.AppPkgManager.OnboardAppPkg(pCtx, appPkgReq)
+	appPkg, err := c.AppPkgManager.OnboardAppPkg(pCtx, appPkgReq, c.SolutionsManager, c.SolutionContainerManager, c.CatalogsManager)
 	if err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to onboard the app", v1alpha2.InternalError)
 	}
+
+	// catalogState, solutionState, solutionContainerState, err := c.AppPkgManager.ConvertApplicationDescriptionToSymphony(pCtx, *appPkg, margo.ApplicationDescription{}, nil)
+	// if err != nil {
+	// 	return createErrorResponse(workloadVendorLogger, span, err, "Failed to convert margo app to symphony objects", v1alpha2.InternalError)
+	// }
+
+	// if err := c.CatalogsManager.UpsertState(pCtx, catalogState.ObjectMeta.Name, *catalogState); err != nil {
+	// 	return createErrorResponse(workloadVendorLogger, span, err, "Failed to store the catalog", v1alpha2.InternalError)
+	// }
+	// if err := c.SolutionsManager.UpsertState(pCtx, solutionState.ObjectMeta.Name, *solutionState); err != nil {
+	// 	return createErrorResponse(workloadVendorLogger, span, err, "Failed to store the solution", v1alpha2.InternalError)
+	// }
+
+	// if err := c.SolutionContainerManager.UpsertState(pCtx, solutionContainerState.ObjectMeta.Name, *solutionContainerState); err != nil {
+	// 	return createErrorResponse(workloadVendorLogger, span, err, "Failed to store the solution container", v1alpha2.InternalError)
+	// }
 
 	// Create success response
 	return createSuccessResponse(span, v1alpha2.Accepted, appPkg)
@@ -194,12 +224,12 @@ func (c *WorkloadVendor) deleteAppPkg(request v1alpha2.COARequest) v1alpha2.COAR
 	pkgId := request.Parameters["__id"]
 	workloadVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): deleteAppPkg, method: %s, metadata: %s, path: %s, parameters: %s", request.Method,
 		pretty.Sprint(request.Metadata), pretty.Sprint(request.Route), pretty.Sprint(request.Parameters), "pkgId", pkgId)
-	resp, err := c.AppPkgManager.DeleteAppPkg(pCtx, pkgId)
+	err := c.AppPkgManager.DeleteAppPkg(pCtx, pkgId)
 	if err != nil {
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to delete the app package", v1alpha2.InternalError)
 	}
 
-	return createSuccessResponse(span, v1alpha2.Accepted, resp)
+	return createSuccessResponse(span, v1alpha2.Accepted, (*byte)(nil))
 }
 
 func (c *WorkloadVendor) createDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
