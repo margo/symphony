@@ -184,14 +184,14 @@ func applyAppConfig(filename string) error {
 
 	switch kind {
 	case "ApplicationPackage":
-		var appPkg nbi.ApplicationPackageRequest
+		var appPkg nbi.ApplicationPackageManifestRequest
 		err = json.Unmarshal(jsonFile, &appPkg)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal ApplicationPackage: %w", err)
 		}
 		return onboardAppPkg(&appPkg)
 	case "ApplicationDeployment":
-		var deployment nbi.ApplicationDeploymentRequest
+		var deployment nbi.ApplicationDeploymentManifestRequest
 		err = json.Unmarshal(jsonFile, &deployment)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal ApplicationDeployment: %w", err)
@@ -202,7 +202,7 @@ func applyAppConfig(filename string) error {
 	}
 }
 
-func onboardAppPkg(appPkg *nbi.ApplicationPackageRequest) error {
+func onboardAppPkg(appPkg *nbi.ApplicationPackageManifestRequest) error {
 	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	if appPkg == nil {
@@ -224,7 +224,7 @@ func onboardAppPkg(appPkg *nbi.ApplicationPackageRequest) error {
 	return nil
 }
 
-func createDeployment(deployment *nbi.ApplicationDeploymentRequest) error {
+func createDeployment(deployment *nbi.ApplicationDeploymentManifestRequest) error {
 	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	if deployment == nil {
@@ -487,7 +487,7 @@ func extractSource(source nbi.ApplicationPackageSpec_Source) string {
 	return "N/A"
 }
 
-func printAppPkgDetails(appPkg *nbi.ApplicationPackageResp) {
+func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 	if appPkg == nil {
 		fmt.Println("No application package details found.")
 		return
@@ -520,7 +520,7 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageResp) {
 	fmt.Printf("    Last Update Time: %s\n", appPkg.Status.LastUpdateTime)
 }
 
-func printDeploymentDetails(deployment *nbi.ApplicationDeploymentResp) {
+func printDeploymentDetails(deployment *nbi.ApplicationDeploymentManifestResp) {
 	if deployment == nil {
 		fmt.Println("No application deployment details found.")
 		return
