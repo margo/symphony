@@ -139,7 +139,7 @@ func (s *DeviceManager) onNewDeploymentEvent(topic string, event v1alpha2.Event)
 	deviceId := *deploymentResp.Spec.DeviceRef.Id
 
 	// Save app state to device's local database
-	err := s.saveAppState(context.Background(), deviceId, deploymentResp)
+	err := s.upsertAppState(context.Background(), deviceId, deploymentResp)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(context.Background(), "onNewDeploymentEvent: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
 		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
@@ -182,13 +182,9 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 		"status", status)
 
 	// Update deployment status in database
-	allDeployments, _ := s.GetDeploymentsByDevice(ctx, deviceId)
-	var deployment *margoNonStdAPI.ApplicationDeploymentManifestResp
-	for _, deploymentInDB := range allDeployments {
-		if deploymentInDB.Metadata.Id == &deploymentId {
-			deployment = &deploymentInDB
-			break
-		}
+	deployment, err := s.getAppState(ctx, deviceId, deploymentId)
+	if err != nil {
+		return fmt.Errorf("error caught while finding deployment id: %s for device: %s, error: %w", deploymentId, deviceId, err)
 	}
 	if deployment == nil {
 		return fmt.Errorf("deployment: %s doesnot seem to be under device: %s", deploymentId, deviceId)
@@ -196,7 +192,7 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	// Missing: Validate status values
 	deployment.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&status)
 
-	if err := s.saveAppState(ctx, deviceId, *deployment); err != nil {
+	if err := s.upsertAppState(ctx, deviceId, *deployment); err != nil {
 		return fmt.Errorf("failed to store update the app status in database, %s", err.Error())
 	}
 
@@ -208,8 +204,8 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	return nil
 }
 
-// saveAppState saves the application deployment state to the state provider.
-func (s *DeviceManager) saveAppState(context context.Context, deviceId string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
+// upsertAppState saves/updates the application deployment state to the state provider.
+func (s *DeviceManager) upsertAppState(context context.Context, deviceId string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
 	compositeKey := s.getCompositeKey(deviceId, *deployment.Metadata.Id)
 	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
 		Options:  states.UpsertOption{},
