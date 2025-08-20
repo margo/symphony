@@ -199,7 +199,7 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	appState, _ := s.getAppState(ctx, deviceId, deploymentId)
 
 	s.Manager.Context.Publish("deploymentStatusUpdates", v1alpha2.Event{
-		Body: appState,
+		Body: *appState,
 	})
 	return nil
 }
