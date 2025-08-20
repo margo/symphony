@@ -213,6 +213,8 @@ func toHttpState(state v1alpha2.State) int {
 	switch state {
 	case v1alpha2.OK:
 		return fasthttp.StatusOK
+	case v1alpha2.Created:
+		return fasthttp.StatusCreated
 	case v1alpha2.Accepted:
 		return fasthttp.StatusAccepted
 	case v1alpha2.BadRequest:

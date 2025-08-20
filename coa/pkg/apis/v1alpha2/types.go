@@ -23,7 +23,7 @@ const (
 	None State = 0
 	// OK = HTTP 200
 	OK State = 200
-	// OK = HTTP 201
+	// Created = HTTP 201
 	Created State = 201
 	// Accepted = HTTP 202
 	Accepted State = 202
