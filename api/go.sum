@@ -289,6 +289,8 @@ github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0
 github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJJLY9Nlc=
 github.com/margo/dev-repo v0.0.0-20250819114134-782243c6dd2d h1:aOHqUVDM7GULCQsIIcCXF1ThtgxC/esA6x9J/mwW/dA=
 github.com/margo/dev-repo v0.0.0-20250819114134-782243c6dd2d/go.mod h1:g0Vdx6rmluxcIlbUKBvvWnCrZdXfYNmGVACiIPVh/uo=
+github.com/margo/dev-repo v0.0.0-20250819154800-330246883e94 h1:cbHIsdUp4xup3SAqO0os1pyY916pt+XTTh7FlpsSaYs=
+github.com/margo/dev-repo v0.0.0-20250819154800-330246883e94/go.mod h1:g0Vdx6rmluxcIlbUKBvvWnCrZdXfYNmGVACiIPVh/uo=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=

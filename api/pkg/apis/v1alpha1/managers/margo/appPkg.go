@@ -310,7 +310,7 @@ func (s *AppPkgManager) processPackageAsync(
 	var err error
 	operationContextualInfo := ""
 	// Ensure final state update regardless of success or failure
-	defer func() {
+	defer func(appPkg *ApplicationPackage) {
 		processDuration := time.Since(processStart)
 		now := time.Now().UTC()
 
@@ -340,7 +340,7 @@ func (s *AppPkgManager) processPackageAsync(
 			Message: &operationContextualInfo,
 		}
 		appPkg.Package.Status.LastUpdateTime = &now
-		if updateErr := s.updatePkgInDB(ctx, *appPkg.Package.Metadata.Id, appPkg); updateErr != nil {
+		if updateErr := s.updatePkgInDB(ctx, *appPkg.Package.Metadata.Id, *appPkg); updateErr != nil {
 			appPkgLogger.Error("Failed to update final package state",
 				"packageId", *appPkg.Package.Metadata.Id,
 				"error", updateErr)
@@ -349,7 +349,7 @@ func (s *AppPkgManager) processPackageAsync(
 				"packageId", *appPkg.Package.Metadata.Id,
 				"finalStatus", appPkg.Package.RecentOperation.Status)
 		}
-	}()
+	}(&appPkg)
 
 	// Initialize package manager
 	appPkgLogger.Debug("Initializing package manager for processing")
@@ -549,7 +549,12 @@ func (s *AppPkgManager) processGitRepository(
 
 	pkg.Description = appDesc
 	pkg.Resources = allResources
-	return &pkg, nil
+
+	tempPkg := pkg
+	appPkgLogger.Debug("Successfully prepared temporary package object for return",
+		"package", pretty.Sprint(pkg))
+
+	return &tempPkg, nil
 }
 
 // parseApplicationDescription parses the YAML application description and extracts resources
@@ -1356,7 +1361,7 @@ func (s *AppPkgManager) ListAppPkgs(ctx context.Context) (*margoNonStdAPI.Applic
 
 	var packages []margoNonStdAPI.ApplicationPackageManifestResp
 	for _, entry := range listResp {
-		var pkg margoNonStdAPI.ApplicationPackageManifestResp
+		var pkg ApplicationPackage
 		jData, _ := json.Marshal(entry.Body)
 		if err := json.Unmarshal(jData, &pkg); err != nil {
 			appPkgLogger.Warn("Failed to unmarshal package, skipping",
@@ -1364,7 +1369,7 @@ func (s *AppPkgManager) ListAppPkgs(ctx context.Context) (*margoNonStdAPI.Applic
 				"error", err)
 			continue
 		}
-		packages = append(packages, pkg)
+		packages = append(packages, pkg.Package)
 	}
 
 	result := &margoNonStdAPI.ApplicationPackageListResp{
