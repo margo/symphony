@@ -4,7 +4,7 @@ metadata:
   name: instance01
 spec:
   appPackageRef:
-    id: 13a018cc-6f5a-4924-a7fc-88094bd6c054 #69391e61-22be-4603-890b-bcbcc32be6cb
+    id: 5fff20e0-cb58-49da-936f-d5bd63c303af  #69391e61-22be-4603-890b-bcbcc32be6cb
   deviceRef:
     id: device-101
   deploymentProfile:
@@ -16,7 +16,7 @@ spec:
           revision: "1.2.2"
           wait: true
   parameters:
-    type:
+    serviceType:
       value: "NodePort"
       targets:
       - pointer: controller.service.type

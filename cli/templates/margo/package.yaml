@@ -9,7 +9,8 @@ metadata:
 spec:
   sourceType: GIT_REPO
   source:
-    #url: "https://github.com/user/my-app.git"
+    #url: "http://52.224.241.180:3000/gogsadmin/my-new-repo"
+    # branch: "main"
     url: "http://172.19.59.148:3333/margouser/package-repo"
     branch: "master"
     #commit: <commit id>

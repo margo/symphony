@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,12 +20,12 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	powerfulYaml "github.com/ghodss/yaml"
 	"github.com/kr/pretty"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/non-standard/pkg/packageManager"
 	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
 	margoGitHelper "github.com/margo/dev-repo/shared-lib/git"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -587,8 +586,13 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonSt
 		return nil, nil, fmt.Errorf("failed to read application description: %w", err)
 	}
 
+	jsonData, err := powerfulYaml.YAMLToJSON(yamlData)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to convert application description yaml to json, %w", err)
+	}
+
 	var appDesc margoNonStdAPI.AppDescription
-	if err := yaml.Unmarshal(yamlData, &appDesc); err != nil {
+	if err := json.Unmarshal(jsonData, &appDesc); err != nil {
 		appPkgLogger.Error("Failed to parse application description YAML",
 			"descriptionFile", descriptionFile,
 			"error", err)
@@ -705,7 +709,7 @@ func (s *AppPkgManager) validateApplicationDescription(appDesc *margoNonStdAPI.A
 				}
 			}
 		}
-		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeHelmV3 {
+		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeCompose {
 			for j, component := range profile.Components {
 				composeComp, _ := component.AsComposeApplicationDeploymentProfileComponent()
 				if composeComp.Name == "" {
@@ -1004,12 +1008,12 @@ func (s *AppPkgManager) resolveComponentParameters(
 	values := make(map[string]interface{})
 
 	for paramName, paramValue := range parameters {
-		for _, target := range *paramValue.Targets {
+		for _, target := range paramValue.Targets {
 			// Check if this parameter targets our component
 			for _, targetComponent := range target.Components {
 				if targetComponent == componentName {
 					// Apply parameter using JSONPath pointer
-					if err := s.applyParameterValue(values, target.Pointer, *paramValue.Value); err != nil {
+					if err := s.applyParameterValue(values, target.Pointer, paramValue.Value); err != nil {
 						return nil, fmt.Errorf("failed to apply parameter %s: %w", paramName, err)
 					}
 				}
@@ -1021,7 +1025,7 @@ func (s *AppPkgManager) resolveComponentParameters(
 }
 
 // applyParameterValue applies a parameter value to a nested map using JSONPath-like pointer
-func (s *AppPkgManager) applyParameterValue(values map[string]interface{}, pointer string, value string) error {
+func (s *AppPkgManager) applyParameterValue(values map[string]interface{}, pointer string, value interface{}) error {
 	appPkgLogger.Debug("Applying parameter value",
 		"pointer", pointer,
 		"value", value)
@@ -1062,7 +1066,7 @@ func (s *AppPkgManager) applyParameterValue(values map[string]interface{}, point
 	finalKey := segments[len(segments)-1]
 
 	// Try to parse value as different types
-	parsedValue := s.parseParameterValue(value)
+	parsedValue := value //s.parseParameterValue(value)
 	current[finalKey] = parsedValue
 
 	appPkgLogger.Debug("Successfully applied parameter value",
@@ -1074,32 +1078,7 @@ func (s *AppPkgManager) applyParameterValue(values map[string]interface{}, point
 }
 
 // parseParameterValue attempts to parse a string value into appropriate Go types
-func (s *AppPkgManager) parseParameterValue(value string) interface{} {
-	// Try boolean
-	if value == "true" {
-		return true
-	}
-	if value == "false" {
-		return false
-	}
-
-	// Try integer
-	if intVal, err := strconv.Atoi(value); err == nil {
-		return intVal
-	}
-
-	// Try float
-	if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
-		return floatVal
-	}
-
-	// Try JSON object/array
-	var jsonVal interface{}
-	if err := json.Unmarshal([]byte(value), &jsonVal); err == nil {
-		return jsonVal
-	}
-
-	// Default to string
+func (s *AppPkgManager) parseParameterValue(value interface{}) interface{} {
 	return value
 }
 
