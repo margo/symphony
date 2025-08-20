@@ -175,6 +175,11 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	if deviceId == "" || deploymentId == "" || status == "" {
 		return fmt.Errorf("deviceId, deploymentId, and status are required")
 	}
+	deviceLogger.DebugCtx(ctx,
+		"msg", "deployment status update request received",
+		"deviceId", deviceId,
+		"deploymentId", deploymentId,
+		"status", status)
 
 	// Update deployment status in database
 	allDeployments, _ := s.GetDeploymentsByDevice(ctx, deviceId)
