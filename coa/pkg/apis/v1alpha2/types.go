@@ -23,6 +23,8 @@ const (
 	None State = 0
 	// OK = HTTP 200
 	OK State = 200
+	// OK = HTTP 201
+	Created State = 201
 	// Accepted = HTTP 202
 	Accepted State = 202
 	// BadRequest = HTTP 400
@@ -154,9 +156,11 @@ func GetHttpStatus(code int) State {
 	switch {
 	case code == 200:
 		return OK
+	case code == 201:
+		return Created
 	case code == 202:
 		return Accepted
-	case code >= 200 && code < 300:
+	case code >= 203 && code < 300:
 		return OK
 	case code == 403:
 		return Unauthorized
@@ -183,6 +187,8 @@ func (s State) String() string {
 	switch s {
 	case OK:
 		return "OK"
+	case Created:
+		return "Created"
 	case Accepted:
 		return "Accepted"
 	case BadRequest:

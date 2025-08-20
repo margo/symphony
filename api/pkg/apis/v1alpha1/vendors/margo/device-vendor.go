@@ -368,5 +368,5 @@ func (c *DeviceVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1a
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update the status", v1alpha2.BadRequest)
 	}
 
-	return createSuccessResponse(span, 201, (*int)(nil))
+	return createSuccessResponse(span, v1alpha2.Created, (*int)(nil))
 }
