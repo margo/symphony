@@ -6,47 +6,26 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
-	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
+	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
+	"github.com/margo/dev-repo/standard/pkg"
 )
 
 var (
-	deploymentLogger    = logger.NewLogger("coa.runtime")
-	deploymentNamespace = "margo"
-	deploymentResource  = "app-deployments"
-	deploymentKind      = "ApplicationDeployment"
-	deploymentMetadata  = map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  deploymentResource,
-		"namespace": deploymentNamespace,
-		"kind":      deploymentKind,
-	}
-
-	pkgCatalogNamespace = "margo-catalog"
-	pkgCatalogResource  = "margo-catalog"
-	pkgCatalogKind      = "MargoCatalog"
-	pkgCatalogMetadata  = map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  pkgCatalogResource,
-		"namespace": pkgCatalogNamespace,
-		"kind":      pkgCatalogKind,
-	}
+	deploymentLogger = logger.NewLogger("coa.runtime")
 )
 
 type DeploymentManager struct {
 	managers.Manager
-	StateProvider  states.IStateProvider
 	needValidate   bool
+	Database       *MargoDatabase
 	MargoValidator validation.MargoValidator
 }
 
@@ -56,113 +35,23 @@ func (s *DeploymentManager) Init(context *contexts.VendorContext, config manager
 		return err
 	}
 	stateprovider, err := managers.GetPersistentStateProvider(config, providers)
-	if err == nil {
-		s.StateProvider = stateprovider
-	} else {
+	if err != nil {
 		return err
 	}
+	s.Database = NewMargoDatabase(s.Context, "deployment-manager", stateprovider)
+
 	s.needValidate = managers.NeedObjectValidate(config, providers)
 	if s.needValidate {
 		// Turn off validation of differnt types: https://github.com/eclipse-symphony/symphony/issues/445
 		s.MargoValidator = validation.NewMargoValidator()
 	}
 
-	context.Subscribe("deploymentStatusUpdates", v1alpha2.EventHandler{
-		Handler: s.onDeploymentStatusUpdate,
-		Group:   "events-from-device",
-	})
-
-	context.Subscribe("appPkgAddition", v1alpha2.EventHandler{
-		Handler: s.onAppPkgAddition,
-		Group:   "events-from-app-catalog",
-	})
-
-	context.Subscribe("appPkgDeletion", v1alpha2.EventHandler{
-		Handler: s.onAppPkgDeletion,
-		Group:   "events-from-app-catalog",
-	})
-
-	context.Subscribe("appPkgUpdate", v1alpha2.EventHandler{
-		Handler: s.onAppPkgUpdate,
-		Group:   "events-from-app-catalog",
-	})
 	return nil
 }
 
 // Shutdown is required by the symphony's manager plugin interface
 func (s *DeploymentManager) Shutdown(ctx context.Context) error {
 	return nil
-}
-
-func (s *DeploymentManager) storeDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
-	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: deploymentMetadata,
-		Value: states.StateEntry{
-			ID:   id,
-			Body: deployment,
-		},
-	})
-	if err != nil {
-		deploymentLogger.ErrorfCtx(ctx, "storeDeploymentInDB: Failed to upsert deployment '%s': %v", id, err)
-		return fmt.Errorf("failed to upsert deployment '%s': %w", id, err)
-	}
-	deploymentLogger.InfofCtx(ctx, "storeDeploymentInDB: deployment '%s' stored successfully", id)
-	return nil
-}
-
-func (s *DeploymentManager) updateDeploymentInDB(ctx context.Context, id string, deployment margoNonStdAPI.ApplicationDeploymentManifestResp) error {
-	_, err := s.StateProvider.Upsert(ctx, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: deploymentMetadata,
-		Value: states.StateEntry{
-			ID:   id,
-			Body: deployment,
-		},
-	})
-	if err != nil {
-		deploymentLogger.ErrorfCtx(ctx, "updateDeploymentInDB: Failed to update deployment '%s': %v", id, err)
-		return fmt.Errorf("failed to update deployment '%s': %w", id, err)
-	}
-	deploymentLogger.InfofCtx(ctx, "updateDeploymentInDB: deployment '%s' updated successfully", id)
-	return nil
-}
-
-func (s *DeploymentManager) deleteDeploymentFromDB(ctx context.Context, deploymentId string) error {
-	err := s.StateProvider.Delete(ctx, states.DeleteRequest{
-		Metadata: deploymentMetadata,
-		ID:       deploymentId,
-	})
-
-	if err != nil {
-		deploymentLogger.ErrorfCtx(ctx, "deleteDeploymentFromDB: Failed to delete deployment '%s': %v", deploymentId, err)
-		return fmt.Errorf("failed to delete deployment '%s': %w", deploymentId, err)
-	}
-
-	deploymentLogger.InfofCtx(ctx, "deleteDeploymentFromDB: deployment '%s' deleted successfully", deploymentId)
-	return nil
-}
-
-func (s *DeploymentManager) getDeploymentFromDB(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
-	entry, err := s.StateProvider.Get(ctx, states.GetRequest{
-		Metadata: deploymentMetadata,
-		ID:       deploymentId,
-	})
-	if err != nil {
-		deploymentLogger.ErrorfCtx(ctx, "getDeploymentFromDB: Failed to get deployment '%s': %v", deploymentId, err)
-		return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
-	}
-
-	var deployment margoNonStdAPI.ApplicationDeploymentManifestResp
-	jData, _ := json.Marshal(entry.Body)
-	err = json.Unmarshal(jData, &deployment)
-	if err != nil {
-		deploymentLogger.ErrorfCtx(ctx, "getDeploymentFromDB: Failed to unmarshal deployment '%s': %v", deploymentId, err)
-		return nil, fmt.Errorf("failed to unmarshal deployment '%s': %w", deploymentId, err)
-	}
-
-	deploymentLogger.InfofCtx(ctx, "getDeploymentFromDB: deployment '%s' retrieved successfully", deploymentId)
-	return &deployment, nil
 }
 
 // CreateDeployment handles the deployment of an application deployment.
@@ -268,17 +157,38 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, deploymentReq 
 
 	// Store initial deployment record in database
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Storing initial deployment record in database")
-	if err := s.storeDeploymentInDB(ctx, *deploymentResp.Metadata.Id, deploymentResp); err != nil {
+	dbRow := DeploymentDatabaseRow{
+		DeploymentRequest: deploymentResp,
+		LastStatusUpdate:  now,
+	}
+	if err := s.Database.UpsertDeployment(ctx, dbRow); err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "CreateDeployment: Failed to store deployment in database: %v", err)
 		return nil, fmt.Errorf("failed to store app deployment in database: %w", err)
 	}
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully stored initial deployment record with ID '%s'", *deploymentResp.Metadata.Id)
 
-	// Publish event after successful creation
-	s.Manager.Context.Publish("newDeployment", v1alpha2.Event{
-		Body: deploymentResp,
-	})
-	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Published 'newDeployment' event for deployment '%s'", *deploymentResp.Metadata.Id)
+	var appDeployment sbi.AppDeployment
+	{
+		data, _ := json.Marshal(&deploymentReq)
+		if err := json.Unmarshal(data, &appDeployment); err != nil {
+			return nil, fmt.Errorf("failed to prepare app deployment object from the request, %w", err)
+		}
+	}
+	desiredState, err := pkg.ConvertAppDeploymentToAppState(
+		&appDeployment,
+		*existingAppPkg.Package.Metadata.Id,
+		existingAppPkg.Description.Metadata.Version,
+		string(margoNonStdAPI.ApplicationDeploymentStatusStateRUNNING),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare desired state from the app deployment request, %w", err)
+	}
+	if err := s.Database.UpsertDeploymentDesiredState(ctx, *dbRow.DeploymentRequest.Metadata.Id, desiredState); err != nil {
+		deploymentLogger.ErrorfCtx(ctx, "CreateDeployment: Failed to store deployment in database: %v", err)
+		return nil, fmt.Errorf("failed to store app deployment in database: %w", err)
+	}
+
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully stored initial deployment record with ID '%s'", *deploymentResp.Metadata.Id)
 
 	// Create and return response
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully initiated deployment process for deployment '%s' with ID '%s'",
@@ -335,29 +245,20 @@ func (s *DeploymentManager) getAppDescComponentNames(components map[string]margo
 }
 
 func (s *DeploymentManager) ListDeployments(ctx context.Context) (*margoNonStdAPI.ApplicationDeploymentListResp, error) {
-	var deployments []margoNonStdAPI.ApplicationDeploymentManifestResp
-	entries, _, err := s.StateProvider.List(ctx, states.ListRequest{
-		Metadata: deploymentMetadata,
-	})
+	dbRows, err := s.Database.ListDeployments(ctx)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "ListDeployments: Failed to list deployments: %v", err)
 		return nil, fmt.Errorf("failed to list deployments: %w", err)
 	}
 
-	for _, entry := range entries {
-		var deployment margoNonStdAPI.ApplicationDeploymentManifestResp
-		jData, _ := json.Marshal(entry.Body)
-		err = json.Unmarshal(jData, &deployment)
-		if err == nil {
-			deployments = append(deployments, deployment)
-		} else {
-			deploymentLogger.WarnfCtx(ctx, "ListDeployments: Failed to unmarshal entry: %v", err)
-		}
+	var deployments []margoNonStdAPI.ApplicationDeploymentManifestResp
+	for _, row := range dbRows {
+		deployments = append(deployments, row.DeploymentRequest)
 	}
 
 	toContinue := false
 	resp := margoNonStdAPI.ApplicationDeploymentListResp{
-		ApiVersion: "margo.org", // Update with your API version
+		ApiVersion: "margo.org",
 		Kind:       "ApplicationDeploymentList",
 		Items:      deployments,
 		Metadata: margoNonStdAPI.PaginationMetadata{
@@ -371,12 +272,12 @@ func (s *DeploymentManager) ListDeployments(ctx context.Context) (*margoNonStdAP
 }
 
 func (s *DeploymentManager) GetDeployments(ctx context.Context, deploymentId string) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
-	deployment, err := s.getDeploymentFromDB(ctx, deploymentId)
+	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "GetDeployments: Failed to get deployment '%s': %v", deploymentId, err)
 		return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
 	}
-
+	deployment := &dbRow.DeploymentRequest
 	deploymentLogger.InfofCtx(ctx, "GetDeployments: deployment '%s' retrieved successfully", deploymentId)
 	return deployment, nil
 }
@@ -393,17 +294,17 @@ func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId s
 
 	// Retrieve deployment from database to verify existence and get current state
 	deploymentLogger.DebugfCtx(ctx, "DeleteDeployment: Retrieving deployment from database")
-	deployment, err := s.getDeploymentFromDB(ctx, deploymentId)
+	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "DeleteDeployment: Failed to retrieve deployment from database: %v", err)
 		return nil, fmt.Errorf("failed to check the latest state of the app deployment: %w", err)
 	}
-
-	if deployment == nil {
+	if dbRow == nil {
 		deploymentLogger.WarnfCtx(ctx, "DeleteDeployment: deployment with ID '%s' does not exist", deploymentId)
 		return nil, fmt.Errorf("deployment with id %s does not exist", deploymentId)
 	}
 
+	deployment := &dbRow.DeploymentRequest
 	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Found deployment '%s' with current operation '%s' and state '%s'",
 		deployment.Metadata.Name, deployment.RecentOperation.Op, deployment.RecentOperation.Status)
 
@@ -418,7 +319,9 @@ func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId s
 	deploymentLogger.DebugfCtx(ctx, "DeleteDeployment: Updating deployment state to Operation='%s', State='%s'",
 		deployment.RecentOperation.Op, deployment.RecentOperation.Status)
 
-	if err := s.updateDeploymentInDB(ctx, deploymentId, *deployment); err != nil {
+	dbRow.DeploymentRequest = *deployment
+	dbRow.LastStatusUpdate = now
+	if err := s.Database.UpsertDeployment(ctx, *dbRow); err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "DeleteDeployment: Failed to update deployment state in database: %v", err)
 		return nil, fmt.Errorf("failed to change the app deployment operation state before triggering deletion: %w", err)
 	}
@@ -428,107 +331,12 @@ func (s *DeploymentManager) DeleteDeployment(ctx context.Context, deploymentId s
 	// Start asynchronous deletion process
 	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Starting background deletion process for deployment '%s'", deploymentId)
 
-	// Publish event after successful deletion
-	s.Manager.Context.Publish("deleteDeployment", v1alpha2.Event{
-		Body: *deployment,
-	})
-	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: Published 'deleteDeployment' event for deployment '%s'", deploymentId)
-
 	return deployment, nil
-}
-
-func (s *DeploymentManager) onDeploymentStatusUpdate(topic string, event v1alpha2.Event) error {
-	// update the status of the deployment in database
-	deviceLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Received event on topic '%s'", topic)
-
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
-	if !ok {
-		deviceLogger.ErrorfCtx(context.Background(), "onDeploymentStatusUpdate: Invalid event body: deployment is missing or not of the correct type")
-		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	deviceId := *deploymentResp.Spec.DeviceRef.Id
-
-	// Save app state to device's local database
-	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
-	if err != nil {
-		deploymentLogger.ErrorfCtx(context.Background(), "onDeploymentStatusUpdate: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
-		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onDeploymentStatusUpdate: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	return nil
-}
-
-func (s *DeploymentManager) onAppPkgAddition(topic string, event v1alpha2.Event) error {
-	// update the status of the deployment in database
-	deviceLogger.InfofCtx(context.Background(), "onAppPkgAddition: Received event on topic '%s'", topic)
-
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
-	if !ok {
-		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgAddition: Invalid event body: deployment is missing or not of the correct type")
-		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onAppPkgAddition: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	deviceId := *deploymentResp.Spec.DeviceRef.Id
-
-	// Save app state to device's local database
-	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
-	if err != nil {
-		deploymentLogger.ErrorfCtx(context.Background(), "onAppPkgAddition: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
-		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onAppPkgAddition: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	return nil
-}
-
-func (s *DeploymentManager) onAppPkgDeletion(topic string, event v1alpha2.Event) error {
-	// update the status of the deployment in database
-	deviceLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Received event on topic '%s'", topic)
-
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
-	if !ok {
-		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgDeletion: Invalid event body: deployment is missing or not of the correct type")
-		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	deviceId := *deploymentResp.Spec.DeviceRef.Id
-
-	// Save app state to device's local database
-	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
-	if err != nil {
-		deploymentLogger.ErrorfCtx(context.Background(), "onAppPkgDeletion: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
-		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onAppPkgDeletion: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	return nil
 }
 
 func (s *DeploymentManager) onAppPkgUpdate(topic string, event v1alpha2.Event) error {
 	// update the status of the deployment in database
-	deviceLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Received event on topic '%s'", topic)
-
-	deploymentResp, ok := event.Body.(margoNonStdAPI.ApplicationDeploymentManifestResp)
-	if !ok {
-		deviceLogger.ErrorfCtx(context.Background(), "onAppPkgUpdate: Invalid event body: deployment is missing or not of the correct type")
-		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Handling new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
-	deviceId := *deploymentResp.Spec.DeviceRef.Id
-
-	// Save app state to device's local database
-	err := s.updateDeploymentInDB(context.Background(), deviceId, deploymentResp)
-	if err != nil {
-		deploymentLogger.ErrorfCtx(context.Background(), "onAppPkgUpdate: Failed to save app state for deployment '%s': %v", *deploymentResp.Metadata.Id, err)
-		return fmt.Errorf("failed to save app state for deployment '%s': %w", *deploymentResp.Metadata.Id, err)
-	}
-
-	deploymentLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Successfully handled new deployment event for deployment '%s'", *deploymentResp.Metadata.Id)
+	deploymentLogger.InfofCtx(context.Background(), "onAppPkgUpdate: Received event on topic '%s'", topic)
+	// TODO: change the desired state of the deployment as new update is seen in app package
 	return nil
 }

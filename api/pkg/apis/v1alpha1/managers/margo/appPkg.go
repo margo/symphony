@@ -14,11 +14,9 @@ import (
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/solutions"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
-	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
-	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	powerfulYaml "github.com/ghodss/yaml"
 	"github.com/kr/pretty"
@@ -28,19 +26,7 @@ import (
 	margoGitHelper "github.com/margo/dev-repo/shared-lib/git"
 )
 
-var (
-	appPkgLogger    = logger.NewLogger("coa.runtime")
-	appPkgNamespace = "margo"
-	appPkgResource  = "app-pkg"
-	appPkgKind      = "ApplicationPackage"
-	appPkgMetadata  = map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  appPkgResource,
-		"namespace": appPkgNamespace,
-		"kind":      appPkgKind,
-	}
-)
+var appPkgLogger = logger.NewLogger("coa.runtime")
 
 type ApplicationPackage struct {
 	Package     margoNonStdAPI.ApplicationPackageManifestResp
@@ -48,24 +34,16 @@ type ApplicationPackage struct {
 	Resources   map[string][]byte
 }
 
-// ConversionContext holds minimal data needed from appPkg for conversion
-type ConversionContext struct {
-	SourcePackageName string
-	SourceType        string
-	SourceInfo        interface{}
-}
-
 type AppPkgManager struct {
 	managers.Manager
-	StateProvider  states.IStateProvider
+	Database       *MargoDatabase
+	Transformer    *MargoTransformer
 	needValidate   bool
 	MargoValidator validation.MargoValidator
 }
 
 func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
-	appPkgLogger.Debug("Initializing AppPkgManager",
-		"namespace", appPkgNamespace,
-		"resource", appPkgResource)
+	appPkgLogger.Debug("Initializing AppPkgManager")
 
 	err := s.Manager.Init(context, config, providers)
 	if err != nil {
@@ -74,13 +52,17 @@ func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.Ma
 	}
 
 	stateprovider, err := managers.GetPersistentStateProvider(config, providers)
-	if err == nil {
-		s.StateProvider = stateprovider
-		appPkgLogger.Debug("State provider initialized successfully")
-	} else {
+	if err != nil {
 		appPkgLogger.Error("Failed to get persistent state provider", "error", err)
 		return err
 	}
+
+	s.Database = NewMargoDatabase(s.Context, "package-manager", stateprovider)
+
+	appPkgLogger.Debug("MargoDatabase initialized successfully")
+
+	s.Transformer = NewMargoTransformer()
+	appPkgLogger.Debug("MargoTransformer initialized successfully")
 
 	s.needValidate = managers.NeedObjectValidate(config, providers)
 	if s.needValidate {
@@ -93,109 +75,6 @@ func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.Ma
 	appPkgLogger.Info("AppPkgManager initialized successfully",
 		"validationEnabled", s.needValidate)
 	return nil
-}
-
-func (s *AppPkgManager) storePkgInDB(context context.Context, id string, pkg ApplicationPackage) error {
-	appPkgLogger.Debug("Storing package in database",
-		"packageId", id,
-		"packageName", pkg.Package.Metadata.Name)
-
-	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: appPkgMetadata,
-		Value: states.StateEntry{
-			ID:   id,
-			Body: &pkg,
-		},
-	})
-
-	if err != nil {
-		appPkgLogger.Error("Failed to store package in database",
-			"packageId", id,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Package stored successfully in database", "packageId", id)
-	}
-
-	return err
-}
-
-func (s *AppPkgManager) updatePkgInDB(context context.Context, id string, pkg ApplicationPackage) error {
-	appPkgLogger.Debug("Updating package in database",
-		"packageId", id,
-		"packageName", pkg.Package.Metadata.Name,
-		"operationStatus", pkg.Package.RecentOperation.Status)
-
-	_, err := s.StateProvider.Upsert(context, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: appPkgMetadata,
-		Value: states.StateEntry{
-			ID:   id,
-			Body: &pkg,
-		},
-	})
-
-	if err != nil {
-		appPkgLogger.Error("Failed to update package in database",
-			"packageId", id,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Package updated successfully in database",
-			"packageId", id,
-			"newStatus", pkg.Package.RecentOperation.Status)
-	}
-
-	return err
-}
-
-func (s *AppPkgManager) deletePkgFromDB(context context.Context, pkgId string) error {
-	appPkgLogger.Debug("Deleting package from database", "packageId", pkgId)
-
-	err := s.StateProvider.Delete(context, states.DeleteRequest{
-		Metadata: appPkgMetadata,
-		ID:       pkgId,
-	})
-
-	if err != nil {
-		appPkgLogger.Error("Failed to delete package from database",
-			"packageId", pkgId,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Package deleted successfully from database", "packageId", pkgId)
-	}
-
-	return err
-}
-
-func (s *AppPkgManager) listPkgFromDB(context context.Context) (*margoNonStdAPI.ApplicationPackageListResp, error) {
-	appPkgLogger.Debug("Listing packages from database")
-	// TODO: Implement package listing logic
-	return nil, nil
-}
-
-func (s *AppPkgManager) getPkgFromDB(context context.Context, pkgId string) (*ApplicationPackage, error) {
-	appPkgLogger.Debug("Retrieving package from database", "packageId", pkgId)
-
-	entry, err := s.StateProvider.Get(context, states.GetRequest{
-		Metadata: appPkgMetadata,
-		ID:       pkgId,
-	})
-	if err != nil {
-		appPkgLogger.Error("Failed to retrieve package from database",
-			"packageId", pkgId,
-			"error", err)
-		return nil, err
-	}
-
-	var appPkg ApplicationPackage
-	jData, _ := json.Marshal(entry.Body)
-	_ = json.Unmarshal(jData, &appPkg)
-
-	appPkgLogger.Debug("Package retrieved successfully from database",
-		"packageId", pkgId,
-		"packageName", appPkg.Package.Metadata.Name)
-
-	return &appPkg, nil
 }
 
 // OnboardAppPkg handles the complete application package onboarding process.
@@ -265,7 +144,12 @@ func (s *AppPkgManager) OnboardAppPkg(
 
 	// Store initial package record in database
 	appPkgLogger.Debug("Storing initial package record in database")
-	if err := s.storePkgInDB(ctx, *appPkg.Package.Metadata.Id, appPkg); err != nil {
+	dbRow := AppPackageDatabaseRow{
+		PackageRequest: appPkg.Package,
+		AppDescription: appPkg.Description,
+		AppResources:   appPkg.Resources,
+	}
+	if err := s.Database.UpsertAppPackage(ctx, dbRow); err != nil {
 		appPkgLogger.Error("Failed to store package in database",
 			"packageId", *appPkg.Package.Metadata.Id,
 			"error", err)
@@ -279,10 +163,6 @@ func (s *AppPkgManager) OnboardAppPkg(
 	go func() {
 		time.Sleep(time.Second * 8)
 		s.processPackageAsync(ctx, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
-		// Publish event after successful creation
-		s.Manager.Context.Publish("appPkgAddition", v1alpha2.Event{
-			Body: appPkg,
-		})
 	}()
 
 	onboardingDuration := time.Since(startTime)
@@ -339,7 +219,12 @@ func (s *AppPkgManager) processPackageAsync(
 			Message: &operationContextualInfo,
 		}
 		appPkg.Package.Status.LastUpdateTime = &now
-		if updateErr := s.updatePkgInDB(ctx, *appPkg.Package.Metadata.Id, *appPkg); updateErr != nil {
+		dbRow := AppPackageDatabaseRow{
+			PackageRequest: appPkg.Package,
+			AppDescription: appPkg.Description,
+			AppResources:   appPkg.Resources,
+		}
+		if updateErr := s.Database.UpsertAppPackage(ctx, dbRow); updateErr != nil {
 			appPkgLogger.Error("Failed to update final package state",
 				"packageId", *appPkg.Package.Metadata.Id,
 				"error", updateErr)
@@ -510,7 +395,12 @@ func (s *AppPkgManager) processGitRepository(
 		"packageId", *pkg.Package.Metadata.Id,
 		"appId", appDesc.Metadata.Id)
 
-	catalog, solution, solutionContainer, err := s.ConvertApplicationDescriptionToSymphony(ctx, pkg, *appDesc, allResources)
+	dbRow := AppPackageDatabaseRow{
+		PackageRequest: pkg.Package,
+		AppDescription: appDesc,
+		AppResources:   allResources,
+	}
+	catalog, solution, solutionContainer, err := s.Transformer.AppPackageToSymphonyObjects(ctx, dbRow, allResources)
 	if err != nil {
 		*operationContextualInfo = fmt.Sprintf("Failed to convert to Symphony objects: %s", err.Error())
 		appPkgLogger.Error("Failed to convert to Symphony objects",
@@ -726,416 +616,6 @@ func (s *AppPkgManager) validateApplicationDescription(appDesc *margoNonStdAPI.A
 	return nil
 }
 
-// ConvertApplicationDescriptionToSymphony converts application description to Symphony objects
-func (s *AppPkgManager) ConvertApplicationDescriptionToSymphony(
-	ctx context.Context,
-	appPkg ApplicationPackage,
-	appDesc margoNonStdAPI.AppDescription,
-	resources map[string][]byte) (*model.CatalogState, *model.SolutionState, *model.SolutionContainerState, error) {
-
-	conversionStart := time.Now()
-	appPkgLogger.Info("Starting Symphony conversion",
-		"appId", appDesc.Metadata.Id,
-		"appName", appDesc.Metadata.Name,
-		"conversionStart", conversionStart)
-
-	// Extract conversion context from appPkg
-	convCtx := ConversionContext{
-		SourcePackageName: appPkg.Package.Metadata.Name,
-		SourceType:        string(appPkg.Package.Spec.SourceType),
-		SourceInfo:        appPkg.Package.Spec.Source,
-	}
-
-	// Convert to Catalog
-	catalog, err := s.convertApplicationDescriptionToCatalog(ctx, appDesc, convCtx, resources)
-	if err != nil {
-		appPkgLogger.Error("Failed to convert to catalog",
-			"appId", appDesc.Metadata.Id,
-			"error", err)
-		return nil, nil, nil, fmt.Errorf("failed to convert to catalog: %w", err)
-	}
-
-	// Convert to Solution
-	solution, err := s.convertApplicationDescriptionToSolution(ctx, appDesc, catalog.ObjectMeta.Name)
-	if err != nil {
-		appPkgLogger.Error("Failed to convert to solution",
-			"appId", appDesc.Metadata.Id,
-			"catalogId", catalog.ObjectMeta.Name,
-			"error", err)
-		return nil, nil, nil, fmt.Errorf("failed to convert to solution: %w", err)
-	}
-
-	// Convert to SolutionContainer
-	solutionContainer, err := s.convertApplicationDescriptionToSolutionContainer(ctx, appDesc, solution.ObjectMeta.Name)
-	if err != nil {
-		appPkgLogger.Error("Failed to convert to solution container",
-			"appId", appDesc.Metadata.Id,
-			"solutionId", solution.ObjectMeta.Name,
-			"error", err)
-		return nil, nil, nil, fmt.Errorf("failed to convert to solution container: %w", err)
-	}
-
-	conversionDuration := time.Since(conversionStart)
-	appPkgLogger.Info("Symphony conversion completed successfully",
-		"appId", appDesc.Metadata.Id,
-		"catalogId", catalog.ObjectMeta.Name,
-		"solutionId", solution.ObjectMeta.Name,
-		"containerId", solutionContainer.ObjectMeta.Name,
-		"conversionDuration", conversionDuration)
-
-	return catalog, solution, solutionContainer, nil
-}
-
-// convertApplicationDescriptionToCatalog converts application description to Catalog object
-func (s *AppPkgManager) convertApplicationDescriptionToCatalog(
-	ctx context.Context,
-	appDesc margoNonStdAPI.AppDescription,
-	convCtx ConversionContext,
-	resources map[string][]byte) (*model.CatalogState, error) {
-
-	appPkgLogger.Debug("Converting to Catalog object",
-		"appId", appDesc.Metadata.Id,
-		"appName", appDesc.Metadata.Name)
-
-	metadataName := appDesc.Metadata.Id + "-v-1"
-
-	catalog := &model.CatalogState{
-		ObjectMeta: model.ObjectMeta{
-			Name:      metadataName,
-			Namespace: appPkgNamespace,
-		},
-		Spec: &model.CatalogSpec{
-			CatalogType:  "solution",
-			RootResource: appDesc.Metadata.Id,
-			// ParentName:   appDesc.Metadata.Id,
-			Version: appDesc.Metadata.Version,
-			// ObjectRef: model.ObjectRef{
-
-			// },
-			Properties: map[string]interface{}{
-				"spec": map[string]interface{}{
-					"displayName": appDesc.Metadata.Name,
-					"description": appDesc.Metadata.Description,
-					"version":     appDesc.Metadata.Version,
-					"sourcePackage": map[string]interface{}{
-						"sourceType":  convCtx.SourceType,
-						"sourceInfo":  convCtx.SourceInfo,
-						"packageName": convCtx.SourcePackageName,
-					},
-					"metadata":      appDesc.Metadata,
-					"resourceCount": len(resources),
-				},
-			},
-		},
-	}
-
-	appPkgLogger.Debug("Catalog object created successfully",
-		"catalog", metadataName,
-		"appId", appDesc.Metadata.Id)
-
-	return catalog, nil
-}
-
-func (s *AppPkgManager) convertApplicationDescriptionToSolution(
-	ctx context.Context,
-	appDesc margoNonStdAPI.AppDescription,
-	catalogId string) (*model.SolutionState, error) {
-
-	appPkgLogger.Debug("Converting to Solution object",
-		"appId", appDesc.Metadata.Id,
-		"catalogId", catalogId)
-
-	solutionId := appDesc.Metadata.Id + "-v-1"
-
-	// Convert deployment profiles to components with proper Symphony structure
-	components, err := s.convertDeploymentProfilesToComponents(ctx, appDesc.DeploymentProfiles, appDesc.Configuration, appDesc.Parameters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert deployment profiles: %w", err)
-	}
-
-	solution := &model.SolutionState{
-		ObjectMeta: model.ObjectMeta{
-			Name:      solutionId,
-			Namespace: appPkgNamespace,
-		},
-		Spec: &model.SolutionSpec{
-			Version:      appDesc.Metadata.Version,
-			RootResource: appDesc.Metadata.Id,
-			DisplayName:  appDesc.Metadata.Name,
-			Components:   components,
-			Metadata: map[string]string{
-				"description":   *appDesc.Metadata.Description,
-				"applicationId": appDesc.Metadata.Id,
-				"catalogRef":    catalogId,
-				"profileCount":  fmt.Sprintf("%d", len(appDesc.DeploymentProfiles)),
-			},
-		},
-	}
-
-	appPkgLogger.Debug("Solution object created successfully",
-		"solutionId", solutionId,
-		"appId", appDesc.Metadata.Id,
-		"componentCount", len(components),
-		"entireSolution", pretty.Sprint(solution))
-
-	return solution, nil
-}
-
-// convertApplicationDescriptionToSolutionContainer converts application description to SolutionContainer object
-func (s *AppPkgManager) convertApplicationDescriptionToSolutionContainer(
-	ctx context.Context,
-	appDesc margoNonStdAPI.AppDescription,
-	solutionId string) (*model.SolutionContainerState, error) {
-
-	appPkgLogger.Debug("Converting to SolutionContainer object",
-		"appId", appDesc.Metadata.Id,
-		"solutionId", solutionId)
-
-	containerId := "sc-" + appDesc.Metadata.Id
-
-	solutionContainer := &model.SolutionContainerState{
-		ObjectMeta: model.ObjectMeta{
-			Name:      containerId,
-			Namespace: appPkgNamespace,
-		},
-		Spec: &model.SolutionContainerSpec{
-			// DisplayName: appDesc.Metadata.Name + " Container",
-			// Solution: model.SolutionSelector{
-			// 	Name: solutionId,
-			// },
-		},
-	}
-
-	appPkgLogger.Debug("SolutionContainer object created successfully",
-		"containerId", containerId,
-		"appId", appDesc.Metadata.Id,
-		"solutionId", solutionId)
-
-	return solutionContainer, nil
-}
-
-func (s *AppPkgManager) convertDeploymentProfilesToComponents(
-	ctx context.Context,
-	deploymentProfiles []margoNonStdAPI.AppDeploymentProfile,
-	config *margoNonStdAPI.AppConfigurationSchema,
-	parameters *margoNonStdAPI.AppDescriptionParametersMap) ([]model.ComponentSpec, error) {
-
-	var components []model.ComponentSpec
-
-	for profileIdx, profile := range deploymentProfiles {
-		for compIdx, component := range profile.Components {
-			var symphonyComponent model.ComponentSpec
-			var err error
-
-			switch profile.Type {
-			case margoNonStdAPI.AppDeploymentProfileTypeHelmV3:
-				symphonyComponent, err = s.convertHelmComponent(component, profile, parameters)
-			case margoNonStdAPI.AppDeploymentProfileTypeCompose:
-				symphonyComponent, err = s.convertComposeComponent(component, profile, parameters)
-			default:
-				return nil, fmt.Errorf("unsupported profile type: %s", profile.Type)
-			}
-
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert component %d in profile %d: %w", compIdx, profileIdx, err)
-			}
-
-			components = append(components, symphonyComponent)
-		}
-	}
-
-	return components, nil
-}
-
-func (s *AppPkgManager) convertHelmComponent(
-	component margoNonStdAPI.AppDeploymentProfile_Components_Item,
-	profile margoNonStdAPI.AppDeploymentProfile,
-	parameters *margoNonStdAPI.AppDescriptionParametersMap) (model.ComponentSpec, error) {
-
-	helmComp, err := component.AsHelmApplicationDeploymentProfileComponent()
-	if err != nil {
-		return model.ComponentSpec{}, fmt.Errorf("failed to parse helm component: %w", err)
-	}
-
-	// Build component properties with proper parameter resolution
-	properties := map[string]interface{}{
-		"chart": map[string]interface{}{
-			"repository": helmComp.Properties.Repository,
-			"name":       helmComp.Name,
-		},
-	}
-
-	// Add optional properties
-	if helmComp.Properties.Revision != nil {
-		properties["chart"].(map[string]interface{})["version"] = *helmComp.Properties.Revision
-	}
-	if helmComp.Properties.Timeout != nil {
-		properties["timeout"] = *helmComp.Properties.Timeout
-	}
-	if helmComp.Properties.Wait != nil {
-		properties["wait"] = *helmComp.Properties.Wait
-	}
-
-	// Apply parameter overrides
-	if parameters != nil {
-		values, err := s.resolveComponentParameters(helmComp.Name, *parameters)
-		if err != nil {
-			return model.ComponentSpec{}, fmt.Errorf("failed to resolve parameters: %w", err)
-		}
-		if len(values) > 0 {
-			properties["values"] = values
-		}
-	}
-
-	return model.ComponentSpec{
-		Name:       helmComp.Name,
-		Type:       "helm.v3",
-		Properties: properties,
-	}, nil
-}
-
-func (s *AppPkgManager) convertComposeComponent(
-	component margoNonStdAPI.AppDeploymentProfile_Components_Item,
-	profile margoNonStdAPI.AppDeploymentProfile,
-	parameters *margoNonStdAPI.AppDescriptionParametersMap) (model.ComponentSpec, error) {
-	return model.ComponentSpec{}, nil
-}
-
-func (s *AppPkgManager) resolveComponentParameters(
-	componentName string,
-	parameters margoNonStdAPI.AppDescriptionParametersMap) (map[string]interface{}, error) {
-
-	values := make(map[string]interface{})
-
-	for paramName, paramValue := range parameters {
-		for _, target := range paramValue.Targets {
-			// Check if this parameter targets our component
-			for _, targetComponent := range target.Components {
-				if targetComponent == componentName {
-					// Apply parameter using JSONPath pointer
-					if err := s.applyParameterValue(values, target.Pointer, paramValue.Value); err != nil {
-						return nil, fmt.Errorf("failed to apply parameter %s: %w", paramName, err)
-					}
-				}
-			}
-		}
-	}
-
-	return values, nil
-}
-
-// applyParameterValue applies a parameter value to a nested map using JSONPath-like pointer
-func (s *AppPkgManager) applyParameterValue(values map[string]interface{}, pointer string, value interface{}) error {
-	appPkgLogger.Debug("Applying parameter value",
-		"pointer", pointer,
-		"value", value)
-
-	// Remove leading slash if present (JSONPath format)
-	pointer = strings.TrimPrefix(pointer, "/")
-
-	if pointer == "" {
-		return fmt.Errorf("empty parameter pointer")
-	}
-
-	// Split the pointer into path segments
-	segments := strings.Split(pointer, "/")
-
-	// Navigate to the parent of the target field
-	current := values
-	for i, segment := range segments[:len(segments)-1] {
-		// Handle array indices (e.g., "items[0]" or "items.0")
-		if strings.Contains(segment, "[") && strings.Contains(segment, "]") {
-			return fmt.Errorf("array indexing not yet supported in parameter pointer: %s", pointer)
-		}
-
-		// Create nested map if it doesn't exist
-		if _, exists := current[segment]; !exists {
-			current[segment] = make(map[string]interface{})
-		}
-
-		// Ensure the current segment is a map
-		nextMap, ok := current[segment].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("cannot navigate through non-map value at segment %d (%s) in pointer %s", i, segment, pointer)
-		}
-
-		current = nextMap
-	}
-
-	// Set the final value
-	finalKey := segments[len(segments)-1]
-
-	// Try to parse value as different types
-	parsedValue := value //s.parseParameterValue(value)
-	current[finalKey] = parsedValue
-
-	appPkgLogger.Debug("Successfully applied parameter value",
-		"pointer", pointer,
-		"finalKey", finalKey,
-		"parsedValue", parsedValue)
-
-	return nil
-}
-
-// parseParameterValue attempts to parse a string value into appropriate Go types
-func (s *AppPkgManager) parseParameterValue(value interface{}) interface{} {
-	return value
-}
-
-func (s *AppPkgManager) convertConfigurationSchema(
-	config *margoNonStdAPI.AppConfigurationSchema) (map[string]interface{}, error) {
-
-	if config == nil {
-		return nil, nil
-	}
-
-	configMap := make(map[string]interface{})
-
-	// Convert schema definitions
-	if config.Schema != nil {
-		schemas := make(map[string]interface{})
-		for _, schema := range *config.Schema {
-			schemas[schema.Name] = map[string]interface{}{
-				"dataType":   schema.DataType,
-				"allowEmpty": schema.AllowEmpty,
-				"minLength":  schema.MinLength,
-				"maxLength":  schema.MaxLength,
-				"minValue":   schema.MinValue,
-				"maxValue":   schema.MaxValue,
-				"regexMatch": schema.RegexMatch,
-			}
-		}
-		configMap["schemas"] = schemas
-	}
-
-	// Convert sections for UI organization
-	if config.Sections != nil {
-		sections := make([]interface{}, 0, len(*config.Sections))
-		for _, section := range *config.Sections {
-			sectionMap := map[string]interface{}{
-				"name":     section.Name,
-				"settings": make([]interface{}, 0, len(section.Settings)),
-			}
-
-			for _, setting := range section.Settings {
-				settingMap := map[string]interface{}{
-					"name":        setting.Name,
-					"parameter":   setting.Parameter,
-					"schema":      setting.Schema,
-					"description": setting.Description,
-					"immutable":   setting.Immutable,
-				}
-				sectionMap["settings"] = append(sectionMap["settings"].([]interface{}), settingMap)
-			}
-
-			sections = append(sections, sectionMap)
-		}
-		configMap["sections"] = sections
-	}
-
-	return configMap, nil
-}
-
 // storeSymphonyObjects stores the converted Symphony objects in the appropriate systems
 func (s *AppPkgManager) storeSymphonyObjects(
 	ctx context.Context,
@@ -1200,7 +680,7 @@ func (s *AppPkgManager) DeleteAppPkg(ctx context.Context, pkgId string) error {
 	}
 
 	// Check if package exists
-	existingPkg, err := s.getPkgFromDB(ctx, pkgId)
+	existingPkg, err := s.Database.GetAppPackage(ctx, pkgId)
 	if err != nil {
 		appPkgLogger.Error("Failed to retrieve package for deletion",
 			"packageId", pkgId,
@@ -1210,8 +690,8 @@ func (s *AppPkgManager) DeleteAppPkg(ctx context.Context, pkgId string) error {
 
 	appPkgLogger.Info("Package found for deletion",
 		"packageId", pkgId,
-		"packageName", existingPkg.Package.Metadata.Name,
-		"currentStatus", existingPkg.Package.Status.State)
+		"packageName", existingPkg.PackageRequest.Metadata.Name,
+		"currentStatus", existingPkg.PackageRequest.Status.State)
 
 	// Delete associated Symphony objects if they exist
 	if err := s.deleteSymphonyObjects(ctx, pkgId); err != nil {
@@ -1221,7 +701,7 @@ func (s *AppPkgManager) DeleteAppPkg(ctx context.Context, pkgId string) error {
 	}
 
 	// Delete package from database
-	if err := s.deletePkgFromDB(ctx, pkgId); err != nil {
+	if err := s.Database.DeleteAppPackage(ctx, pkgId); err != nil {
 		appPkgLogger.Error("Failed to delete package from database",
 			"packageId", pkgId,
 			"error", err)
@@ -1239,64 +719,10 @@ func (s *AppPkgManager) DeleteAppPkg(ctx context.Context, pkgId string) error {
 // deleteSymphonyObjects deletes associated Symphony objects
 func (s *AppPkgManager) deleteSymphonyObjects(ctx context.Context, pkgId string) error {
 	appPkgLogger.Debug("Deleting associated Symphony objects", "packageId", pkgId)
-
-	// Generate expected object IDs based on package ID
-	catalogId := "cat-" + pkgId
-	solutionId := "sol-" + pkgId
-	containerId := "sc-" + pkgId
-
-	// Delete SolutionContainer first (depends on Solution)
-	if err := s.deleteSymphonyObject(ctx, "solutioncontainers", "SolutionContainer", containerId); err != nil {
-		appPkgLogger.Warn("Failed to delete SolutionContainer",
-			"containerId", containerId,
-			"error", err)
-	}
-
-	// Delete Solution (depends on Catalog)
-	if err := s.deleteSymphonyObject(ctx, "solutions", "Solution", solutionId); err != nil {
-		appPkgLogger.Warn("Failed to delete Solution",
-			"solutionId", solutionId,
-			"error", err)
-	}
-
-	// Delete Catalog last
-	if err := s.deleteSymphonyObject(ctx, "catalogs", "Catalog", catalogId); err != nil {
-		appPkgLogger.Warn("Failed to delete Catalog",
-			"catalogId", catalogId,
-			"error", err)
-	}
+	// TODO: pending
 
 	appPkgLogger.Debug("Symphony objects deletion completed", "packageId", pkgId)
 	return nil
-}
-
-// deleteSymphonyObject deletes a specific Symphony object
-func (s *AppPkgManager) deleteSymphonyObject(ctx context.Context, resource, kind, objectId string) error {
-	metadata := map[string]interface{}{
-		"version":   "v1",
-		"group":     model.MargoGroup,
-		"resource":  resource,
-		"namespace": appPkgNamespace,
-		"kind":      kind,
-	}
-
-	err := s.StateProvider.Delete(ctx, states.DeleteRequest{
-		Metadata: metadata,
-		ID:       objectId,
-	})
-
-	if err != nil {
-		appPkgLogger.Debug("Failed to delete Symphony object",
-			"objectType", kind,
-			"objectId", objectId,
-			"error", err)
-	} else {
-		appPkgLogger.Debug("Successfully deleted Symphony object",
-			"objectType", kind,
-			"objectId", objectId)
-	}
-
-	return err
 }
 
 // GetAppPkg retrieves an application package by ID
@@ -1309,12 +735,17 @@ func (s *AppPkgManager) GetAppPkg(ctx context.Context, pkgId string) (*Applicati
 		return nil, fmt.Errorf("package ID is required")
 	}
 
-	pkg, err := s.getPkgFromDB(ctx, pkgId)
+	dbRow, err := s.Database.GetAppPackage(ctx, pkgId)
 	if err != nil {
 		appPkgLogger.Error("Failed to retrieve package",
 			"packageId", pkgId,
 			"error", err)
 		return nil, fmt.Errorf("failed to retrieve package: %w", err)
+	}
+	pkg := &ApplicationPackage{
+		Package:     dbRow.PackageRequest,
+		Description: dbRow.AppDescription,
+		Resources:   dbRow.AppResources,
 	}
 
 	appPkgLogger.Debug("Package retrieved successfully",
@@ -1330,25 +761,15 @@ func (s *AppPkgManager) ListAppPkgs(ctx context.Context) (*margoNonStdAPI.Applic
 	appPkgLogger.Debug("Listing all application packages")
 
 	// Get all packages from database
-	listResp, _, err := s.StateProvider.List(ctx, states.ListRequest{
-		Metadata: appPkgMetadata,
-	})
+	dbRows, err := s.Database.ListAppPackages(ctx)
 	if err != nil {
 		appPkgLogger.Error("Failed to list packages from database", "error", err)
 		return nil, fmt.Errorf("failed to list packages: %w", err)
 	}
 
 	var packages []margoNonStdAPI.ApplicationPackageManifestResp
-	for _, entry := range listResp {
-		var pkg ApplicationPackage
-		jData, _ := json.Marshal(entry.Body)
-		if err := json.Unmarshal(jData, &pkg); err != nil {
-			appPkgLogger.Warn("Failed to unmarshal package, skipping",
-				"packageId", entry.ID,
-				"error", err)
-			continue
-		}
-		packages = append(packages, pkg.Package)
+	for _, dbRow := range dbRows {
+		packages = append(packages, dbRow.PackageRequest)
 	}
 
 	result := &margoNonStdAPI.ApplicationPackageListResp{
