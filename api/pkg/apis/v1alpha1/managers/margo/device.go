@@ -150,7 +150,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNameDeploymentManager) ||
+			if producerName != string(publishGroupNameDeploymentManager) &&
 				producerName != string(publishGroupNamePackageManager) {
 				// we want updates from this producer only
 				return nil
@@ -227,38 +227,28 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 		"status", status)
 
 	// Update deployment status in database
-	dbRows, err := s.Database.GetDeploymentsByDevice(ctx, deviceId)
+	// Get deployment
+	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
 	if err != nil {
-		return fmt.Errorf("error caught while finding deployments for device: %s, error: %w", deviceId, err)
+		return fmt.Errorf("deployment not found: %w", err)
 	}
 
-	var deployment *margoNonStdAPI.ApplicationDeploymentManifestResp
-	for _, row := range dbRows {
-		if *row.DeploymentRequest.Metadata.Id == deploymentId {
-			deployment = &row.DeploymentRequest
-			break
-		}
-	}
-	if deployment == nil {
-		return fmt.Errorf("deployment: %s doesnot seem to be under device: %s", deploymentId, deviceId)
-	}
-	// Missing: Validate status values
-	deployment.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&status)
+	// Update the current state (what device reports)
+	currentState := dbRow.CurrentDeployment
+	currentState.AppState = sbi.AppStateAppState(status)
 
-	// With:
-	dbRow := DeploymentDatabaseRow{
-		DeploymentRequest: *deployment,
-		LastStatusUpdate:  time.Now().UTC(),
+	// Update database
+	if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, currentState); err != nil {
+		return fmt.Errorf("failed to update current state: %w", err)
 	}
-	if err := s.Database.UpsertDeployment(ctx, dbRow); err != nil {
-		return fmt.Errorf("failed to store update the app status in database, %s", err.Error())
+
+	// Also update the deployment request status for backward compatibility
+	dbRow.DeploymentRequest.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&status)
+	if err := s.Database.UpsertDeployment(ctx, *dbRow); err != nil {
+		return fmt.Errorf("failed to update deployment: %w", err)
 	}
+
 	return nil
-}
-
-// compareAppState is not implemented.
-func (s *DeviceManager) compareAppState(context context.Context, pkgId string) (*margoStdAPI.AppState, error) {
-	return nil, nil
 }
 
 func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret, tokenEndpointUrl string) (*TokenData, error) {
@@ -353,66 +343,102 @@ type DeviceOnboardingData struct {
 	TokenEndpointUrl string
 }
 
-// PollDesiredState is not implemented.
 func (s *DeviceManager) PollDesiredState(ctx context.Context, deviceId string, currentStates margoStdAPI.CurrentAppStates) (margoStdAPI.DesiredAppStates, error) {
-	potentialCandidates := margoStdAPI.CurrentAppStates{}
+	deviceLogger.InfofCtx(ctx, "PollDesiredState: Polling desired state for device '%s'", deviceId)
+
+	// Get all deployments for this device
+	dbRows, err := s.Database.GetDeploymentsByDevice(ctx, deviceId)
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "PollDesiredState: Failed to get deployments: %v", err)
+		return nil, fmt.Errorf("failed to get deployments for device %s: %w", deviceId, err)
+	}
+
+	desiredStates := make(margoStdAPI.DesiredAppStates, 0, len(dbRows))
+
+	for _, row := range dbRows {
+		// Use the actual desired state from database, not the operation
+		if row.DesiredDeployment.AppId == "" {
+			// If no desired state set, derive from deployment request
+			desiredState := s.deriveDesiredStateFromDeployment(row.DeploymentRequest)
+			row.DesiredDeployment = desiredState
+
+			// Update database with derived state
+			s.Database.UpsertDeploymentDesiredState(ctx, *row.DeploymentRequest.Metadata.Id, desiredState)
+		}
+
+		desiredStates = append(desiredStates, row.DesiredDeployment)
+	}
+
+	// If no current states provided, return all desired states
 	if len(currentStates) == 0 {
-		dbRows, err := s.Database.GetDeploymentsByDevice(ctx, deviceId)
-		if err != nil {
-			return potentialCandidates, err
-		}
-
-		var allDeployments []margoNonStdAPI.ApplicationDeploymentManifestResp
-		for _, row := range dbRows {
-			allDeployments = append(allDeployments, row.DeploymentRequest)
-		}
-
-		for _, deploymentInDB := range allDeployments {
-			dep, err := ConvertNBIAppDeploymentToSBIAppDeployment(&deploymentInDB)
-			if err != nil {
-				return nil, err
-			}
-			var desiredState margoStdAPI.AppStateAppState
-			if deploymentInDB.RecentOperation.Op == margoNonStdAPI.DELETE {
-				desiredState = margoStdAPI.REMOVING
-			}
-			if deploymentInDB.RecentOperation.Op == margoNonStdAPI.DEPLOY {
-				desiredState = margoStdAPI.RUNNING
-			}
-			if deploymentInDB.RecentOperation.Op == margoNonStdAPI.UPDATE {
-				desiredState = margoStdAPI.UPDATING
-			}
-
-			appState, err := pkg.ConvertAppDeploymentToAppState(dep, deploymentInDB.Spec.AppPackageRef.Id, "", string(desiredState))
-			if err != nil {
-				return potentialCandidates, err
-			}
-
-			potentialCandidates = append(potentialCandidates, appState)
-		}
-		return potentialCandidates, nil
+		deviceLogger.InfofCtx(ctx, "PollDesiredState: Returning all %d desired states", len(desiredStates))
+		return desiredStates, nil
 	}
 
-	finalCandidates := margoStdAPI.CurrentAppStates{}
-	for _, currentState := range currentStates {
-		for index, potentialCandiate := range potentialCandidates {
-			if potentialCandiate.AppId == currentState.AppId {
+	// Filter based on differences
+	filteredStates := make(margoStdAPI.DesiredAppStates, 0)
+	for _, desired := range desiredStates {
+		needsUpdate := true
 
-				// this is a scenario where the hash of the application has changed hence the device should use this new version
-				if potentialCandiate.AppDeploymentYAMLHash != currentState.AppDeploymentYAMLHash {
-					finalCandidates = append(finalCandidates, potentialCandidates[index])
-					continue
+		for _, current := range currentStates {
+			if desired.AppId == current.AppId {
+				if s.statesAreEqual(desired, current) {
+					needsUpdate = false
+					break
 				}
-
-				// this is a scenario where the state of the application is supposed to be changed, but the device has some different state
-				if string(potentialCandiate.AppState) != string(currentState.AppState) {
-					finalCandidates = append(finalCandidates, potentialCandidates[index])
-				}
-
 			}
 		}
+
+		if needsUpdate {
+			filteredStates = append(filteredStates, desired)
+		}
 	}
-	return finalCandidates, nil
+
+	deviceLogger.InfofCtx(ctx, "PollDesiredState: Returning %d filtered states", len(filteredStates))
+	return filteredStates, nil
+}
+
+// Helper to derive desired state from deployment request
+func (s *DeviceManager) deriveDesiredStateFromDeployment(deployment margoNonStdAPI.ApplicationDeploymentManifestResp) sbi.AppState {
+	var appState sbi.AppStateAppState
+
+	switch deployment.RecentOperation.Op {
+	case margoNonStdAPI.DEPLOY:
+		appState = sbi.RUNNING
+	case margoNonStdAPI.UPDATE:
+		appState = sbi.UPDATING
+	case margoNonStdAPI.DELETE:
+		appState = sbi.REMOVING
+	default:
+		appState = sbi.RUNNING // Default
+	}
+
+	// Convert deployment to SBI format
+	sbiDeployment, _ := ConvertNBIAppDeploymentToSBIAppDeployment(&deployment)
+
+	// Create proper AppState
+	desiredState, _ := pkg.ConvertAppDeploymentToAppState(
+		sbiDeployment,
+		deployment.Spec.AppPackageRef.Id,
+		"v1",
+		string(appState))
+
+	return desiredState
+}
+
+// Helper method to compare states
+func (s *DeviceManager) statesAreEqual(desired, current margoStdAPI.AppState) bool {
+	// Compare app state
+	if desired.AppState != current.AppState {
+		return false
+	}
+
+	// Compare deployment hash (configuration changes)
+	if desired.AppDeploymentYAMLHash != current.AppDeploymentYAMLHash {
+		return false
+	}
+
+	return true
 }
 
 // Shutdown is required by the symphony's manager plugin interface
