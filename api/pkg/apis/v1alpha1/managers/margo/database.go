@@ -30,6 +30,8 @@ var (
 	deletePackageFeed                 PublishFeed      = "deletePackage"
 	deleteDeploymentFeed              PublishFeed      = "deleteDeployment"
 	deleteDeviceFeed                  PublishFeed      = "deleteDevice"
+	changeDeploymentCurrentState      PublishFeed      = "changeDeploymentCurrentState"
+	changeDeploymentDesiredState      PublishFeed      = "changeDeploymentDesiredState"
 )
 
 // AppPackageDatabaseRow represents a complete application package record in the database.
@@ -237,7 +239,7 @@ func (db *MargoDatabase) AppPackageExists(ctx context.Context, packageId string)
 	return true, nil
 }
 
-func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment DeploymentDatabaseRow) error {
+func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment DeploymentDatabaseRow, publishEvent bool) error {
 	deploymentId := *deployment.DeploymentRequest.Metadata.Id
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
@@ -253,12 +255,14 @@ func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment Deploy
 	}
 	deploymentLogger.InfofCtx(ctx, "UpsertDeployment: deployment '%s' stored successfully", deploymentId)
 
-	db.MgrContext.Publish(string(upsertDeploymentFeed), v1alpha2.Event{
-		Metadata: map[string]string{
-			"producerName": db.PubSubGroupName,
-		},
-		Body: deployment,
-	})
+	if publishEvent {
+		db.MgrContext.Publish(string(upsertDeploymentFeed), v1alpha2.Event{
+			Metadata: map[string]string{
+				"producerName": db.PubSubGroupName,
+			},
+			Body: deployment,
+		})
+	}
 	return nil
 }
 
@@ -284,11 +288,12 @@ func (db *MargoDatabase) GetDeployment(ctx context.Context, deploymentId string)
 	return &deployment, nil
 }
 
-func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId string) error {
+func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId string, publishEvent bool) error {
 	existingDeployment, err := db.GetDeployment(ctx, deploymentId)
 	if err != nil {
 		return fmt.Errorf("deployment doesn't exist, hence can't perform deletion")
 	}
+	deploymentCopy := *existingDeployment
 
 	err = db.StateProvider.Delete(ctx, states.DeleteRequest{
 		Metadata: db.deploymentMetadata,
@@ -302,12 +307,14 @@ func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId stri
 
 	deploymentLogger.InfofCtx(ctx, "DeleteDeployment: deployment '%s' deleted successfully", deploymentId)
 
-	db.MgrContext.Publish(string(deleteDeploymentFeed), v1alpha2.Event{
-		Metadata: map[string]string{
-			"producerName": db.PubSubGroupName,
-		},
-		Body: existingDeployment,
-	})
+	if publishEvent {
+		db.MgrContext.Publish(string(deleteDeploymentFeed), v1alpha2.Event{
+			Metadata: map[string]string{
+				"producerName": db.PubSubGroupName,
+			},
+			Body: deploymentCopy,
+		})
+	}
 
 	return nil
 }
@@ -353,7 +360,7 @@ func (db *MargoDatabase) DeploymentExists(ctx context.Context, deploymentId stri
 	return true, nil
 }
 
-func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentId string, status margoNonStdAPI.ApplicationDeploymentOperationStatus) error {
+func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentId string, status margoNonStdAPI.ApplicationDeploymentOperationStatus, publishEvent bool) error {
 	// Get existing deployment
 	deployment, err := db.GetDeployment(ctx, deploymentId)
 	if err != nil {
@@ -368,7 +375,7 @@ func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentI
 	deployment.LastStatusUpdate = now
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment)
+	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "UpdateDeploymentStatus: Failed to update deployment status for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to update deployment status for '%s': %w", deploymentId, err)
@@ -378,7 +385,7 @@ func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentI
 	return nil
 }
 
-func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deploymentId string, operation margoNonStdAPI.ApplicationDeploymentOperation) error {
+func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deploymentId string, operation margoNonStdAPI.ApplicationDeploymentOperation, publishEvent bool) error {
 	// Get existing deployment
 	deployment, err := db.GetDeployment(ctx, deploymentId)
 	if err != nil {
@@ -393,7 +400,7 @@ func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deployme
 	deployment.LastStatusUpdate = now
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment)
+	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "UpdateDeploymentOperation: Failed to update deployment operation for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to update deployment operation for '%s': %w", deploymentId, err)
@@ -403,7 +410,7 @@ func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deployme
 	return nil
 }
 
-func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deploymentId string, desired sbi.AppState) error {
+func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deploymentId string, desired sbi.AppState, publishEvent bool) error {
 	// Get existing deployment or create new one if it doesn't exist
 	deployment, err := db.GetDeployment(ctx, deploymentId)
 	if err != nil {
@@ -419,7 +426,7 @@ func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deplo
 	deployment.LastStatusUpdate = time.Now().UTC()
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment)
+	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "UpsertDeploymentDesiredState: Failed to upsert deployment desired state for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to upsert deployment desired state for '%s': %w", deploymentId, err)
@@ -429,7 +436,7 @@ func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deplo
 	return nil
 }
 
-func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deploymentId string, current sbi.AppState) error {
+func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deploymentId string, current sbi.AppState, publishEvent bool) error {
 	// Get existing deployment or create new one if it doesn't exist
 	deployment, err := db.GetDeployment(ctx, deploymentId)
 	if err != nil {
@@ -445,7 +452,7 @@ func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deplo
 	deployment.LastStatusUpdate = time.Now().UTC()
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment)
+	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		deploymentLogger.ErrorfCtx(ctx, "UpsertDeploymentCurrentState: Failed to upsert deployment current state for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to upsert deployment current state for '%s': %w", deploymentId, err)

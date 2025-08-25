@@ -282,7 +282,7 @@ func (c *WorkloadVendor) listDeployments(request v1alpha2.COARequest) v1alpha2.C
 		return createErrorResponse(workloadVendorLogger, span, err, "Failed to list app deployments", v1alpha2.InternalError)
 	}
 
-	return createSuccessResponse(span, v1alpha2.OK, deployments)
+	return createSuccessResponse(span, v1alpha2.OK, &deployments)
 }
 
 func (c *WorkloadVendor) deleteDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {

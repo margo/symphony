@@ -86,7 +86,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 	if err != nil {
 		return err
 	}
-	s.Database = NewMargoDatabase(s.Context, "device-manager", stateprovider)
+	s.Database = NewMargoDatabase(s.Context, publishGroupNameDeviceManager, stateprovider)
 
 	s.needValidate = managers.NeedObjectValidate(config, providers)
 	if s.needValidate {
@@ -172,7 +172,7 @@ func (s *DeviceManager) upsertObjectInCache(topic string, event v1alpha2.Event) 
 	case AppPackageDatabaseRow:
 		err = s.Database.UpsertAppPackage(context.Background(), event.Body.(AppPackageDatabaseRow))
 	case DeploymentDatabaseRow:
-		err = s.Database.UpsertDeployment(context.Background(), event.Body.(DeploymentDatabaseRow))
+		err = s.Database.UpsertDeployment(context.Background(), event.Body.(DeploymentDatabaseRow), false)
 	case DeviceDatabaseRow:
 		err = s.Database.UpsertDevice(context.Background(), event.Body.(DeviceDatabaseRow))
 	default:
@@ -198,7 +198,7 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 	case AppPackageDatabaseRow:
 		err = s.Database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Metadata.Id)
 	case DeploymentDatabaseRow:
-		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Metadata.Id)
+		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Metadata.Id, false)
 	case DeviceDatabaseRow:
 		err = s.Database.DeleteDevice(context.Background(), event.Body.(DeviceDatabaseRow).Capabilities.Properties.Id)
 	default:
@@ -237,17 +237,23 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	currentState := dbRow.CurrentDeployment
 	currentState.AppState = sbi.AppStateAppState(status)
 
-	// Update database
-	if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, currentState); err != nil {
-		return fmt.Errorf("failed to update current state: %w", err)
+	switch currentState.AppState {
+	case "REMOVED":
+		// Update database
+		if err := s.Database.DeleteDeployment(ctx, deploymentId, true); err != nil {
+			return fmt.Errorf("failed to delete current state: %w", err)
+		}
+	default:
+		// Update database
+		if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, currentState, true); err != nil {
+			return fmt.Errorf("failed to update current state: %w", err)
+		}
+		// Also update the deployment request status for backward compatibility
+		dbRow.DeploymentRequest.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&status)
+		if err := s.Database.UpsertDeployment(ctx, *dbRow, true); err != nil {
+			return fmt.Errorf("failed to update deployment: %w", err)
+		}
 	}
-
-	// Also update the deployment request status for backward compatibility
-	dbRow.DeploymentRequest.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&status)
-	if err := s.Database.UpsertDeployment(ctx, *dbRow); err != nil {
-		return fmt.Errorf("failed to update deployment: %w", err)
-	}
-
 	return nil
 }
 
@@ -363,7 +369,7 @@ func (s *DeviceManager) PollDesiredState(ctx context.Context, deviceId string, c
 			row.DesiredDeployment = desiredState
 
 			// Update database with derived state
-			s.Database.UpsertDeploymentDesiredState(ctx, *row.DeploymentRequest.Metadata.Id, desiredState)
+			s.Database.UpsertDeploymentDesiredState(ctx, *row.DeploymentRequest.Metadata.Id, desiredState, true)
 		}
 
 		desiredStates = append(desiredStates, row.DesiredDeployment)

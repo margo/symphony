@@ -52,7 +52,7 @@ require (
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/dev-repo v0.0.0-20250820070433-b84486125489
+	github.com/margo/dev-repo v0.0.0-20250820074811-0fefb4ff468e
 	github.com/princjef/mageutil v1.0.0
 )
 
