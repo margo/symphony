@@ -1,10 +1,10 @@
 apiVersion: non-margo.org
 kind: ApplicationDeployment
 metadata:
-  name: instance01
+  name: nginx-instance
 spec:
   appPackageRef:
-    id: 5fff20e0-cb58-49da-936f-d5bd63c303af  #69391e61-22be-4603-890b-bcbcc32be6cb
+    id: 97158541-a90b-4d60-a67c-754900fb76d6  #69391e61-22be-4603-890b-bcbcc32be6cb
   deviceRef:
     id: device-101
   deploymentProfile:

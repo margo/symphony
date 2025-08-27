@@ -627,10 +627,10 @@
             "name": "solutions-manager",
             "type": "managers.symphony.solutions",
             "properties": {
-              "providers.persistentstate": "k8s-state"
+              "providers.persistentstate": "memory"
             },
             "providers": {
-              "k8s-state": {
+              "memory": {
                 "type": "providers.state.memory",
                 "config": {}
               }
@@ -640,10 +640,10 @@
             "name": "solution-container-manager",
             "type": "managers.symphony.solutioncontainers",
             "properties": {
-              "providers.persistentstate": "k8s-state"
+              "providers.persistentstate": "memory"
             },
             "providers": {
-              "k8s-state": {
+              "memory": {
                 "type": "providers.state.memory",
                 "config": {}
               }
@@ -660,10 +660,6 @@
               "memory": {
                 "type": "providers.state.memory",
                 "config": {}
-              },
-              "graph": {
-                "type": "providers.graph.memory",
-                "config": {}
               }
             }
           },
@@ -678,10 +674,6 @@
               "memory": {
                 "type": "providers.state.memory",
                 "config": {}
-              },
-              "graph": {
-                "type": "providers.graph.memory",
-                "config": {}
               }
             }
           },
@@ -689,10 +681,10 @@
             "name": "solutions-manager",
             "type": "managers.symphony.solutions",
             "properties": {
-              "providers.persistentstate": "k8s-state"
+              "providers.persistentstate": "memory"
             },
             "providers": {
-              "k8s-state": {
+              "memory": {
                 "type": "providers.state.memory",
                 "config": {}
               }
@@ -718,10 +710,6 @@
             "providers": {
               "memory": {
                 "type": "providers.state.memory",
-                "config": {}
-              },
-              "graph": {
-                "type": "providers.graph.memory",
                 "config": {}
               }
             }

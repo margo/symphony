@@ -1,17 +1,17 @@
 apiVersion: non-margo.org
 kind: ApplicationPackage
 metadata:
-  name: my-web-app-pkg
+  name: mariadb-pkg
   labels:
     env: dev
   annotations:
-    description: "A web application for managing user accounts"
+    description: "A web application for MariaDB"
 spec:
   sourceType: GIT_REPO
   source:
-    #url: "http://52.224.241.180:3000/gogsadmin/my-new-repo"
+    # url: "http://52.224.241.180:3333/gogsadmin/my-new-repo"
     # branch: "main"
-    url: "http://172.19.59.148:3333/margouser/package-repo"
+    url: "http://172.19.59.148:3333/margouser/mariadb"
     branch: "master"
     #commit: <commit id>
     #token: <pass-pat>
