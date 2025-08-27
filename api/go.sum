@@ -297,6 +297,8 @@ github.com/margo/dev-repo v0.0.0-20250827074531-98a89cb22733 h1:HVUWchoFoHthfE7V
 github.com/margo/dev-repo v0.0.0-20250827074531-98a89cb22733/go.mod h1:5Lci3lpSmQepiNIRiP5hJ5Umm8NtyFfNv3hTIkhpU1w=
 github.com/margo/dev-repo v0.0.0-20250827075743-21c029e6d85c h1:dIT8r1pkJzATLK4ONr0kTWbbhl0AbV5w3EoXqHQhta8=
 github.com/margo/dev-repo v0.0.0-20250827075743-21c029e6d85c/go.mod h1:5Lci3lpSmQepiNIRiP5hJ5Umm8NtyFfNv3hTIkhpU1w=
+github.com/margo/dev-repo v0.0.0-20250827080627-99b6a2d0e9d1 h1:Q9j/rQlRMhE5C1d2GqqgMZTz2HWc1MQZ2pVZy/KRSJE=
+github.com/margo/dev-repo v0.0.0-20250827080627-99b6a2d0e9d1/go.mod h1:5Lci3lpSmQepiNIRiP5hJ5Umm8NtyFfNv3hTIkhpU1w=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
