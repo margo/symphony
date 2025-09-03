@@ -56,7 +56,7 @@ type TokenData struct {
 	Claims       map[string]interface{} `json:"claims,omitempty"`
 }
 
-func (i *KeycloakProvider) Init(config providers.IProviderConfig) error {
+func (self *KeycloakProvider) Init(config providers.IProviderConfig) error {
 	ctx, span := observability.StartSpan("Android ADB Provider", context.TODO(), &map[string]string{
 		"method": "Init",
 	})
@@ -66,7 +66,7 @@ func (i *KeycloakProvider) Init(config providers.IProviderConfig) error {
 
 	keycloakLogs.InfoCtx(ctx, "  P (Keycloak Provider): Init()")
 
-	err = i.setup(ctx, config)
+	err = self.setup(ctx, config)
 	if err != nil {
 		keycloakLogs.ErrorfCtx(ctx, "  P (Keycloak Provider): failure: %+v", err)
 		return errors.New("expected correct KeycloakProviderConfig")
@@ -76,10 +76,10 @@ func (i *KeycloakProvider) Init(config providers.IProviderConfig) error {
 }
 
 type KeycloakProviderConfig struct {
-	KeycloakURL string `json:"keycloak_url"`
+	KeycloakURL string `json:"keycloakURL"`
 	Realm       string `json:"realm"`
-	AdminUser   string `json:"admin_user"`
-	AdminPass   string `json:"admin_pass"`
+	AdminUser   string `json:"adminUsername"`
+	AdminPass   string `json:"adminPassword"`
 }
 
 func toKeycloakProviderConfig(config providers.IProviderConfig) (KeycloakProviderConfig, error) {
@@ -110,7 +110,7 @@ func toKeycloakProviderConfig(config providers.IProviderConfig) (KeycloakProvide
 }
 
 // setup initializes a KeycloakProvider with admin credentials
-func (i *KeycloakProvider) setup(ctx context.Context, config providers.IProviderConfig) error {
+func (self *KeycloakProvider) setup(ctx context.Context, config providers.IProviderConfig) error {
 	parsedConfig, err := toKeycloakProviderConfig(config)
 	if err != nil {
 		keycloakLogs.Errorf("  P (Keycloak Provider): expected KeycloakProviderConfig: %+v", err)
@@ -123,43 +123,43 @@ func (i *KeycloakProvider) setup(ctx context.Context, config providers.IProvider
 		return fmt.Errorf("failed to get admin token: %w", err)
 	}
 
-	i.client = client
-	i.config = parsedConfig
-	i.adminToken = token
-	i.tokenExpiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	self.client = client
+	self.config = parsedConfig
+	self.adminToken = token
+	self.tokenExpiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
 
 	return nil
 }
 
-func (gkm *KeycloakProvider) GetTokenURL() string {
-	return gkm.config.KeycloakURL
+func (self *KeycloakProvider) GetTokenURL() string {
+	return self.config.KeycloakURL
 }
 
 // refreshTokenIfNeeded ensures the admin token is valid and refreshes it if necessary
-func (gkm *KeycloakProvider) refreshTokenIfNeeded(ctx context.Context) error {
-	gkm.mu.Lock()
-	defer gkm.mu.Unlock()
+func (self *KeycloakProvider) refreshTokenIfNeeded(ctx context.Context) error {
+	self.mu.Lock()
+	defer self.mu.Unlock()
 
 	// Check if the token is still valid
-	if time.Now().Before(gkm.tokenExpiry) {
+	if time.Now().Before(self.tokenExpiry) {
 		return nil
 	}
 
 	// Refresh the token
-	token, err := gkm.client.LoginAdmin(ctx, gkm.config.AdminUser, gkm.config.AdminPass, gkm.config.Realm)
+	token, err := self.client.LoginAdmin(ctx, self.config.AdminUser, self.config.AdminPass, self.config.Realm)
 	if err != nil {
 		return fmt.Errorf("failed to refresh admin token: %w", err)
 	}
 
-	gkm.adminToken = token
-	gkm.tokenExpiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+	self.adminToken = token
+	self.tokenExpiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
 	return nil
 }
 
 // CreateClientWithClaims creates a client and adds claims as protocol mappers
-func (gkm *KeycloakProvider) CreateClientWithClaims(ctx context.Context, clientConfig ClientConfig, claims map[string]interface{}) (*ClientResult, error) {
+func (self *KeycloakProvider) CreateClientWithClaims(ctx context.Context, clientConfig ClientConfig, claims map[string]interface{}) (*ClientResult, error) {
 	// Ensure the admin token is valid before making the API call
-	if err := gkm.refreshTokenIfNeeded(ctx); err != nil {
+	if err := self.refreshTokenIfNeeded(ctx); err != nil {
 		return nil, err
 	}
 
@@ -177,19 +177,19 @@ func (gkm *KeycloakProvider) CreateClientWithClaims(ctx context.Context, clientC
 		AuthorizationServicesEnabled: gocloak.BoolP(true),
 	}
 
-	clientUUID, err := gkm.client.CreateClient(ctx, gkm.adminToken.AccessToken, gkm.config.Realm, client)
+	clientUUID, err := self.client.CreateClient(ctx, self.adminToken.AccessToken, self.config.Realm, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
 	for claimName, claimValue := range claims {
-		err = gkm.createClaimMapper(ctx, clientUUID, claimName, claimValue)
+		err = self.createClaimMapper(ctx, clientUUID, claimName, claimValue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create claim mapper for %s: %w", claimName, err)
 		}
 	}
 
-	clientSecret, err := gkm.client.GetClientSecret(ctx, gkm.adminToken.AccessToken, gkm.config.Realm, clientUUID)
+	clientSecret, err := self.client.GetClientSecret(ctx, self.adminToken.AccessToken, self.config.Realm, clientUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client secret: %w", err)
 	}
@@ -198,12 +198,12 @@ func (gkm *KeycloakProvider) CreateClientWithClaims(ctx context.Context, clientC
 		ClientID:     clientConfig.ClientID,
 		ClientSecret: *clientSecret.Value,
 		ClientUUID:   clientUUID,
-		TokenUrl:     gkm.GetTokenURL(),
+		TokenUrl:     self.GetTokenURL(),
 	}, nil
 }
 
 // createClaimMapper creates a protocol mapper for a client
-func (gkm *KeycloakProvider) createClaimMapper(ctx context.Context, clientUUID, claimName string, claimValue interface{}) error {
+func (self *KeycloakProvider) createClaimMapper(ctx context.Context, clientUUID, claimName string, claimValue interface{}) error {
 	mapper := gocloak.ProtocolMapperRepresentation{
 		Name:           gocloak.StringP(fmt.Sprintf("%s-mapper", claimName)),
 		Protocol:       gocloak.StringP("openid-connect"),
@@ -219,30 +219,30 @@ func (gkm *KeycloakProvider) createClaimMapper(ctx context.Context, clientUUID, 
 		},
 	}
 
-	_, err := gkm.client.CreateClientProtocolMapper(ctx, gkm.adminToken.AccessToken, gkm.config.Realm, clientUUID, mapper)
+	_, err := self.client.CreateClientProtocolMapper(ctx, self.adminToken.AccessToken, self.config.Realm, clientUUID, mapper)
 	return err
 }
 
 // GetTokenWithClaims retrieves a token and optionally updates claims
-func (gkm *KeycloakProvider) GetTokenWithClaims(ctx context.Context, clientID, clientSecret string, additionalClaims map[string]interface{}) (*TokenData, error) {
+func (self *KeycloakProvider) GetTokenWithClaims(ctx context.Context, clientID, clientSecret string, additionalClaims map[string]interface{}) (*TokenData, error) {
 	// Ensure the admin token is valid before making the API call
-	if err := gkm.refreshTokenIfNeeded(ctx); err != nil {
+	if err := self.refreshTokenIfNeeded(ctx); err != nil {
 		return nil, err
 	}
 
 	if len(additionalClaims) > 0 {
-		err := gkm.updateClientClaims(ctx, clientID, additionalClaims)
+		err := self.updateClientClaims(ctx, clientID, additionalClaims)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update client claims: %w", err)
 		}
 	}
 
-	token, err := gkm.client.LoginClient(ctx, clientID, clientSecret, gkm.config.Realm)
+	token, err := self.client.LoginClient(ctx, clientID, clientSecret, self.config.Realm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token: %w", err)
 	}
 
-	claims, err := gkm.parseTokenClaims(token.AccessToken)
+	claims, err := self.parseTokenClaims(token.AccessToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token claims: %w", err)
 	}
@@ -257,7 +257,7 @@ func (gkm *KeycloakProvider) GetTokenWithClaims(ctx context.Context, clientID, c
 }
 
 // parseTokenClaims decodes and parses claims from a JWT
-func (gkm *KeycloakProvider) parseTokenClaims(accessToken string) (map[string]interface{}, error) {
+func (self *KeycloakProvider) parseTokenClaims(accessToken string) (map[string]interface{}, error) {
 	parts := strings.Split(accessToken, ".")
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid JWT format")
@@ -276,14 +276,14 @@ func (gkm *KeycloakProvider) parseTokenClaims(accessToken string) (map[string]in
 	return claims, nil
 }
 
-func (gkm *KeycloakProvider) updateClientClaims(ctx context.Context, clientID string, claims map[string]interface{}) error {
+func (self *KeycloakProvider) updateClientClaims(ctx context.Context, clientID string, claims map[string]interface{}) error {
 	// Ensure the admin token is valid before making the API call
-	if err := gkm.refreshTokenIfNeeded(ctx); err != nil {
+	if err := self.refreshTokenIfNeeded(ctx); err != nil {
 		return err
 	}
 
 	// Get client UUID
-	clients, err := gkm.client.GetClients(ctx, gkm.adminToken.AccessToken, gkm.config.Realm, gocloak.GetClientsParams{
+	clients, err := self.client.GetClients(ctx, self.adminToken.AccessToken, self.config.Realm, gocloak.GetClientsParams{
 		ClientID: &clientID,
 	})
 	if err != nil {
@@ -297,7 +297,7 @@ func (gkm *KeycloakProvider) updateClientClaims(ctx context.Context, clientID st
 	clientUUID := *clients[0].ID
 
 	// Get existing mappers
-	mappers, err := gkm.client.GetClientScopeProtocolMappers(ctx, gkm.adminToken.AccessToken, gkm.config.Realm, clientUUID)
+	mappers, err := self.client.GetClientScopeProtocolMappers(ctx, self.adminToken.AccessToken, self.config.Realm, clientUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get protocol mappers: %w", err)
 	}
@@ -312,7 +312,7 @@ func (gkm *KeycloakProvider) updateClientClaims(ctx context.Context, clientID st
 
 	// Update or create claims
 	for claimName, claimValue := range claims {
-		err := gkm.createClaimMapper(ctx, clientUUID, claimName, claimValue)
+		err := self.createClaimMapper(ctx, clientUUID, claimName, claimValue)
 		if err != nil {
 			return fmt.Errorf("failed to update claim %s: %w", claimName, err)
 		}

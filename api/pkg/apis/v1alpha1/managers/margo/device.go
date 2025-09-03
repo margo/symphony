@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/kr/pretty"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
@@ -69,6 +69,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 	for _, provider := range providers {
 		switch p := provider.(type) {
 		case *keycloak.KeycloakProvider:
+			deviceLogger.InfofCtx(context.EvaluationContext.Context, "provider initialized", "keycloakprovider", pretty.Sprint(p))
 			s.KeycloakProvider = p
 		}
 	}
@@ -346,7 +347,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 	success = true
 
 	// Log successful onboarding
-	log.Printf("Successfully onboarded device with client ID: %s", clientID)
+	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "clientId", clientID)
 
 	return &DeviceOnboardingData{
 		ClientId:         clientID,
