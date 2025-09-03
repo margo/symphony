@@ -15,7 +15,6 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	"github.com/kr/pretty"
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
@@ -69,7 +68,6 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 	for _, provider := range providers {
 		switch p := provider.(type) {
 		case *keycloak.KeycloakProvider:
-			deviceLogger.InfofCtx(context.Background(), "provider initialized", "keycloakprovider", pretty.Sprint(p))
 			s.KeycloakProvider = p
 		}
 	}
@@ -320,7 +318,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 	})
 	if err != nil {
 		success = false
-		return nil, fmt.Errorf("failed to authenticate with Keycloak: %w", err)
+		return nil, fmt.Errorf("failed to authenticate with Keycloak: %s", err.Error())
 	}
 
 	// Verify client was created successfully
