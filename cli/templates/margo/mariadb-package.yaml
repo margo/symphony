@@ -1,7 +1,7 @@
 apiVersion: non-margo.org
 kind: ApplicationPackage
 metadata:
-  name: mariadb-pkg
+  name: nextcloud
   labels:
     env: dev
   annotations:
@@ -11,7 +11,7 @@ spec:
   source:
     # url: "http://52.224.241.180:3333/gogsadmin/my-new-repo"
     # branch: "main"
-    url: "http://172.19.59.148:3333/margouser/mariadb"
+    url: "http://172.19.59.148:3333/margouser/nextcloud"
     branch: "master"
     #commit: <commit id>
     #token: <pass-pat>

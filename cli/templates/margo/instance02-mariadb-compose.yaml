@@ -4,7 +4,7 @@ metadata:
   name: mariadb-instance
 spec:
   appPackageRef:
-    id: 97158541-a90b-4d60-a67c-754900fb76d6  #69391e61-22be-4603-890b-bcbcc32be6cb
+    id: 6b66ded8-a94a-43bc-a686-3abb130330ad  #fd6695c3-eb30-4af1-95bc-49667ae4d477
   deviceRef:
     id: device-101
   deploymentProfile:
@@ -12,7 +12,8 @@ spec:
     components:
       - name: nextcloud-stack
         properties:  
-          packageLocation: https://github.com/docker/awesome-compose/blob/master/nextcloud-redis-mariadb/compose.yaml
+        packageLocation: https://github.com/docker/awesome-compose/blob/master/nextcloud-redis-mariadb/compose.yaml
+        #https://raw.githubusercontent.com/docker/awesome-compose/refs/heads/master/nextcloud-redis-mariadb/compose.yaml
   parameters:
     nextcloudPort:
       value: 81
