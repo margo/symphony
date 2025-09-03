@@ -78,5 +78,5 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
 	}
 
-	return createSuccessResponse(span, v1alpha2.Created, &devices)
+	return createSuccessResponse(span, v1alpha2.OK, &devices)
 }
