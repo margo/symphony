@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -118,7 +119,7 @@ func (self *KeycloakProvider) setup(ctx context.Context, config providers.IProvi
 	}
 
 	client := gocloak.NewClient(parsedConfig.KeycloakURL)
-	token, err := client.LoginAdmin(ctx, parsedConfig.AdminPass, parsedConfig.AdminPass, parsedConfig.Realm)
+	token, err := client.LoginAdmin(ctx, parsedConfig.AdminUser, parsedConfig.AdminPass, parsedConfig.Realm)
 	if err != nil {
 		return fmt.Errorf("failed to get admin token: %w", err)
 	}
@@ -162,12 +163,16 @@ func (self *KeycloakProvider) CreateClientWithClaims(ctx context.Context, client
 	if err := self.refreshTokenIfNeeded(ctx); err != nil {
 		return nil, err
 	}
+	// Generate client secret
+	clientSecret := generateClientSecret()
 
 	client := gocloak.Client{
 		ClientID:                     gocloak.StringP(clientConfig.ClientID),
+		Secret:                       &clientSecret,
 		Name:                         gocloak.StringP(clientConfig.Name),
 		Description:                  gocloak.StringP(clientConfig.Description),
 		Enabled:                      gocloak.BoolP(clientConfig.Enabled),
+		PublicClient:                 gocloak.BoolP(false),
 		ClientAuthenticatorType:      gocloak.StringP(clientConfig.AuthenticatorType),
 		StandardFlowEnabled:          gocloak.BoolP(clientConfig.StandardFlowEnabled),
 		ServiceAccountsEnabled:       gocloak.BoolP(clientConfig.ServiceAccountsEnabled),
@@ -189,14 +194,9 @@ func (self *KeycloakProvider) CreateClientWithClaims(ctx context.Context, client
 		}
 	}
 
-	clientSecret, err := self.client.GetClientSecret(ctx, self.adminToken.AccessToken, self.config.Realm, clientUUID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client secret: %w", err)
-	}
-
 	return &ClientResult{
 		ClientID:     clientConfig.ClientID,
-		ClientSecret: *clientSecret.Value,
+		ClientSecret: clientSecret,
 		ClientUUID:   clientUUID,
 		TokenUrl:     self.GetTokenURL(),
 	}, nil
@@ -319,4 +319,16 @@ func (self *KeycloakProvider) updateClientClaims(ctx context.Context, clientID s
 	}
 
 	return nil
+}
+
+// Helper function to generate secure client secret
+func generateClientSecret() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const secretLength = 32
+
+	b := make([]byte, secretLength)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
 }
