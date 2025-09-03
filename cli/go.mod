@@ -51,18 +51,18 @@ require (
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/dev-repo v0.0.0-20250827081218-446f0b2f35fa
+	github.com/margo/dev-repo v0.0.0-20250903110549-d604e3674bba
 	github.com/princjef/mageutil v1.0.0
 )
 
 require (
-	github.com/eclipse-symphony/symphony/api v0.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jedib0t/go-pretty/v6 v6.4.2
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	github.com/spf13/pflag v1.0.7 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	sigs.k8s.io/yaml v1.4.0
 )

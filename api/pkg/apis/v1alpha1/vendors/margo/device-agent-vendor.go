@@ -101,7 +101,7 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 			Methods:    []string{fasthttp.MethodPost},
 			Route:      route + "/device/{deviceId}/capabilities",
 			Version:    self.Version,
-			Handler:    self.reportDeviceCapabilities,
+			Handler:    self.saveDeviceCapabilities,
 			Parameters: []string{"deviceId?"},
 		},
 		{
@@ -122,17 +122,17 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 }
 
 // Handler for POST /device/{deviceId}/capabilities
-func (self *DeviceAgentVendor) reportDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) saveDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
-			"method": "reportDeviceCapabilities",
+			"method": "saveDeviceCapabilities",
 			"route":  request.Route,
 			"verb":   request.Method,
 		})
 	defer span.End()
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): reportDeviceCapabilities, method: %s", request.Method)
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): saveDeviceCapabilities, method: %s", request.Method)
 
 	// Extract deviceId from URL parameters
 	fmt.Println("<---------------Request Prameteres----------------->", request.Parameters)
@@ -164,7 +164,7 @@ func (self *DeviceAgentVendor) reportDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	// Call DeviceManager to report capabilities
-	err := self.DeviceManager.ReportDeviceCapabilities(pCtx, deviceId, capabilities)
+	err := self.DeviceManager.SaveDeviceCapabilities(pCtx, deviceId, capabilities)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
 	}

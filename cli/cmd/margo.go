@@ -28,7 +28,7 @@ var (
 
 var MargoCmd = &cobra.Command{
 	Use:   "wfm",
-	Short: "Margo commands for managing margo applications",
+	Short: "Commands to showcase and enable Margo PoC on wfm (app package, deployment, devices)",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("\n%sMargo CLI - Use subcommands: apply, delete, list, get%s\n\n", utils.ColorBlue(), utils.ColorReset())
 		cmd.Help()
@@ -98,6 +98,17 @@ var MargoDeleteDeploymentCmd = &cobra.Command{
 var MargoListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List application Pkgs",
+}
+
+var MargoListDevicesCmd = &cobra.Command{
+	Use:   "devices",
+	Short: "List all margo devices",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := listDevices(); err != nil {
+			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return
+		}
+	},
 }
 
 var MargoListAppPkgCmd = &cobra.Command{
@@ -269,6 +280,18 @@ func deleteDeployment(deploymentID string) error {
 	return nil
 }
 
+func listDevices() error {
+	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+
+	devices, err := northboundCli.ListDevices()
+	if err != nil {
+		return fmt.Errorf("failed to list application Pkgs: %w", err)
+	}
+
+	displayDevicesTable(*devices)
+	return nil
+}
+
 func listAppPkgs() error {
 	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
@@ -339,6 +362,7 @@ func init() {
 
 	MargoListCmd.AddCommand(MargoListAppPkgCmd)
 	MargoListCmd.AddCommand(MargoListDeploymentCmd)
+	MargoListCmd.AddCommand(MargoListDevicesCmd)
 
 	MargoGetCmd.AddCommand(MargoGetAppPkgCmd)
 	MargoGetCmd.AddCommand(MargoGetDeploymentCmd)
@@ -360,6 +384,47 @@ func init() {
 	fmt.Printf("└─────────────────────────────────────────┘\n")
 }
 
+func displayDevicesTable(resp nbi.DeviceListResp) {
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+
+	// Set headers
+	t.AppendHeader(table.Row{
+		"ID", "Signature", "Capabilities", "State", "Created",
+	})
+
+	// Add data rows
+	for _, device := range resp.Items {
+		cap, _ := json.Marshal(device.Spec.Capabilities)
+		row := table.Row{
+			truncateString(*device.Metadata.Id, 40),
+			truncateString(device.Spec.Signature, 10),
+			truncateString(string(cap), 10),
+			string(device.State.Onboard),
+			formatTime(*device.Metadata.CreationTimestamp),
+		}
+		t.AppendRow(row)
+	}
+
+	// Add footer with pagination
+	t.AppendFooter(table.Row{
+		"", "", "",
+		fmt.Sprintf("Page %d/%d", 1, 1),
+		fmt.Sprintf("Total: %d", 1), //resp.Metadata.TotalItems),
+	})
+
+	// Configure column settings
+	t.SetColumnConfigs([]table.ColumnConfig{
+		{Number: 1, WidthMax: 48}, // ID
+		{Number: 2, WidthMax: 25}, // Name
+		{Number: 3, WidthMax: 15}, // Type
+		{Number: 4, WidthMax: 12}, // State
+		{Number: 5, WidthMax: 16}, // Created
+		{Number: 6, WidthMax: 16}, // Updated
+	})
+
+	t.Render()
+}
 func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)

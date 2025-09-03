@@ -522,35 +522,20 @@ func ConvertNBIAppDeploymentToSBIAppDeployment(appDeployment *margoNonStdAPI.App
 	return &appDeploymentOnSBI, nil
 }
 
-func (s *DeviceManager) ReportDeviceCapabilities(ctx context.Context, deviceId string, capabilities margoStdAPI.DeviceCapabilities) error {
-	deviceLogger.InfofCtx(ctx, "ReportDeviceCapabilities: Reporting capabilities for device '%s'", deviceId)
+func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceId string, capabilities margoStdAPI.DeviceCapabilities) error {
+	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Saving capabilities for device '%s'", deviceId)
 
 	if deviceId == "" {
 		return fmt.Errorf("device ID is required")
 	}
 
 	// Check if device already exists
-	exists, err := s.Database.DeviceExists(ctx, deviceId)
+	err := s.Database.UpdateDeviceCapabilities(ctx, deviceId, &capabilities)
 	if err != nil {
-		return fmt.Errorf("failed to check device existence: %w", err)
-	}
-	if exists {
-		return fmt.Errorf("capabilities already exist for device '%s', use PUT to update", deviceId)
+		return fmt.Errorf("failed to save device capabilities: %w", err)
 	}
 
-	// Create new device record
-	deviceRow := DeviceDatabaseRow{
-		DeviceId:      deviceId,
-		Capabilities:  &capabilities,
-		LastStateSync: time.Now().UTC(),
-	}
-
-	err = s.Database.UpsertDevice(ctx, deviceRow)
-	if err != nil {
-		return fmt.Errorf("failed to save capabilities for device '%s': %w", deviceId, err)
-	}
-
-	deviceLogger.InfofCtx(ctx, "ReportDeviceCapabilities: Successfully reported capabilities for device '%s'", deviceId)
+	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Successfully saved capabilities for device '%s'", deviceId)
 	return nil
 }
 

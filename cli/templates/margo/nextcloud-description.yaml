@@ -1,7 +1,7 @@
 apiVersion: margo.org/v1-alpha1
 kind: ApplicationDescription
 metadata:
-  name: nextcloud-mariadb-stack
+  name: nextcloud-stack
   description: Nextcloud with MariaDB and Redis stack
   version: 1.0.0
   catalog:
@@ -25,7 +25,8 @@ deploymentProfiles:
     components:
       - name: nextcloud-stack
         properties:
-          packageLocation: https://github.com/docker/awesome-compose/blob/master/nextcloud-redis-mariadb/compose.yaml
+          packageLocation: https://raw.githubusercontent.com/docker/awesome-compose/refs/heads/master/nextcloud-redis-mariadb/compose.yaml
+          # https://github.com/docker/awesome-compose/blob/master/nextcloud-redis-mariadb/compose.yaml
 parameters:
   mysqlDatabase:
     value: nextcloud

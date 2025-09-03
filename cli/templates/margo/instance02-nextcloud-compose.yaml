@@ -1,7 +1,7 @@
 apiVersion: non-margo.org
 kind: ApplicationDeployment
 metadata:
-  name: mariadb-instance
+  name: nextcloud-instance
 spec:
   appPackageRef:
     id: 97158541-a90b-4d60-a67c-754900fb76d6  #69391e61-22be-4603-890b-bcbcc32be6cb
@@ -12,7 +12,7 @@ spec:
     components:
       - name: nextcloud-stack
         properties:  
-          packageLocation: https://github.com/docker/awesome-compose/blob/master/nextcloud-redis-mariadb/compose.yaml
+          packageLocation: https://raw.githubusercontent.com/docker/awesome-compose/refs/heads/master/nextcloud-redis-mariadb/compose.yaml
   parameters:
     nextcloudPort:
       value: 81
