@@ -12,6 +12,7 @@ import (
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	catalogconfig "github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/config/catalog"
 	memorygraph "github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/graph/memory"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/keycloak"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/secret"
 	counterstage "github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/stage/counter"
 	symphonystage "github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/stage/create"
@@ -379,6 +380,12 @@ func (s SymphonyProviderFactory) CreateProvider(providerType string, config cp.I
 		}
 	case "providers.keylock.memory":
 		mProvider := &memorykeylock.MemoryKeyLockProvider{}
+		err = mProvider.Init(config)
+		if err == nil {
+			return mProvider, nil
+		}
+	case "providers.auth.keyclock":
+		mProvider := &keycloak.KeycloakProvider{}
 		err = mProvider.Init(config)
 		if err == nil {
 			return mProvider, nil

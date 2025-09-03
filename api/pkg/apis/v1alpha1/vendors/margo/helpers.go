@@ -39,7 +39,7 @@ func createErrorResponse(logger logger.Logger, span trace.Span, err error, messa
 
 // Helper method for error responses
 func createErrorResponse2(logger logger.Logger, span trace.Span, err error, message string, errorType v1alpha2.State) v1alpha2.COAResponse {
-	logger.InfofCtx(context.Background(), "err: %s, msg: %s", err.Error(), message)
+	logger.ErrorfCtx(context.Background(), "err: %s, msg: %s", err.Error(), message)
 
 	ertype := errorType.String()
 	erMesg := err.Error()

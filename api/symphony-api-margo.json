@@ -606,7 +606,7 @@
         ]
       },
       {
-        "type": "vendors.margo.workload",
+        "type": "vendors.margo.workload.mgmt",
         "route": "margo/nbi/v1",
         "managers": [
           {
@@ -693,7 +693,7 @@
         ]
       },
       {
-        "type": "vendors.margo.device",
+        "type": "vendors.margo.device.mgmt",
         "route": "margo/sbi/v1",
         "managers": [
           {
@@ -711,6 +711,35 @@
               "memory": {
                 "type": "providers.state.memory",
                 "config": {}
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "vendors.margo.device.agent",
+        "route": "margo/sbi/v1",
+        "managers": [
+          {
+            "name": "margo-device-manager",
+            "type": "managers.margo.device",
+            "properties": {
+              "providers.persistentstate": "memory",
+              "singleton": "true"
+            },
+            "providers": {
+              "memory": {
+                "type": "providers.state.memory",
+                "config": {}
+              },
+              "keycloak": {
+                  "type": "providers.auth.keycloak",
+                  "config": {
+                    "keycloakURL": "http://172.19.59.148:8083",
+                    "realm": "master",
+                    "adminUsername": "admin",
+                    "adminPassword": "admin"
+                  }
               }
             }
           }

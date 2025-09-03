@@ -20,9 +20,9 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var workloadVendorLogger = logger.NewLogger("coa.runtime")
+var workloadMgmtVendorLogger = logger.NewLogger("coa.runtime")
 
-type WorkloadVendor struct {
+type WorkloadMgmtVendor struct {
 	vendors.Vendor
 	AppPkgManager            *margo.AppPkgManager
 	DeploymentManager        *margo.DeploymentManager
@@ -31,101 +31,101 @@ type WorkloadVendor struct {
 	CatalogsManager          *catalogs.CatalogsManager
 }
 
-func (o *WorkloadVendor) GetInfo() vendors.VendorInfo {
+func (self *WorkloadMgmtVendor) GetInfo() vendors.VendorInfo {
 	return vendors.VendorInfo{
-		Version:  o.Vendor.Version,
+		Version:  self.Vendor.Version,
 		Name:     "MargoWorkloadVendor",
 		Producer: "Margo",
 	}
 }
 
-func (e *WorkloadVendor) Init(config vendors.VendorConfig, factories []managers.IManagerFactroy, providers map[string]map[string]providers.IProvider, pubsubProvider pubsub.IPubSubProvider) error {
-	err := e.Vendor.Init(config, factories, providers, pubsubProvider)
+func (self *WorkloadMgmtVendor) Init(config vendors.VendorConfig, factories []managers.IManagerFactroy, providers map[string]map[string]providers.IProvider, pubsubProvider pubsub.IPubSubProvider) error {
+	err := self.Vendor.Init(config, factories, providers, pubsubProvider)
 	if err != nil {
 		return err
 	}
-	for _, m := range e.Managers {
+	for _, m := range self.Managers {
 		switch c := m.(type) {
 		case *margo.AppPkgManager:
-			e.AppPkgManager = c
+			self.AppPkgManager = c
 		case *margo.DeploymentManager:
-			e.DeploymentManager = c
+			self.DeploymentManager = c
 		case *solutions.SolutionsManager:
-			e.SolutionsManager = c
+			self.SolutionsManager = c
 		case *catalogs.CatalogsManager:
-			e.CatalogsManager = c
+			self.CatalogsManager = c
 		case *solutioncontainers.SolutionContainersManager:
-			e.SolutionContainerManager = c
+			self.SolutionContainerManager = c
 		}
 	}
-	if e.AppPkgManager == nil {
+	if self.AppPkgManager == nil {
 		return v1alpha2.NewCOAError(nil, "margo app pkg manager is not supplied", v1alpha2.MissingConfig)
 	}
-	if e.DeploymentManager == nil {
+	if self.DeploymentManager == nil {
 		return v1alpha2.NewCOAError(nil, "margo deployment manager is not supplied", v1alpha2.MissingConfig)
 	}
-	if e.SolutionsManager == nil {
+	if self.SolutionsManager == nil {
 		return v1alpha2.NewCOAError(nil, "solutions manager is not supplied", v1alpha2.MissingConfig)
 	}
-	if e.CatalogsManager == nil {
+	if self.CatalogsManager == nil {
 		return v1alpha2.NewCOAError(nil, "catalogs manager is not supplied", v1alpha2.MissingConfig)
 	}
-	if e.SolutionContainerManager == nil {
+	if self.SolutionContainerManager == nil {
 		return v1alpha2.NewCOAError(nil, "solutions container manager is not supplied", v1alpha2.MissingConfig)
 	}
 	return nil
 }
 
-func (o *WorkloadVendor) GetEndpoints() []v1alpha2.Endpoint {
-	route := WorkloadMgmtDefaultBaseURL
-	if o.Route != "" {
-		route = o.Route
+func (self *WorkloadMgmtVendor) GetEndpoints() []v1alpha2.Endpoint {
+	route := WorkloadMgmtInterfaceDefaultBaseURL
+	if self.Route != "" {
+		route = self.Route
 	}
 	return []v1alpha2.Endpoint{
 		{
 			Methods: []string{fasthttp.MethodPost},
 			Route:   route + "/app-packages",
-			Version: o.Version,
-			Handler: o.onboardAppPkg,
+			Version: self.Version,
+			Handler: self.onboardAppPkg,
 		},
 		{
 			Methods:    []string{fasthttp.MethodGet},
 			Route:      route + "/app-packages",
-			Version:    o.Version,
-			Handler:    o.listAppPkgs,
+			Version:    self.Version,
+			Handler:    self.listAppPkgs,
 			Parameters: []string{"id?", "name?", "type?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodDelete},
 			Route:      route + "/app-packages",
-			Version:    o.Version,
-			Handler:    o.deleteAppPkg,
+			Version:    self.Version,
+			Handler:    self.deleteAppPkg,
 			Parameters: []string{"id?"},
 		},
 		{
 			Methods: []string{fasthttp.MethodPost},
 			Route:   route + "/app-deployments",
-			Version: o.Version,
-			Handler: o.createDeployment,
+			Version: self.Version,
+			Handler: self.createDeployment,
 		},
 		{
 			Methods:    []string{fasthttp.MethodGet},
 			Route:      route + "/app-deployments",
-			Version:    o.Version,
-			Handler:    o.listDeployments,
+			Version:    self.Version,
+			Handler:    self.listDeployments,
 			Parameters: []string{"id?", "type?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodDelete},
 			Route:      route + "/app-deployments",
-			Version:    o.Version,
-			Handler:    o.deleteDeployment,
+			Version:    self.Version,
+			Handler:    self.deleteDeployment,
 			Parameters: []string{"id?"},
 		},
 	}
 }
 
-func (c *WorkloadVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -135,18 +135,18 @@ func (c *WorkloadVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COA
 		})
 	defer span.End()
 
-	workloadVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): onboardAppPkg, method: %s, %s", request.Method, string(request.Body))
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): onboardAppPkg, method: %s, %s", request.Method, string(request.Body))
 
 	// Parse request
 	var appPkgReq margoNonStdAPI.ApplicationPackageManifestRequest
 	if err := json.Unmarshal(request.Body, &appPkgReq); err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
 	// Onboard app package
-	appPkg, err := c.AppPkgManager.OnboardAppPkg(pCtx, appPkgReq, c.SolutionsManager, c.SolutionContainerManager, c.CatalogsManager)
+	appPkg, err := self.AppPkgManager.OnboardAppPkg(pCtx, appPkgReq, self.SolutionsManager, self.SolutionContainerManager, self.CatalogsManager)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to onboard the app", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to onboard the app", v1alpha2.InternalError)
 	}
 
 	// catalogState, solutionState, solutionContainerState, err := c.AppPkgManager.ConvertApplicationDescriptionToSymphony(pCtx, *appPkg, margo.ApplicationDescription{}, nil)
@@ -169,7 +169,7 @@ func (c *WorkloadVendor) onboardAppPkg(request v1alpha2.COARequest) v1alpha2.COA
 	return createSuccessResponse(span, v1alpha2.Accepted, appPkg)
 }
 
-func (c *WorkloadVendor) listAppPkgs(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) listAppPkgs(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -179,18 +179,18 @@ func (c *WorkloadVendor) listAppPkgs(request v1alpha2.COARequest) v1alpha2.COARe
 		})
 	defer span.End()
 
-	workloadVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): listAppPkgs, method: %s", request.Method)
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): listAppPkgs, method: %s", request.Method)
 
-	appPkgs, err := c.AppPkgManager.ListAppPkgs(pCtx)
+	appPkgs, err := self.AppPkgManager.ListAppPkgs(pCtx)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to list app packages", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to list app packages", v1alpha2.InternalError)
 	}
 
 	fmt.Println("-------", pretty.Sprint(appPkgs), "---------------------------------------")
 	return createSuccessResponse(span, v1alpha2.OK, appPkgs)
 }
 
-func (c *WorkloadVendor) getAppPkg(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) getAppPkg(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -200,18 +200,18 @@ func (c *WorkloadVendor) getAppPkg(request v1alpha2.COARequest) v1alpha2.COAResp
 		})
 	defer span.End()
 
-	workloadVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): getAppPkg, method: %s", request.Method)
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): getAppPkg, method: %s", request.Method)
 
 	pkgId := request.Parameters["id"]
-	appPkg, err := c.AppPkgManager.GetAppPkg(pCtx, pkgId)
+	appPkg, err := self.AppPkgManager.GetAppPkg(pCtx, pkgId)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to get the app package", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to get the app package", v1alpha2.InternalError)
 	}
 
 	return createSuccessResponse(span, v1alpha2.OK, appPkg)
 }
 
-func (c *WorkloadVendor) deleteAppPkg(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) deleteAppPkg(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -222,17 +222,17 @@ func (c *WorkloadVendor) deleteAppPkg(request v1alpha2.COARequest) v1alpha2.COAR
 	defer span.End()
 
 	pkgId := request.Parameters["__id"]
-	workloadVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): deleteAppPkg, method: %s, metadata: %s, path: %s, parameters: %s", request.Method,
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (AppPkgMgmt): deleteAppPkg, method: %s, metadata: %s, path: %s, parameters: %s", request.Method,
 		pretty.Sprint(request.Metadata), pretty.Sprint(request.Route), pretty.Sprint(request.Parameters), "pkgId", pkgId)
-	err := c.AppPkgManager.DeleteAppPkg(pCtx, pkgId)
+	err := self.AppPkgManager.DeleteAppPkg(pCtx, pkgId)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to delete the app package", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to delete the app package", v1alpha2.InternalError)
 	}
 
 	return createSuccessResponse(span, v1alpha2.Accepted, (*byte)(nil))
 }
 
-func (c *WorkloadVendor) createDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) createDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -242,30 +242,30 @@ func (c *WorkloadVendor) createDeployment(request v1alpha2.COARequest) v1alpha2.
 		})
 	defer span.End()
 
-	workloadVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): createDeployment, method: %s, %s", request.Method, string(request.Body))
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): createDeployment, method: %s, %s", request.Method, string(request.Body))
 
 	// Parse request
 	var deploymentReq margoNonStdAPI.ApplicationDeploymentManifestRequest
 	if err := json.Unmarshal(request.Body, &deploymentReq); err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
-	existingAppPkg, err := c.AppPkgManager.GetAppPkg(pCtx, deploymentReq.Spec.AppPackageRef.Id)
+	existingAppPkg, err := self.AppPkgManager.GetAppPkg(pCtx, deploymentReq.Spec.AppPackageRef.Id)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "referenced app package doesn't exist", v1alpha2.BadRequest)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "referenced app package doesn't exist", v1alpha2.BadRequest)
 	}
 
 	// Onboard app package
-	appPkg, err := c.DeploymentManager.CreateDeployment(pCtx, deploymentReq, *existingAppPkg)
+	appPkg, err := self.DeploymentManager.CreateDeployment(pCtx, deploymentReq, *existingAppPkg)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to create the app deployment", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to create the app deployment", v1alpha2.InternalError)
 	}
 
 	// Create success response
 	return createSuccessResponse(span, v1alpha2.Accepted, appPkg)
 }
 
-func (c *WorkloadVendor) listDeployments(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) listDeployments(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -275,17 +275,17 @@ func (c *WorkloadVendor) listDeployments(request v1alpha2.COARequest) v1alpha2.C
 		})
 	defer span.End()
 
-	workloadVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): listDeployments, method: %s", request.Method)
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): listDeployments, method: %s", request.Method)
 
-	deployments, err := c.DeploymentManager.ListDeployments(pCtx)
+	deployments, err := self.DeploymentManager.ListDeployments(pCtx)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to list app deployments", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to list app deployments", v1alpha2.InternalError)
 	}
 
 	return createSuccessResponse(span, v1alpha2.OK, &deployments)
 }
 
-func (c *WorkloadVendor) deleteDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *WorkloadMgmtVendor) deleteDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Workload Vendor",
 		request.Context,
 		&map[string]string{
@@ -296,11 +296,11 @@ func (c *WorkloadVendor) deleteDeployment(request v1alpha2.COARequest) v1alpha2.
 	defer span.End()
 
 	deploymentId := request.Parameters["__id"]
-	workloadVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): deleteDeployment, method: %s, metadata: %s, path: %s, parameters: %s", request.Method,
+	workloadMgmtVendorLogger.InfofCtx(pCtx, "V (WorkloadMgmt): deleteDeployment, method: %s, metadata: %s, path: %s, parameters: %s", request.Method,
 		pretty.Sprint(request.Metadata), pretty.Sprint(request.Route), pretty.Sprint(request.Parameters), "pkgId", deploymentId)
-	resp, err := c.DeploymentManager.DeleteDeployment(pCtx, deploymentId)
+	resp, err := self.DeploymentManager.DeleteDeployment(pCtx, deploymentId)
 	if err != nil {
-		return createErrorResponse(workloadVendorLogger, span, err, "Failed to delete the app deployment", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to delete the app deployment", v1alpha2.InternalError)
 	}
 
 	return createSuccessResponse(span, v1alpha2.Accepted, resp)

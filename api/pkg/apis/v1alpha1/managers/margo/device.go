@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/Nerzal/gocloak/v13"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/keycloak"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
@@ -47,15 +47,11 @@ type TokenData struct {
 
 type DeviceManager struct {
 	managers.Manager
-	StateProvider  states.IStateProvider
-	needValidate   bool
-	MargoValidator validation.MargoValidator
-	Database       *MargoDatabase
-	// keycloak related
-	keycloakURL   string
-	adminUsername string
-	adminPassword string
-	realm         string
+	Database         *MargoDatabase
+	StateProvider    states.IStateProvider
+	KeycloakProvider *keycloak.KeycloakProvider
+	MargoValidator   validation.MargoValidator
+	needValidate     bool
 }
 
 func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
@@ -63,30 +59,19 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 	if err != nil {
 		return err
 	}
-	// Initialize Keycloak configuration
-	s.keycloakURL = config.Properties["keycloakURL"]
-	s.adminUsername = config.Properties["adminUsername"]
-	s.adminPassword = config.Properties["adminPassword"]
-	s.realm = config.Properties["realm"]
-	// Validate required Keycloak configuration
-	if s.keycloakURL == "" {
-		return fmt.Errorf("keycloak.url is required for device onboarding")
-	}
-	if s.adminUsername == "" {
-		return fmt.Errorf("keycloak.admin.username is required for device onboarding")
-	}
-	if s.adminPassword == "" {
-		return fmt.Errorf("keycloak.admin.password is required for device onboarding")
-	}
-	if s.realm == "" {
-		s.realm = "master" // default realm
-	}
 
 	stateprovider, err := managers.GetPersistentStateProvider(config, providers)
 	if err != nil {
 		return err
 	}
 	s.Database = NewMargoDatabase(s.Context, publishGroupNameDeviceManager, stateprovider)
+
+	for _, provider := range providers {
+		switch p := provider.(type) {
+		case *keycloak.KeycloakProvider:
+			s.KeycloakProvider = p
+		}
+	}
 
 	s.needValidate = managers.NeedObjectValidate(config, providers)
 	if s.needValidate {
@@ -257,64 +242,108 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	return nil
 }
 
-func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret, tokenEndpointUrl string) (*TokenData, error) {
-	client := gocloak.NewClient(dm.keycloakURL)
-
-	token, err := client.LoginClient(ctx, clientId, clientSecret, dm.realm)
+func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret string, userClaims map[string]interface{}) (*TokenData, error) {
+	// dm.AuthProvider.ValidateToken(ctx, )
+	result, err := dm.KeycloakProvider.GetTokenWithClaims(ctx,
+		clientId,
+		clientSecret,
+		userClaims,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to authenticate with Keycloak: %w", err)
+		return nil, fmt.Errorf("failed to authenticate with auth provider: %w", err)
 	}
 
 	return &TokenData{
-		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
-		ExpiresIn:    token.ExpiresIn,
-		TokenType:    token.TokenType,
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
+		ExpiresIn:    result.ExpiresIn,
+		TokenType:    result.TokenType,
 	}, nil
 }
 
-func (dm *DeviceManager) OnboardDevice(ctx context.Context) (*DeviceOnboardingData, error) {
+func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature string) (*DeviceOnboardingData, error) {
+	var success bool
 	// Generate unique client ID for the device
 	clientID := fmt.Sprintf("device-%s-%d", generateDeviceID(), time.Now().Unix())
+	clientSecret := ""
+	tokenUrl := ""
 
-	// Create Keycloak admin client
-	client := gocloak.NewClient(dm.keycloakURL)
-
-	// Get admin token
-	token, err := client.LoginAdmin(ctx, dm.adminUsername, dm.adminPassword, dm.realm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to authenticate with Keycloak: %w", err)
+	onboardStatus := margoNonStdAPI.INPROGRESS
+	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
+		DeviceId:         clientID,
+		ClientSecret:     clientSecret,
+		ClientId:         clientID,
+		TokenURL:         dm.KeycloakProvider.GetTokenURL(),
+		DeviceSignature:  deviceSignature,
+		OnboardingStatus: onboardStatus,
+		Capabilities:     nil,
+		LastStateSync:    time.Now().UTC(),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to save device details: %w", err)
 	}
 
-	// Generate client secret
-	clientSecret := generateClientSecret()
+	defer func() {
+		onboardStatus = margoNonStdAPI.ONBOARDED
+		if !success {
+			onboardStatus = margoNonStdAPI.FAILED
+		}
+		_ = dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
+			DeviceId:         clientID,
+			ClientSecret:     clientSecret,
+			ClientId:         clientID,
+			TokenURL:         dm.KeycloakProvider.GetTokenURL(),
+			DeviceSignature:  deviceSignature,
+			OnboardingStatus: onboardStatus,
+			Capabilities:     nil,
+			LastStateSync:    time.Now().UTC(),
+		})
+	}()
 
 	// Define client configuration
-	keycloakClient := gocloak.Client{
-		ClientID:                  &clientID,
-		Secret:                    &clientSecret,
-		Enabled:                   gocloak.BoolP(true),
-		PublicClient:              gocloak.BoolP(false),
-		ServiceAccountsEnabled:    gocloak.BoolP(true),
-		StandardFlowEnabled:       gocloak.BoolP(false),
-		DirectAccessGrantsEnabled: gocloak.BoolP(true),
-		Protocol:                  gocloak.StringP("openid-connect"),
+	config := keycloak.ClientConfig{
+		ClientID:                  clientID,
+		Enabled:                   true,
+		ServiceAccountsEnabled:    true,
+		StandardFlowEnabled:       false,
+		DirectAccessGrantsEnabled: true,
+		// Name: ,
 		Attributes: &map[string]string{
 			"device.onboarded": "true",
 			"created.by":       "device-manager",
 		},
 	}
 
-	// Create client in Keycloak
-	createdClientID, err := client.CreateClient(ctx, token.AccessToken, dm.realm, keycloakClient)
+	// Get admin token
+	clientResult, err := dm.KeycloakProvider.CreateClientWithClaims(ctx, config, map[string]interface{}{
+		"deviceId": clientID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Keycloak client: %w", err)
+		success = false
+		return nil, fmt.Errorf("failed to authenticate with Keycloak: %w", err)
 	}
 
 	// Verify client was created successfully
-	if createdClientID == "" {
+	if clientResult.ClientID == "" {
+		success = false
 		return nil, fmt.Errorf("client creation returned empty ID")
 	}
+	if clientResult.ClientSecret == "" {
+		success = false
+		return nil, fmt.Errorf("client creation returned empty ID")
+	}
+	if clientResult.ClientUUID == "" {
+		success = false
+		return nil, fmt.Errorf("client creation returned empty ID")
+	}
+	if clientResult.TokenUrl == "" {
+		success = false
+		return nil, fmt.Errorf("client creation returned empty token url")
+	}
+
+	clientID = clientResult.ClientID
+	clientSecret = clientResult.ClientSecret
+	tokenUrl = clientResult.TokenUrl
+	success = true
 
 	// Log successful onboarding
 	log.Printf("Successfully onboarded device with client ID: %s", clientID)
@@ -322,25 +351,46 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context) (*DeviceOnboardingDa
 	return &DeviceOnboardingData{
 		ClientId:         clientID,
 		ClientSecret:     clientSecret,
-		TokenEndpointUrl: dm.keycloakURL,
+		TokenEndpointUrl: tokenUrl,
 	}, nil
+}
+
+func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.DeviceListResp, error) {
+	devices := margoNonStdAPI.DeviceListResp{
+		ApiVersion: "non.margo.org",
+		Kind:       "DeviceList",
+		Items:      []margoNonStdAPI.DeviceManifestResp{},
+		Metadata:   &margoNonStdAPI.PaginationMetadata{},
+	}
+
+	rows, err := dm.Database.ListDevices(ctx)
+	if err != nil {
+		return devices, err
+	}
+
+	for _, row := range rows {
+		devices.Items = append(devices.Items, margoNonStdAPI.DeviceManifestResp{
+			ApiVersion: "non.margo.org",
+			Kind:       "Device",
+			Metadata: margoNonStdAPI.Metadata{
+				Id: &row.DeviceId,
+			},
+			Spec: margoNonStdAPI.DeviceSpec{
+				Capabilities: row.Capabilities,
+				Signature:    row.DeviceSignature,
+			},
+			State: margoNonStdAPI.DeviceState{
+				Onboard: margoNonStdAPI.ONBOARDED,
+			},
+		})
+	}
+	deviceLogger.DebugfCtx(ctx, "Devices: ", len(devices.Items))
+	return devices, nil
 }
 
 // Helper function to generate unique device ID
 func generateDeviceID() string {
 	return fmt.Sprintf("%x", rand.Uint64())
-}
-
-// Helper function to generate secure client secret
-func generateClientSecret() string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	const secretLength = 32
-
-	b := make([]byte, secretLength)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
 }
 
 type DeviceOnboardingData struct {

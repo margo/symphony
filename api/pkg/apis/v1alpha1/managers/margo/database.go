@@ -70,6 +70,21 @@ type DeviceDatabaseRow struct {
 	// DeviceId is the unique identifier for the device
 	DeviceId string
 
+	// ClientId is the unique identifier for the device auth
+	ClientId string
+
+	// Client secret is the information that helps the device to generate/ask for an oauth token
+	ClientSecret string
+
+	// OAuth token url
+	TokenURL string
+
+	// unique signature that is bind to this device, eg TPM, certificate etc...
+	DeviceSignature string
+
+	// status of the onboarding
+	OnboardingStatus margoNonStdAPI.DeviceOnboardStatus
+
 	// Capabilities contains the device's reported capabilities and properties
 	Capabilities *margoStdAPI.DeviceCapabilities
 
@@ -598,6 +613,20 @@ func (db *MargoDatabase) DeviceExists(ctx context.Context, deviceId string) (boo
 
 	deviceLogger.DebugfCtx(ctx, "DeviceExists: Device '%s' exists", deviceId)
 	return true, nil
+}
+
+func (db *MargoDatabase) DeviceSignatureExists(ctx context.Context, deviceSignature string) (DeviceDatabaseRow, bool, error) {
+	devices, err := db.ListDevices(ctx)
+	if err != nil {
+		return DeviceDatabaseRow{}, false, err
+	}
+
+	for _, device := range devices {
+		if device.DeviceSignature == deviceSignature {
+			return device, true, nil
+		}
+	}
+	return DeviceDatabaseRow{}, false, nil
 }
 
 func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceId string, capabilities *margoStdAPI.DeviceCapabilities) error {

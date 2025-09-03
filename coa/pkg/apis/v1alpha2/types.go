@@ -404,6 +404,7 @@ const (
 	ProviderQueue            = "providers.queue"
 	ProviderLedger           = "providers.ledger"
 	ProvidersKeyLock         = "providers.keylock"
+	ProvidersAuth            = "providers.auth"
 	StatusOutput             = "status"
 	ErrorOutput              = "error"
 	StateOutput              = "__state"

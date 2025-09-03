@@ -1,6 +1,7 @@
 package margo
 
 const (
-	WorkloadMgmtDefaultBaseURL    = "margo/nbi/v1"
-	DeviceInterfaceDefaultBaseURL = "margo/sbi/v1"
+	WorkloadMgmtInterfaceDefaultBaseURL = "margo/nbi/v1"
+	DeviceMgmtInterfaceDefaultBaseURL   = "margo/nbi/v1"
+	DeviceAgentInterfaceDefaultBaseURL  = "margo/sbi/v1"
 )

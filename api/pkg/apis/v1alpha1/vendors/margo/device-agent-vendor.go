@@ -12,13 +12,14 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	margoStdSbiAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	"github.com/valyala/fasthttp"
 )
 
 var deviceVendorLogger = logger.NewLogger("coa.runtime")
 
-type DeviceVendor struct {
+type DeviceAgentVendor struct {
 	vendors.Vendor
 	DeviceManager *margo.DeviceManager
 }
@@ -45,83 +46,83 @@ type TokenResponse struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
-func (o *DeviceVendor) GetInfo() vendors.VendorInfo {
+func (self *DeviceAgentVendor) GetInfo() vendors.VendorInfo {
 	return vendors.VendorInfo{
-		Version:  o.Vendor.Version,
+		Version:  self.Vendor.Version,
 		Name:     "MargoDeviceVendor",
 		Producer: "Margo",
 	}
 }
 
-func (e *DeviceVendor) Init(config vendors.VendorConfig, factories []managers.IManagerFactroy, providers map[string]map[string]providers.IProvider, pubsubProvider pubsub.IPubSubProvider) error {
-	err := e.Vendor.Init(config, factories, providers, pubsubProvider)
+func (self *DeviceAgentVendor) Init(config vendors.VendorConfig, factories []managers.IManagerFactroy, providers map[string]map[string]providers.IProvider, pubsubProvider pubsub.IPubSubProvider) error {
+	err := self.Vendor.Init(config, factories, providers, pubsubProvider)
 	if err != nil {
 		return err
 	}
-	for _, m := range e.Managers {
+	for _, m := range self.Managers {
 		switch c := m.(type) {
 		case *margo.DeviceManager:
-			e.DeviceManager = c
+			self.DeviceManager = c
 		}
 	}
-	if e.DeviceManager == nil {
+	if self.DeviceManager == nil {
 		return v1alpha2.NewCOAError(nil, "margo manager is not supplied", v1alpha2.MissingConfig)
 	}
 	return nil
 }
 
-func (o *DeviceVendor) GetEndpoints() []v1alpha2.Endpoint {
-	route := DeviceInterfaceDefaultBaseURL
-	if o.Route != "" {
-		route = o.Route
+func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
+	route := DeviceAgentInterfaceDefaultBaseURL
+	if self.Route != "" {
+		route = self.Route
 	}
 	return []v1alpha2.Endpoint{
 		{
 			Methods: []string{fasthttp.MethodPost},
 			Route:   route + "/wfm/state",
-			Version: o.Version,
-			Handler: o.pollDesiredState,
+			Version: self.Version,
+			Handler: self.pollDesiredState,
 		},
 
 		{
 			Methods: []string{fasthttp.MethodPost},
 			Route:   route + "/onboarding/device",
-			Version: o.Version,
-			Handler: o.onboardDevice,
+			Version: self.Version,
+			Handler: self.onboardDevice,
 		},
 		{
 			Methods: []string{fasthttp.MethodPost},
 			Route:   route + "/auth/token",
-			Version: o.Version,
-			Handler: o.getToken,
+			Version: self.Version,
+			Handler: self.getToken,
 		},
 		// Endpoints for device capabilities
 		{
 			Methods:    []string{fasthttp.MethodPost},
 			Route:      route + "/device/{deviceId}/capabilities",
-			Version:    o.Version,
-			Handler:    o.reportDeviceCapabilities,
+			Version:    self.Version,
+			Handler:    self.reportDeviceCapabilities,
 			Parameters: []string{"deviceId?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodPut},
 			Route:      route + "/device/{deviceId}/capabilities",
-			Version:    o.Version,
-			Handler:    o.updateDeviceCapabilities,
+			Version:    self.Version,
+			Handler:    self.updateDeviceCapabilities,
 			Parameters: []string{"deviceId?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodPost},
 			Route:      route + "/device/{deviceId}/deployment/{deploymentId}/status",
-			Version:    o.Version,
-			Handler:    o.onDeploymentStatusUpdate,
+			Version:    self.Version,
+			Handler:    self.onDeploymentStatusUpdate,
 			Parameters: []string{"deviceId?", "deploymentId?"},
 		},
 	}
 }
 
 // Handler for POST /device/{deviceId}/capabilities
-func (c *DeviceVendor) reportDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) reportDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
@@ -163,7 +164,7 @@ func (c *DeviceVendor) reportDeviceCapabilities(request v1alpha2.COARequest) v1a
 	}
 
 	// Call DeviceManager to report capabilities
-	err := c.DeviceManager.ReportDeviceCapabilities(pCtx, deviceId, capabilities)
+	err := self.DeviceManager.ReportDeviceCapabilities(pCtx, deviceId, capabilities)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
 	}
@@ -177,7 +178,7 @@ func (c *DeviceVendor) reportDeviceCapabilities(request v1alpha2.COARequest) v1a
 }
 
 // Handler for PUT /device/{deviceId}/capabilities
-func (c *DeviceVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
@@ -218,7 +219,7 @@ func (c *DeviceVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1a
 	}
 
 	// Call DeviceManager to update capabilities
-	err := c.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceId, capabilities)
+	err := self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceId, capabilities)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update device capabilities", v1alpha2.InternalError)
 	}
@@ -233,7 +234,7 @@ func (c *DeviceVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1a
 }
 
 // Handler func for getToken
-func (c *DeviceVendor) getToken(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) getToken(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
@@ -259,7 +260,7 @@ func (c *DeviceVendor) getToken(request v1alpha2.COARequest) v1alpha2.COARespons
 	}
 
 	// Call DeviceManager to get token from Keycloak
-	tokenData, err := c.DeviceManager.GetToken(pCtx, tokenReq.ClientId, tokenReq.ClientSecret, tokenReq.TokenEndpointUrl)
+	tokenData, err := self.DeviceManager.GetToken(pCtx, tokenReq.ClientId, tokenReq.ClientSecret, nil)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get token from Keycloak", v1alpha2.InternalError)
 	}
@@ -276,7 +277,7 @@ func (c *DeviceVendor) getToken(request v1alpha2.COARequest) v1alpha2.COARespons
 }
 
 // Handler func for onboardDevice
-func (c *DeviceVendor) onboardDevice(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
@@ -288,23 +289,42 @@ func (c *DeviceVendor) onboardDevice(request v1alpha2.COARequest) v1alpha2.COARe
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onboardDevice, method: %s", request.Method)
 
-	// Call DeviceManager to handle Keycloak onboarding
-	onboardingData, err := c.DeviceManager.OnboardDevice(pCtx)
+	// Parse request body using the correct DeviceCapabilities type
+	onboardingRequest := map[string]any{}
+	if err := json.Unmarshal(request.Body, &onboardingRequest); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device onboarding request", v1alpha2.BadRequest)
+	}
+
+	deviceSignature, exists := onboardingRequest["DeviceSignature"]
+	if !exists {
+		err := fmt.Errorf("device signature must be passed in the request and should be non-empty value")
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
+	}
+
+	device, deviceSignatureExists, err := self.DeviceManager.Database.DeviceSignatureExists(pCtx, deviceSignature.(string))
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to check if device signature already onboarded", v1alpha2.InternalError)
+	}
+
+	if deviceSignatureExists && (device.OnboardingStatus == nbi.ONBOARDED || device.OnboardingStatus == nbi.INPROGRESS) {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Device signature already exists", v1alpha2.InternalError)
+	}
+
+	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, deviceSignature.(string))
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
 	}
 
 	// Create response
 	response := DeviceOnboardingResponse{
-		ClientId:         onboardingData.ClientId,
-		ClientSecret:     onboardingData.ClientSecret,
-		TokenEndpointUrl: onboardingData.TokenEndpointUrl,
+		ClientId:         onboardingResult.ClientId,
+		ClientSecret:     onboardingResult.ClientSecret,
+		TokenEndpointUrl: onboardingResult.TokenEndpointUrl,
 	}
-
 	return createSuccessResponse(span, v1alpha2.OK, &response)
 }
 
-func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
@@ -314,9 +334,9 @@ func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.CO
 		})
 	defer span.End()
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: %s, %s", request.Method, string(request.Body))
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: %s, %s, %s", request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"))
 
-	deviceId := "device-101" // TODO: extract this from the jwt token
+	deviceId := request.Parameters["__deviceId"]
 
 	// Parse request
 	var syncReq margoStdSbiAPI.StateJSONRequestBody
@@ -325,7 +345,7 @@ func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.CO
 	}
 
 	// Call MargoManager to sync state
-	desiredStates, err := c.DeviceManager.PollDesiredState(pCtx, deviceId, syncReq)
+	desiredStates, err := self.DeviceManager.PollDesiredState(pCtx, deviceId, syncReq)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to sync state", v1alpha2.InternalError)
 	}
@@ -334,7 +354,7 @@ func (c *DeviceVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.CO
 	return createSuccessResponse(span, v1alpha2.OK, &desiredStates)
 }
 
-func (c *DeviceVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1alpha2.COAResponse {
+func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
 		&map[string]string{
@@ -364,7 +384,7 @@ func (c *DeviceVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1a
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
-	if err := c.DeviceManager.OnDeploymentStatus(pCtx, deviceId, deploymentId, string(statusReq.Status.State)); err != nil {
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceId, deploymentId, string(statusReq.Status.State)); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update the status", v1alpha2.BadRequest)
 	}
 
