@@ -694,7 +694,7 @@
       },
       {
         "type": "vendors.margo.device.mgmt",
-        "route": "margo/sbi/v1",
+        "route": "margo/nbi/v1",
         "managers": [
           {
             "name": "margo-device-manager",
