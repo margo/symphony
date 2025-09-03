@@ -54,8 +54,8 @@ type DeviceManager struct {
 	needValidate     bool
 }
 
-func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
-	err := s.Manager.Init(context, config, providers)
+func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
+	err := s.Manager.Init(pCtx, config, providers)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 	for _, provider := range providers {
 		switch p := provider.(type) {
 		case *keycloak.KeycloakProvider:
-			deviceLogger.InfofCtx(context.EvaluationContext.Context, "provider initialized", "keycloakprovider", pretty.Sprint(p))
+			deviceLogger.InfofCtx(context.Background(), "provider initialized", "keycloakprovider", pretty.Sprint(p))
 			s.KeycloakProvider = p
 		}
 	}
@@ -81,7 +81,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 	}
 
 	// subscribe to events
-	context.Subscribe(string(upsertDeploymentFeed), v1alpha2.EventHandler{
+	pCtx.Subscribe(string(upsertDeploymentFeed), v1alpha2.EventHandler{
 		Handler: func(topic string, event v1alpha2.Event) error {
 			producerName, exists := event.Metadata["producerName"]
 			if !exists {
@@ -97,7 +97,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 		Group: "events-from-deployment-manager",
 	})
 
-	context.Subscribe(string(deleteDeploymentFeed), v1alpha2.EventHandler{
+	pCtx.Subscribe(string(deleteDeploymentFeed), v1alpha2.EventHandler{
 		Handler: func(topic string, event v1alpha2.Event) error {
 			producerName, exists := event.Metadata["producerName"]
 			if !exists {
@@ -113,7 +113,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 		Group: "events-from-deployment-manager",
 	})
 
-	context.Subscribe(string(upsertPackageFeed), v1alpha2.EventHandler{
+	pCtx.Subscribe(string(upsertPackageFeed), v1alpha2.EventHandler{
 		Handler: func(topic string, event v1alpha2.Event) error {
 			producerName, exists := event.Metadata["producerName"]
 			if !exists {
@@ -129,7 +129,7 @@ func (s *DeviceManager) Init(context *contexts.VendorContext, config managers.Ma
 		Group: "events-from-package-manager",
 	})
 
-	context.Subscribe(string(deletePackageFeed), v1alpha2.EventHandler{
+	pCtx.Subscribe(string(deletePackageFeed), v1alpha2.EventHandler{
 		Handler: func(topic string, event v1alpha2.Event) error {
 			producerName, exists := event.Metadata["producerName"]
 			if !exists {
