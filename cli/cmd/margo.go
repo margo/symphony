@@ -100,6 +100,25 @@ var MargoListCmd = &cobra.Command{
 	Short: "List application Pkgs",
 }
 
+var MargoListAllCmd = &cobra.Command{
+	Use:   "all",
+	Short: "List all margo objects",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := listAppPkgs(); err != nil {
+			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return
+		}
+		if err := listDeployments(); err != nil {
+			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return
+		}
+		if err := listDevices(); err != nil {
+			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return
+		}
+	},
+}
+
 var MargoListDevicesCmd = &cobra.Command{
 	Use:   "devices",
 	Short: "List all margo devices",
@@ -363,6 +382,7 @@ func init() {
 	MargoListCmd.AddCommand(MargoListAppPkgCmd)
 	MargoListCmd.AddCommand(MargoListDeploymentCmd)
 	MargoListCmd.AddCommand(MargoListDevicesCmd)
+	MargoListCmd.AddCommand(MargoListAllCmd)
 
 	MargoGetCmd.AddCommand(MargoGetAppPkgCmd)
 	MargoGetCmd.AddCommand(MargoGetDeploymentCmd)
