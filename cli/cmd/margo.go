@@ -390,7 +390,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Set headers
 	t.AppendHeader(table.Row{
-		"ID", "Signature", "Capabilities", "State", "Created",
+		"ID", "Signature", "Capabilities", "State", "CreatedAt",
 	})
 
 	// Add data rows

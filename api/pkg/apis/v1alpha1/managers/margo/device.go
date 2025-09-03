@@ -277,6 +277,8 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 		OnboardingStatus: onboardStatus,
 		Capabilities:     nil,
 		LastStateSync:    time.Now().UTC(),
+		CreatedAt:        time.Now().UTC(),
+		UpdatedAt:        time.Now().UTC(),
 	}); err != nil {
 		return nil, fmt.Errorf("failed to save device details: %w", err)
 	}
@@ -295,6 +297,8 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 			OnboardingStatus: onboardStatus,
 			Capabilities:     nil,
 			LastStateSync:    time.Now().UTC(),
+			CreatedAt:        time.Now().UTC(),
+			UpdatedAt:        time.Now().UTC(),
 		})
 	}()
 
@@ -372,7 +376,8 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			ApiVersion: "non.margo.org",
 			Kind:       "Device",
 			Metadata: margoNonStdAPI.Metadata{
-				Id: &row.DeviceId,
+				Id:                &row.DeviceId,
+				CreationTimestamp: &row.CreatedAt,
 			},
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,

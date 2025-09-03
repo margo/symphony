@@ -90,6 +90,12 @@ type DeviceDatabaseRow struct {
 
 	// LastStateSync tracks when the device last synchronized its state with the orchestrator
 	LastStateSync time.Time
+
+	// entry time
+	CreatedAt time.Time
+
+	// entry time
+	UpdatedAt time.Time
 }
 
 // MargoDatabase provides a centralized database interface for all Margo entities.
@@ -520,6 +526,8 @@ func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId 
 }
 
 func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabaseRow) error {
+	device.UpdatedAt = time.Now().UTC()
+
 	deviceId := device.DeviceId
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
@@ -639,6 +647,7 @@ func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceId 
 
 	// Update the capabilities
 	device.Capabilities = capabilities
+	device.UpdatedAt = time.Now().UTC()
 
 	// Save updated device
 	err = db.UpsertDevice(ctx, *device)
@@ -661,6 +670,7 @@ func (db *MargoDatabase) UpdateDeviceLastSync(ctx context.Context, deviceId stri
 
 	// Update the last sync time
 	device.LastStateSync = syncTime
+	device.UpdatedAt = time.Now().UTC()
 
 	// Save updated device
 	err = db.UpsertDevice(ctx, *device)
