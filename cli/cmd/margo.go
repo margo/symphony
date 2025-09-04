@@ -56,6 +56,15 @@ var MargoApplyCmd = &cobra.Command{
 			return
 		}
 
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		if err := applyAppConfig(applyFromFile); err != nil {
 			fmt.Printf("\n%sApply failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
@@ -76,6 +85,15 @@ var MargoDeleteAppPkgCmd = &cobra.Command{
 	Short: "Delete a margo application Pkg",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		appPkgID := args[0]
 		fmt.Println("appPkgIdto be deleted", appPkgID)
 
@@ -93,6 +111,15 @@ var MargoDeleteDeploymentCmd = &cobra.Command{
 	Short: "Delete a margo application deployment",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		deploymentID := args[0]
 		fmt.Println("deploymentId to be deleted", deploymentID)
 
@@ -115,6 +142,15 @@ var MargoListAllCmd = &cobra.Command{
 	Use:   "all",
 	Short: "List all margo objects",
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		if err := listAppPkgs(); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
@@ -134,6 +170,15 @@ var MargoListDevicesCmd = &cobra.Command{
 	Use:   "devices",
 	Short: "List all margo devices",
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		if err := listDevices(); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
@@ -145,6 +190,15 @@ var MargoListAppPkgCmd = &cobra.Command{
 	Use:   "app-pkg",
 	Short: "List all margo application Pkgs",
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		if err := listAppPkgs(); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
@@ -156,6 +210,15 @@ var MargoListDeploymentCmd = &cobra.Command{
 	Use:   "deployment",
 	Short: "List all margo application deployments",
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		if err := listDeployments(); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
@@ -174,6 +237,15 @@ var MargoGetAppPkgCmd = &cobra.Command{
 	Short: "Get details of a margo application Pkg",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		appPkgID := args[0]
 
 		if err := getAppPkg(appPkgID); err != nil {
@@ -188,6 +260,15 @@ var MargoGetDeploymentCmd = &cobra.Command{
 	Short: "Get details of a margo application deployment",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		output.NorthboundBaseURL = northboundBaseURL
+		output.WFMServerHost = margoServerHost
+		output.WFMServerPort = margoServerPort
+		output.Data = []interface{}{}
+
+		if outputFormat != "json" {
+			printServerInfo()
+		}
+
 		deploymentID := args[0]
 
 		if err := getDeployment(deploymentID); err != nil {
@@ -447,15 +528,6 @@ func init() {
 
 	// Add Margo to root
 	RootCmd.AddCommand(MargoCmd)
-
-	output.NorthboundBaseURL = northboundBaseURL
-	output.WFMServerHost = margoServerHost
-	output.WFMServerPort = margoServerPort
-	output.Data = []interface{}{}
-
-	if outputFormat != "json" {
-		printServerInfo()
-	}
 }
 
 func printServerInfo() {
