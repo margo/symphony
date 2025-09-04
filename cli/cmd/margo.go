@@ -551,7 +551,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Add data rows
 	for _, device := range resp.Items {
-		if device.ApiVersion == "" || device.Kind == "" || device.Metadata.Id == nil || *device.Metadata.Id != "" {
+		if device.ApiVersion == "" || device.Kind == "" || device.Metadata.Id == nil || *device.Metadata.Id == "" {
 			continue
 		}
 
