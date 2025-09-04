@@ -28,6 +28,15 @@ var (
 	outputFormat string
 )
 
+type outputSchema struct {
+	WFMServerHost     string
+	WFMServerPort     uint16
+	NorthboundBaseURL string
+	Data              []interface{}
+}
+
+var output outputSchema
+
 var MargoCmd = &cobra.Command{
 	Use:   "wfm",
 	Short: "Commands to showcase and enable Margo PoC on wfm (app package, deployment, devices)",
@@ -301,6 +310,15 @@ func deleteDeployment(deploymentID string) error {
 	return nil
 }
 
+func printJson(data interface{}) {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+		return
+	}
+	fmt.Println(jsonData)
+}
+
 func listDevices() error {
 	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
@@ -310,12 +328,8 @@ func listDevices() error {
 	}
 
 	if outputFormat == "json" {
-		jsonData, err := json.MarshalIndent(devices, "", "  ")
-		if err != nil {
-			fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
-			return nil
-		}
-		fmt.Println(string(jsonData))
+		output.Data = append(output.Data, devices)
+		printJson(output)
 		return nil
 	}
 
@@ -332,12 +346,8 @@ func listAppPkgs() error {
 	}
 
 	if outputFormat == "json" {
-		jsonData, err := json.MarshalIndent(appPkgs, "", "  ")
-		if err != nil {
-			fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
-			return nil
-		}
-		fmt.Println(string(jsonData))
+		output.Data = append(output.Data, appPkgs)
+		printJson(output)
 		return nil
 	}
 
@@ -354,12 +364,8 @@ func listDeployments() error {
 	}
 
 	if outputFormat == "json" {
-		jsonData, err := json.MarshalIndent(deployments, "", "  ")
-		if err != nil {
-			fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
-			return nil
-		}
-		fmt.Println(string(jsonData))
+		output.Data = append(output.Data, deployments)
+		printJson(output)
 		return nil
 	}
 
@@ -375,6 +381,12 @@ func getAppPkg(appPkgID string) error {
 		return fmt.Errorf("failed to get application Pkg: %w", err)
 	}
 
+	if outputFormat == "json" {
+		output.Data = append(output.Data, appPkg)
+		printJson(output)
+		return nil
+	}
+
 	// Display the details
 	fmt.Printf("\n%sApplication Pkg Details:%s\n", utils.ColorBlue(), utils.ColorReset())
 	printAppPkgDetails(appPkg)
@@ -388,6 +400,12 @@ func getDeployment(deploymentID string) error {
 	deployment, err := northboundCli.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("failed to get application deployment: %w", err)
+	}
+
+	if outputFormat == "json" {
+		output.Data = append(output.Data, deployment)
+		printJson(output)
+		return nil
 	}
 
 	// Display the details
@@ -430,6 +448,17 @@ func init() {
 	// Add Margo to root
 	RootCmd.AddCommand(MargoCmd)
 
+	output.NorthboundBaseURL = northboundBaseURL
+	output.WFMServerHost = margoServerHost
+	output.WFMServerPort = margoServerPort
+	output.Data = []interface{}{}
+
+	if outputFormat != "json" {
+		printServerInfo()
+	}
+}
+
+func printServerInfo() {
 	fmt.Printf("┌─────────────────────────────────────────┐\n")
 	fmt.Printf("│              Server Config              │\n")
 	fmt.Printf("├─────────────────────────────────────────┤\n")
