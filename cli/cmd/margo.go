@@ -316,7 +316,7 @@ func printJson(data interface{}) {
 		fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 		return
 	}
-	fmt.Println(jsonData)
+	fmt.Println(string(jsonData))
 }
 
 func listDevices() error {
