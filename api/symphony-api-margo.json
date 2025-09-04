@@ -709,13 +709,13 @@
                 "config": {}
               },
               "keycloak": {
-                  "type": "providers.auth.keyclock",
-                  "config": {
-                    "keycloakURL": "http://172.19.59.148:8083",
-                    "realm": "master",
-                    "adminUsername": "admin",
-                    "adminPassword": "admin"
-                  }
+                "type": "providers.auth.keyclock",
+                "config": {
+                  "keycloakURL": "http://172.19.59.148:8083",
+                  "realm": "master",
+                  "adminUsername": "admin",
+                  "adminPassword": "admin"
+                }
               }
             }
           }
@@ -730,7 +730,8 @@
             "type": "managers.margo.device",
             "properties": {
               "providers.persistentstate": "memory",
-              "singleton": "true"
+              "singleton": "true",
+              "whilelistDeviceSignatures": [""]
             },
             "providers": {
               "memory": {
@@ -738,13 +739,13 @@
                 "config": {}
               },
               "keycloak": {
-                  "type": "providers.auth.keyclock",
-                  "config": {
-                    "keycloakURL": "http://172.19.59.148:8083",
-                    "realm": "master",
-                    "adminUsername": "admin",
-                    "adminPassword": "admin"
-                  }
+                "type": "providers.auth.keyclock",
+                "config": {
+                  "keycloakURL": "http://172.19.59.148:8083",
+                  "realm": "master",
+                  "adminUsername": "admin",
+                  "adminPassword": "admin"
+                }
               }
             }
           }

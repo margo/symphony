@@ -334,9 +334,10 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 		})
 	defer span.End()
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: %s, %s, %s", request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"))
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: %s, %s, %s, %s", request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
 
-	deviceId := request.Parameters["__deviceId"]
+	deviceId := request.Context.Value("deviceId").(string)
+	// deviceSignature := request.Context.Value("X-DEVICE-SIGNATURE").(string)
 
 	// Parse request
 	var syncReq margoStdSbiAPI.StateJSONRequestBody
