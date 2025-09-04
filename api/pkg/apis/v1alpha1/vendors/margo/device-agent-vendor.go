@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -331,7 +332,7 @@ func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 	if httpReq, ok := ctx.Value((v1alpha2.COAFastHTTPContextKey)).(*fasthttp.RequestCtx); ok {
 		for _, key := range httpReq.Request.Header.PeekKeys() {
 			value := httpReq.Request.Header.Peek(string(key))
-			headers[string(key)] = string(value)
+			headers[strings.ToLower(string(key))] = string(value)
 		}
 		return headers, nil
 	}
@@ -359,7 +360,7 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, parsedHeaders, method: sign(%v)", headers)
 
 	// Access a specific header
-	deviceSign := headers["X-DEVICE-SIGNATURE"]
+	deviceSign := headers[strings.ToLower("X-DEVICE-SIGNATURE")]
 	if deviceSign == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "Device signature is not present in the header", v1alpha2.BadRequest),
