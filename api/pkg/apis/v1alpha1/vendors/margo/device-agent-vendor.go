@@ -1,8 +1,11 @@
 package margo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -324,6 +327,27 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 	return createSuccessResponse(span, v1alpha2.OK, &response)
 }
 
+// Create a utility function for consistent header parsing
+func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
+	headers := make(map[string]string)
+
+	// Try different context keys Symphony might use
+	if httpReq, ok := ctx.Value("http.request").(*http.Request); ok {
+		for name, values := range httpReq.Header {
+			if len(values) > 0 {
+				headers[strings.ToLower(name)] = values[0]
+			}
+		}
+		return headers, nil
+	}
+
+	if headerMap, ok := ctx.Value("headers").(map[string]string); ok {
+		return headerMap, nil
+	}
+
+	return nil, fmt.Errorf("no headers found in context")
+}
+
 func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.COAResponse {
 	pCtx, span := observability.StartSpan("Margo Device Vendor",
 		request.Context,
@@ -334,7 +358,25 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 		})
 	defer span.End()
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: %s, %s, %s, %s", request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
+	// Extract the fasthttp request from the context
+	headers, err := ParseRequestHeaders(request.Context)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Failed to extract fasthttp request from context", v1alpha2.InternalError),
+			"Internal server error", v1alpha2.InternalError)
+	}
+
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, parsedHeaders, method: sign(%v)", headers)
+
+	// Access a specific header
+	deviceSign := headers["X-DEVICE-SIGNATURE"]
+	if deviceSign == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Authorization header is required", v1alpha2.BadRequest),
+			"Missing Authorization header", v1alpha2.BadRequest)
+	}
+
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: sign(%s), %s, %s, %s, %s", deviceSign, request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
 
 	deviceId := request.Context.Value("deviceId").(string)
 	// deviceSignature := request.Context.Value("X-DEVICE-SIGNATURE").(string)
