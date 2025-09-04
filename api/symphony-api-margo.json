@@ -730,8 +730,7 @@
             "type": "managers.margo.device",
             "properties": {
               "providers.persistentstate": "memory",
-              "singleton": "true",
-              "whilelistDeviceSignatures": [""]
+              "singleton": "true"
             },
             "providers": {
               "memory": {

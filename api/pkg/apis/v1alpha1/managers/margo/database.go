@@ -567,6 +567,20 @@ func (db *MargoDatabase) GetDevice(ctx context.Context, deviceId string) (*Devic
 	return &device, nil
 }
 
+func (db *MargoDatabase) GetDeviceUsingSignature(ctx context.Context, sign string) (*DeviceDatabaseRow, error) {
+	devices, err := db.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, device := range devices {
+		if device.DeviceSignature == sign {
+			return &device, nil
+		}
+	}
+	return nil, fmt.Errorf("no device found with sign: %s", sign)
+}
+
 func (db *MargoDatabase) DeleteDevice(ctx context.Context, deviceId string) error {
 	err := db.StateProvider.Delete(ctx, states.DeleteRequest{
 		Metadata: db.deviceMetadata,

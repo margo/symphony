@@ -553,3 +553,7 @@ func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceId stri
 	}
 	return device.Capabilities, nil
 }
+
+func (s *DeviceManager) GetDeviceFromSignature(ctx context.Context, sign string) (*DeviceDatabaseRow, error) {
+	return s.Database.GetDeviceUsingSignature(ctx, sign)
+}

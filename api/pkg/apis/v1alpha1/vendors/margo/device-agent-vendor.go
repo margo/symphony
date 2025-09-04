@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -330,22 +328,14 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 // Create a utility function for consistent header parsing
 func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 	headers := make(map[string]string)
-
-	// Try different context keys Symphony might use
-	if httpReq, ok := ctx.Value("http.request").(*http.Request); ok {
-		for name, values := range httpReq.Header {
-			if len(values) > 0 {
-				headers[strings.ToLower(name)] = values[0]
-			}
+	if httpReq, ok := ctx.Value((v1alpha2.COAFastHTTPContextKey)).(*fasthttp.RequestCtx); ok {
+		for _, key := range httpReq.Request.Header.PeekKeys() {
+			value := httpReq.Request.Header.Peek(string(key))
+			headers[string(key)] = string(value)
 		}
 		return headers, nil
 	}
-
-	if headerMap, ok := ctx.Value("headers").(map[string]string); ok {
-		return headerMap, nil
-	}
-
-	return nil, fmt.Errorf("no headers found in context")
+	return nil, nil
 }
 
 func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.COAResponse {
@@ -362,7 +352,7 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 	headers, err := ParseRequestHeaders(request.Context)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Failed to extract fasthttp request from context", v1alpha2.InternalError),
+			v1alpha2.NewCOAError(err, "Failed to extract fasthttp request from context", v1alpha2.InternalError),
 			"Internal server error", v1alpha2.InternalError)
 	}
 
@@ -372,23 +362,24 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 	deviceSign := headers["X-DEVICE-SIGNATURE"]
 	if deviceSign == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Authorization header is required", v1alpha2.BadRequest),
-			"Missing Authorization header", v1alpha2.BadRequest)
+			v1alpha2.NewCOAError(nil, "Device signature is not present in the header", v1alpha2.BadRequest),
+			"Missing Device Signature header", v1alpha2.BadRequest)
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: sign(%s), %s, %s, %s, %s", deviceSign, request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
-
-	deviceId := request.Context.Value("deviceId").(string)
-	// deviceSignature := request.Context.Value("X-DEVICE-SIGNATURE").(string)
-
 	// Parse request
 	var syncReq margoStdSbiAPI.StateJSONRequestBody
 	if err := json.Unmarshal(request.Body, &syncReq); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
+	device, err := self.DeviceManager.GetDeviceFromSignature(pCtx, deviceSign)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "No device found with the given signature", v1alpha2.InternalError)
+	}
+
 	// Call MargoManager to sync state
-	desiredStates, err := self.DeviceManager.PollDesiredState(pCtx, deviceId, syncReq)
+	desiredStates, err := self.DeviceManager.PollDesiredState(pCtx, device.DeviceId, syncReq)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to sync state", v1alpha2.InternalError)
 	}
