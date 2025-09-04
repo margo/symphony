@@ -24,6 +24,8 @@ var (
 var (
 	// File related variables
 	applyFromFile string
+	// Output format flag
+	outputFormat string
 )
 
 var MargoCmd = &cobra.Command{
@@ -307,6 +309,16 @@ func listDevices() error {
 		return fmt.Errorf("failed to list devices: %w", err)
 	}
 
+	if outputFormat == "json" {
+		jsonData, err := json.MarshalIndent(devices, "", "  ")
+		if err != nil {
+			fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return nil
+		}
+		fmt.Println(string(jsonData))
+		return nil
+	}
+
 	displayDevicesTable(*devices)
 	return nil
 }
@@ -319,6 +331,16 @@ func listAppPkgs() error {
 		return fmt.Errorf("failed to list application Pkgs: %w", err)
 	}
 
+	if outputFormat == "json" {
+		jsonData, err := json.MarshalIndent(appPkgs, "", "  ")
+		if err != nil {
+			fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return nil
+		}
+		fmt.Println(string(jsonData))
+		return nil
+	}
+
 	displayAppPackagesTable(*appPkgs)
 	return nil
 }
@@ -329,6 +351,16 @@ func listDeployments() error {
 	deployments, err := northboundCli.ListDeployments(margoCli.DeploymentListParams{})
 	if err != nil {
 		return fmt.Errorf("failed to list application deployments: %w", err)
+	}
+
+	if outputFormat == "json" {
+		jsonData, err := json.MarshalIndent(deployments, "", "  ")
+		if err != nil {
+			fmt.Printf("\n%sJSON marshal failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
+			return nil
+		}
+		fmt.Println(string(jsonData))
+		return nil
 	}
 
 	displayDeploymentsTable(*deployments)
@@ -373,6 +405,9 @@ func init() {
 	MargoCmd.PersistentFlags().StringVar(&margoServerHost, "host", "localhost", "Margo compliant WFM API server host")
 	MargoCmd.PersistentFlags().Uint16Var(&margoServerPort, "port", 8082, "Margo compliant WFM API server port")
 
+	// Add output format flag to list commands
+	MargoListCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table|json)")
+
 	// Build command hierarchy
 	MargoCmd.AddCommand(MargoApplyCmd)
 
@@ -415,15 +450,15 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Add data rows
 	for _, device := range resp.Items {
-		if device.ApiVersion == "" && device.Kind == "" && device.Metadata.Id != nil {
+		if device.ApiVersion == "" || device.Kind == "" || device.Metadata.Id != nil || *device.Metadata.Id != "" {
 			continue
 		}
 
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
 			truncateString(*device.Metadata.Id, 40),
-			truncateString(device.Spec.Signature, 18),
-			truncateString(string(cap), 18),
+			truncateString(device.Spec.Signature, 28),
+			truncateString(string(cap), 28),
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
 		}
@@ -440,8 +475,8 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 1, WidthMax: 40}, // ID
-		{Number: 2, WidthMax: 20}, // Signature
-		{Number: 3, WidthMax: 20}, // Capabilities
+		{Number: 2, WidthMax: 28}, // Signature
+		{Number: 3, WidthMax: 28}, // Capabilities
 		{Number: 4, WidthMax: 12}, // State
 		{Number: 5, WidthMax: 16}, // CreatedAt
 	})
