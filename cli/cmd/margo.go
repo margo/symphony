@@ -304,7 +304,7 @@ func listDevices() error {
 
 	devices, err := northboundCli.ListDevices()
 	if err != nil {
-		return fmt.Errorf("failed to list application Pkgs: %w", err)
+		return fmt.Errorf("failed to list devices: %w", err)
 	}
 
 	displayDevicesTable(*devices)
@@ -415,11 +415,15 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Add data rows
 	for _, device := range resp.Items {
+		if device.ApiVersion == "" && device.Kind == "" && device.Metadata.Id != nil {
+			continue
+		}
+
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
 			truncateString(*device.Metadata.Id, 40),
-			truncateString(device.Spec.Signature, 10),
-			truncateString(string(cap), 10),
+			truncateString(device.Spec.Signature, 18),
+			truncateString(string(cap), 18),
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
 		}
@@ -435,16 +439,16 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 48}, // ID
-		{Number: 2, WidthMax: 25}, // Name
-		{Number: 3, WidthMax: 15}, // Type
+		{Number: 1, WidthMax: 40}, // ID
+		{Number: 2, WidthMax: 20}, // Signature
+		{Number: 3, WidthMax: 20}, // Capabilities
 		{Number: 4, WidthMax: 12}, // State
-		{Number: 5, WidthMax: 16}, // Created
-		{Number: 6, WidthMax: 16}, // Updated
+		{Number: 5, WidthMax: 16}, // CreatedAt
 	})
 
 	t.Render()
 }
+
 func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)

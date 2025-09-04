@@ -2,7 +2,6 @@ package margo
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/catalogs"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
@@ -186,7 +185,6 @@ func (self *WorkloadMgmtVendor) listAppPkgs(request v1alpha2.COARequest) v1alpha
 		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to list app packages", v1alpha2.InternalError)
 	}
 
-	fmt.Println("-------", pretty.Sprint(appPkgs), "---------------------------------------")
 	return createSuccessResponse(span, v1alpha2.OK, appPkgs)
 }
 
