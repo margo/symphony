@@ -711,7 +711,7 @@
               "keycloak": {
                 "type": "providers.auth.keyclock",
                 "config": {
-                  "keycloakURL": "http://172.19.59.148:8083",
+                  "keycloakURL": "http://52.224.241.180:8083",
                   "realm": "master",
                   "adminUsername": "admin",
                   "adminPassword": "admin"
@@ -740,7 +740,7 @@
               "keycloak": {
                 "type": "providers.auth.keyclock",
                 "config": {
-                  "keycloakURL": "http://172.19.59.148:8083",
+                  "keycloakURL": "http://52.224.241.180:8083",
                   "realm": "master",
                   "adminUsername": "admin",
                   "adminPassword": "admin"

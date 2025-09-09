@@ -91,6 +91,13 @@ RUN if [ "$FAULT_INJECTION_ENABLED" = "true" ]; then \
     find /workspace/coa -type d | while read -r dir; do gofail enable $dir; done && \
     cd /workspace/api && go get go.etcd.io/gofail/runtime; \
 fi
+RUN apt-get update && apt-get install -y git
+
+ARG GITHUB_USERNAME
+ARG GITHUB_TOKEN
+RUN git config --global url."https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+RUN go env -w GOPRIVATE=github.com/margo/*
+
 
 RUN if [ "$TARGETARCH" = "arm" ]; then \
     CC=arm-linux-gnueabihf-gcc \
@@ -127,7 +134,7 @@ ENV ZONEINFO=/zoneinfo.zip
 COPY --from=build /dist /
 COPY --from=build /extensions /extensions
 ADD ./api/symphony-api.json /
-ADD ./api/symphony-api-no-k8s.json /
+ADD ./api/symphony-api-margo.json /
 EXPOSE 8080
 EXPOSE 8081
 ENV LOG_LEVEL=Debug
