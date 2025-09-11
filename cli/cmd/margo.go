@@ -520,7 +520,7 @@ func init() {
 
 	MargoGetCmd.AddCommand(MargoGetAppPkgCmd)
 	MargoGetCmd.AddCommand(MargoGetDeploymentCmd)
-	MargoListCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table|json)")
+	MargoGetCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table|json)")
 
 	// Add main commands to Margo
 	MargoCmd.AddCommand(MargoDeleteCmd)
