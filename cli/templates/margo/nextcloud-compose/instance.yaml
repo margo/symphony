@@ -4,15 +4,15 @@ metadata:
   name: nextcloud-instance
 spec:
   appPackageRef:
-    id: 6b66ded8-a94a-43bc-a686-3abb130330ad  #fd6695c3-eb30-4af1-95bc-49667ae4d477
+    id: {{PACKAGE_ID}}
   deviceRef:
-    id: device-101
+    id: {{DEVICE_ID}}
   deploymentProfile:
     type: compose
     components:
       - name: nextcloud-stack
         properties:  
-          packageLocation: https://raw.githubusercontent.com/docker/awesome-compose/refs/heads/master/nextcloud-redis-mariadb/compose.yaml
+          packageLocation: {{REPOSITORY}}
   parameters:
     nextcloudPort:
       value: 81

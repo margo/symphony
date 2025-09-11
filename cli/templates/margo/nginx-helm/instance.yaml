@@ -4,16 +4,16 @@ metadata:
   name: nginx-instance
 spec:
   appPackageRef:
-    id: 35f16f94-1b35-44a8-a29c-91452e00d522  #69391e61-22be-4603-890b-bcbcc32be6cb
+    id: {{PACKAGE_ID}}
   deviceRef:
-    id: device-2d87bdbae4c713e2-1756990326
+    id: {{DEVICE_ID}}
   deploymentProfile:
     type: helm.v3
     components:
       - name: nginx
         properties:  
-          repository: oci://ghcr.io/nginxinc/charts/nginx-ingress
-          revision: "1.2.2"
+          repository: {{REPOSITORY}}
+          revision: "2.2.2"
           wait: true
   parameters:
     serviceType:

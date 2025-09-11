@@ -4,21 +4,21 @@ metadata:
   name: otel-demo-instance
 spec:
   appPackageRef:
-    id: 3f2bc7de-8218-4bf3-ae06-38913925e00c  #fd6695c3-eb30-4af1-95bc-49667ae4d477
+    id: {{PACKAGE_ID}}
   deviceRef:
-    id: device-28319cb7e140522b-1756997709
+    id: {{DEVICE_ID}}
   deploymentProfile:
     type: helm.v3
     components:
       - name: otel-demo
         properties:  
-          repository: oci://172.19.59.148:80/library/go-otel-service
+          repository: {{REPOSITORY}}
           revision: 0.1.0
           wait: true
           timeout: 5m
   parameters:
-    otelCollectorName:
-      value: "otel-collector-opentelemetry-collector.default"
+    otlpEndpoint:
+      value: "otel-collector-opentelemetry-collector.observability"
       targets:
-      - pointer: default.envOverrides[0].value
+      - pointer: env.OTEL_EXPORTER_OTLP_ENDPOINT
         components: ["otel-demo"]

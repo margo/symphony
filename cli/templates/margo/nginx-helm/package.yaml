@@ -11,7 +11,7 @@ spec:
   source:
     # url: "http://52.224.241.180:3000/gogsadmin/nginx"
     # branch: "master"
-    url: "http://172.19.59.148:3333/margouser/nginx"
-    branch: "master"
+    url: {{URL}}
+    branch: {{BRANCH}}
     #commit: <commit id>
     #token: <pass-pat>
