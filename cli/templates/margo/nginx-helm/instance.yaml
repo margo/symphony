@@ -4,9 +4,9 @@ metadata:
   name: nginx-instance
 spec:
   appPackageRef:
-    id: 97158541-a90b-4d60-a67c-754900fb76d6  #69391e61-22be-4603-890b-bcbcc32be6cb
+    id: 35f16f94-1b35-44a8-a29c-91452e00d522  #69391e61-22be-4603-890b-bcbcc32be6cb
   deviceRef:
-    id: device-101
+    id: device-2d87bdbae4c713e2-1756990326
   deploymentProfile:
     type: helm.v3
     components:

@@ -9,9 +9,9 @@ metadata:
 spec:
   sourceType: GIT_REPO
   source:
-    url: "http://52.224.241.180:3000/gogsadmin/nginx-repo"
-    branch: "main"
-    # url: "http://172.19.59.148:3333/margouser/nginx"
+    # url: "http://52.224.241.180:3000/gogsadmin/nginx"
     # branch: "master"
+    url: "http://172.19.59.148:3333/margouser/nginx"
+    branch: "master"
     #commit: <commit id>
     #token: <pass-pat>

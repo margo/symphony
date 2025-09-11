@@ -1,0 +1,17 @@
+apiVersion: non-margo.org
+kind: ApplicationPackage
+metadata:
+  name: otel-demo-pkg
+  labels:
+    env: dev
+  annotations:
+    description: "A web application for running otel demo app"
+spec:
+  sourceType: GIT_REPO
+  source:
+    # url: "http://52.224.241.180:3000/gogsadmin/otel"
+    # branch: "master"
+    url: "http://172.19.59.148:3333/margouser/otel-app"
+    branch: "master"
+    #commit: <commit id>
+    #token: <pass-pat>
