@@ -18,7 +18,7 @@ spec:
           timeout: 5m
   parameters:
     otlpEndpoint:
-      value: "otel-collector-opentelemetry-collector.observability"
+      value: "http://otel-collector-opentelemetry-collector.observability:4318"
       targets:
       - pointer: env.OTEL_EXPORTER_OTLP_ENDPOINT
         components: ["otel-demo"]
