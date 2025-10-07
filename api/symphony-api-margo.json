@@ -757,6 +757,15 @@
       "type": "bindings.http",
       "config": {
         "port": 8082,
+        "tls": false,
+        "certProvider": {
+          "type": "certs.localfile",
+          "config":{
+            "name": "symphony-serving-cert",
+	          "cert": "./certificates/server-cert.pem",
+	          "key": "./certificates/server-key.pem"
+          }
+        },
         "pipeline": [
           {
             "type": "middleware.http.cors",
