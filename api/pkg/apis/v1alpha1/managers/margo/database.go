@@ -80,7 +80,7 @@ type DeviceDatabaseRow struct {
 	TokenURL string
 
 	// unique signature that is bind to this device, eg TPM, certificate etc...
-	DeviceSignature string
+	DevicePubCert string
 
 	// status of the onboarding
 	OnboardingStatus margoNonStdAPI.DeviceOnboardStatus
@@ -567,18 +567,18 @@ func (db *MargoDatabase) GetDevice(ctx context.Context, deviceId string) (*Devic
 	return &device, nil
 }
 
-func (db *MargoDatabase) GetDeviceUsingSignature(ctx context.Context, sign string) (*DeviceDatabaseRow, error) {
+func (db *MargoDatabase) GetDeviceUsingPubCert(ctx context.Context, cert string) (*DeviceDatabaseRow, error) {
 	devices, err := db.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, device := range devices {
-		if device.DeviceSignature == sign {
+		if device.DevicePubCert == cert {
 			return &device, nil
 		}
 	}
-	return nil, fmt.Errorf("no device found with sign: %s", sign)
+	return nil, fmt.Errorf("no device found with sign: %s", cert)
 }
 
 func (db *MargoDatabase) DeleteDevice(ctx context.Context, deviceId string) error {
@@ -637,14 +637,14 @@ func (db *MargoDatabase) DeviceExists(ctx context.Context, deviceId string) (boo
 	return true, nil
 }
 
-func (db *MargoDatabase) DeviceSignatureExists(ctx context.Context, deviceSignature string) (DeviceDatabaseRow, bool, error) {
+func (db *MargoDatabase) DevicePubCertExists(ctx context.Context, deviceCert string) (DeviceDatabaseRow, bool, error) {
 	devices, err := db.ListDevices(ctx)
 	if err != nil {
 		return DeviceDatabaseRow{}, false, err
 	}
 
 	for _, device := range devices {
-		if device.DeviceSignature == deviceSignature {
+		if device.DevicePubCert == deviceCert {
 			return device, true, nil
 		}
 	}

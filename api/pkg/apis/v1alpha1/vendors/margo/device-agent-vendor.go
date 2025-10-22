@@ -1,9 +1,13 @@
 package margo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
@@ -15,6 +19,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	"github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/dev-repo/shared-lib/crypto"
 	margoStdSbiAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	"github.com/valyala/fasthttp"
 )
@@ -28,9 +33,15 @@ type DeviceAgentVendor struct {
 
 // struct for the onboarding response
 type DeviceOnboardingResponse struct {
-	ClientId         string `json:"clientId"`
-	ClientSecret     string `json:"clientSecret"`
-	TokenEndpointUrl string `json:"tokenEndpointUrl"`
+	// ClientId The uuid assigned to the device client.
+	ClientId string `json:"clientId"`
+
+	// EndpointList The endpoints
+	EndpointList *[]string `json:"endpointList,omitempty"`
+
+	// ClientId         string `json:"clientId"`
+	// ClientSecret     string `json:"clientSecret"`
+	// TokenEndpointUrl string `json:"tokenEndpointUrl"`
 }
 
 // struct for the token request
@@ -80,15 +91,16 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 	}
 	return []v1alpha2.Endpoint{
 		{
-			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/wfm/state",
-			Version: self.Version,
-			Handler: self.pollDesiredState,
+			Methods:    []string{fasthttp.MethodPost},
+			Route:      route + "/client/{clientId}/wfm/state",
+			Version:    self.Version,
+			Handler:    self.pollDesiredState,
+			Parameters: []string{"clientId?"},
 		},
 
 		{
 			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/onboarding/device",
+			Route:   route + "/onboarding",
 			Version: self.Version,
 			Handler: self.onboardDevice,
 		},
@@ -101,24 +113,24 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 		// Endpoints for device capabilities
 		{
 			Methods:    []string{fasthttp.MethodPost},
-			Route:      route + "/device/{deviceId}/capabilities",
+			Route:      route + "/client/{clientId}/capabilities",
 			Version:    self.Version,
 			Handler:    self.saveDeviceCapabilities,
-			Parameters: []string{"deviceId?"},
+			Parameters: []string{"clientId?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodPut},
-			Route:      route + "/device/{deviceId}/capabilities",
+			Route:      route + "/client/{clientId}/capabilities",
 			Version:    self.Version,
 			Handler:    self.updateDeviceCapabilities,
-			Parameters: []string{"deviceId?"},
+			Parameters: []string{"clientId?"},
 		},
 		{
 			Methods:    []string{fasthttp.MethodPost},
-			Route:      route + "/device/{deviceId}/deployment/{deploymentId}/status",
+			Route:      route + "/client/{clientId}/deployment/{deploymentId}/status",
 			Version:    self.Version,
 			Handler:    self.onDeploymentStatusUpdate,
-			Parameters: []string{"deviceId?", "deploymentId?"},
+			Parameters: []string{"clientId?", "deploymentId?"},
 		},
 	}
 }
@@ -138,11 +150,21 @@ func (self *DeviceAgentVendor) saveDeviceCapabilities(request v1alpha2.COAReques
 
 	// Extract deviceId from URL parameters
 	fmt.Println("<---------------Request Prameteres----------------->", request.Parameters)
-	deviceId := request.Parameters["__deviceId"]
-	if deviceId == "" {
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
 			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
+
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
+			"Invalid Request Signature", v1alpha2.BadRequest)
 	}
 
 	// Parse request body using the correct DeviceCapabilities type
@@ -159,14 +181,14 @@ func (self *DeviceAgentVendor) saveDeviceCapabilities(request v1alpha2.COAReques
 	}
 
 	// Validate deviceId matches the one in properties
-	if capabilities.Properties.Id != deviceId {
+	if capabilities.Properties.Id != deviceClientId {
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "device ID mismatch", v1alpha2.BadRequest),
 			"Device ID in URL does not match device ID in capabilities", v1alpha2.BadRequest)
 	}
 
 	// Call DeviceManager to report capabilities
-	err := self.DeviceManager.SaveDeviceCapabilities(pCtx, deviceId, capabilities)
+	err = self.DeviceManager.SaveDeviceCapabilities(pCtx, deviceClientId, capabilities)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
 	}
@@ -192,12 +214,22 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
 
-	// Extract deviceId from URL parameters
-	deviceId := request.Parameters["deviceId"]
-	if deviceId == "" {
+	// Extract deviceClientId from URL parameters
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
 			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
+
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
+			"Invalid Request Signature", v1alpha2.BadRequest)
 	}
 
 	// Parse request body using the correct DeviceCapabilities type
@@ -214,14 +246,14 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	// Validate deviceId matches the one in properties
-	if capabilities.Properties.Id != deviceId {
+	if capabilities.Properties.Id != deviceClientId {
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "device ID mismatch", v1alpha2.BadRequest),
 			"Device ID in URL does not match device ID in capabilities", v1alpha2.BadRequest)
 	}
 
 	// Call DeviceManager to update capabilities
-	err := self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceId, capabilities)
+	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceClientId, capabilities)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update device capabilities", v1alpha2.InternalError)
 	}
@@ -297,46 +329,34 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device onboarding request", v1alpha2.BadRequest)
 	}
 
-	deviceSignature, exists := onboardingRequest["DeviceSignature"]
+	devicePubCert, exists := onboardingRequest["PublicCertificate"]
 	if !exists {
-		err := fmt.Errorf("device signature must be passed in the request and should be non-empty value")
+		err := fmt.Errorf("device pub cert must be passed in the request and should be non-empty value")
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
 	}
 
-	device, deviceSignatureExists, err := self.DeviceManager.Database.DeviceSignatureExists(pCtx, deviceSignature.(string))
+	device, deviceSignatureExists, err := self.DeviceManager.Database.DevicePubCertExists(pCtx, devicePubCert.(string))
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to check if device signature already onboarded", v1alpha2.InternalError)
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to check if device pub cert already onboarded", v1alpha2.InternalError)
 	}
 
 	if deviceSignatureExists && (device.OnboardingStatus == nbi.ONBOARDED || device.OnboardingStatus == nbi.INPROGRESS) {
 		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Device signature already exists"), "Device onboarding denied", v1alpha2.Conflict)
 	}
 
-	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, deviceSignature.(string))
+	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, devicePubCert.(string))
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
 	}
 
 	// Create response
 	response := DeviceOnboardingResponse{
-		ClientId:         onboardingResult.ClientId,
-		ClientSecret:     onboardingResult.ClientSecret,
-		TokenEndpointUrl: onboardingResult.TokenEndpointUrl,
+		ClientId:     onboardingResult.ClientId,
+		EndpointList: &[]string{},
+		// ClientSecret:     onboardingResult.ClientSecret,
+		// TokenEndpointUrl: onboardingResult.TokenEndpointUrl,
 	}
 	return createSuccessResponse(span, v1alpha2.OK, &response)
-}
-
-// Create a utility function for consistent header parsing
-func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
-	headers := make(map[string]string)
-	if httpReq, ok := ctx.Value((v1alpha2.COAFastHTTPContextKey)).(*fasthttp.RequestCtx); ok {
-		for _, key := range httpReq.Request.Header.PeekKeys() {
-			value := httpReq.Request.Header.Peek(string(key))
-			headers[strings.ToLower(string(key))] = string(value)
-		}
-		return headers, nil
-	}
-	return nil, nil
 }
 
 func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1alpha2.COAResponse {
@@ -360,11 +380,21 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, parsedHeaders, method: sign(%v)", headers)
 
 	// Access a specific header
-	deviceSign := headers[strings.ToLower("X-DEVICE-SIGNATURE")]
-	if deviceSign == "" {
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Device signature is not present in the header", v1alpha2.BadRequest),
-			"Missing Device Signature header", v1alpha2.BadRequest)
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
+			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
+
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
+			"Invalid Request Signature", v1alpha2.BadRequest)
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: sign(%s), %s, %s, %s, %s", deviceSign, request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
@@ -374,13 +404,13 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
-	device, err := self.DeviceManager.GetDeviceFromSignature(pCtx, deviceSign)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "No device found with the given signature", v1alpha2.InternalError)
-	}
+	// device, err := self.DeviceManager.GetDeviceClientUsingId(pCtx, deviceClientId)
+	// if err != nil {
+	// 	return createErrorResponse2(deviceVendorLogger, span, err, "No device found with the given signature", v1alpha2.InternalError)
+	// }
 
 	// Call MargoManager to sync state
-	desiredStates, err := self.DeviceManager.PollDesiredState(pCtx, device.DeviceId, syncReq)
+	desiredStates, err := self.DeviceManager.PollDesiredState(pCtx, deviceClientId, syncReq)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to sync state", v1alpha2.InternalError)
 	}
@@ -399,10 +429,10 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		})
 	defer span.End()
 
-	deviceId := request.Parameters["__deviceId"]
-	if deviceId == "" {
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
 			"Missing deviceId parameter", v1alpha2.BadRequest)
 	}
 	deploymentId := request.Parameters["__deploymentId"]
@@ -412,6 +442,16 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 			"Missing deploymentId parameter", v1alpha2.BadRequest)
 	}
 
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
+			"Invalid Request Signature", v1alpha2.BadRequest)
+	}
+
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onDeploymentStatusUpdate, method: %s, %s", request.Method, string(request.Body))
 	// Parse request
 	var statusReq margoStdSbiAPI.DeploymentStatus
@@ -419,9 +459,103 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
-	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceId, deploymentId, string(statusReq.Status.State)); err != nil {
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State)); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update the status", v1alpha2.BadRequest)
 	}
 
 	return createSuccessResponse(span, v1alpha2.Created, (*int)(nil))
+}
+
+func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
+	deviceClient, err := self.DeviceManager.GetDeviceClientUsingId(ctx, clientId)
+	if deviceClient.DevicePubCert == "" {
+		return false, fmt.Errorf("device public certificate is not yet available with the wfm")
+	}
+
+	verifier, err := crypto.NewVerifier(deviceClient.DevicePubCert)
+	if err != nil {
+		// TODO: add proper logs over here
+		return false, fmt.Errorf("failed to verify the request using the device certificate")
+	}
+
+	httpReq, err := COARequestToHTTPRequest(request)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse the request, %s", err.Error())
+	}
+
+	if err := verifier.VerifyRequest(ctx, httpReq); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// Create a utility function for consistent header parsing
+func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
+	headers := make(map[string]string)
+	if httpReq, ok := ctx.Value((v1alpha2.COAFastHTTPContextKey)).(*fasthttp.RequestCtx); ok {
+		for _, key := range httpReq.Request.Header.PeekKeys() {
+			value := httpReq.Request.Header.Peek(string(key))
+			headers[strings.ToLower(string(key))] = string(value)
+		}
+		return headers, nil
+	}
+	return nil, nil
+}
+
+// COARequestToHTTPRequest converts a COARequest to *http.Request (best-effort).
+// If the fasthttp.RequestCtx is present in the COARequest.Context (v1alpha2.COAFastHTTPContextKey)
+// this preserves headers and the exact request URI. Otherwise builds a request using Route,
+// Parameters and Body. Some fields (RemoteAddr, TLS info, RequestURI internals) cannot be reconstructed.
+func COARequestToHTTPRequest(cr v1alpha2.COARequest) (*http.Request, error) {
+	// prefer fasthttp.RequestCtx when available
+	if fhCtx, ok := cr.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+		scheme := "http"
+		if fhCtx.IsTLS() {
+			scheme = "https"
+		}
+		host := string(fhCtx.Request.Host())
+		uri := string(fhCtx.RequestURI())
+		full := scheme + "://" + host + uri
+
+		body := io.NopCloser(bytes.NewReader(cr.Body))
+		r, err := http.NewRequest(cr.Method, full, body)
+		if err != nil {
+			return nil, err
+		}
+
+		// copy headers
+		fhCtx.Request.Header.VisitAll(func(k, v []byte) {
+			r.Header.Add(string(k), string(v))
+		})
+
+		// best-effort: fill remote addr
+		if addr := fhCtx.RemoteAddr(); addr != nil {
+			r.RemoteAddr = addr.String()
+		}
+		return r, nil
+	}
+
+	// fallback: build from Route + Parameters + headers via ParseRequestHeaders
+	u := &url.URL{Path: cr.Route}
+	q := u.Query()
+	for k, v := range cr.Parameters {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+
+	body := io.NopCloser(bytes.NewReader(cr.Body))
+	r, err := http.NewRequest(cr.Method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	if headers, _ := ParseRequestHeaders(cr.Context); headers != nil {
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+	}
+
+	return r, nil
 }

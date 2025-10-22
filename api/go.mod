@@ -1,8 +1,6 @@
 module github.com/eclipse-symphony/symphony/api
 
-go 1.24.3
-
-toolchain go1.24.4
+go 1.24.4
 
 replace github.com/eclipse-symphony/symphony/coa => ../coa
 
@@ -29,7 +27,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20250904100331-7fc9359344f5
+	github.com/margo/dev-repo v0.0.0-20251022102317-10e30c3f70e5
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	helm.sh/helm/v3 v3.18.4

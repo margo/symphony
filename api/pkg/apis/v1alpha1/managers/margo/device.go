@@ -273,7 +273,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 		ClientSecret:     clientSecret,
 		ClientId:         clientID,
 		TokenURL:         dm.KeycloakProvider.GetTokenURL(),
-		DeviceSignature:  deviceSignature,
+		DevicePubCert:    deviceSignature,
 		OnboardingStatus: onboardStatus,
 		Capabilities:     nil,
 		LastStateSync:    time.Now().UTC(),
@@ -293,7 +293,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 			ClientSecret:     clientSecret,
 			ClientId:         clientID,
 			TokenURL:         dm.KeycloakProvider.GetTokenURL(),
-			DeviceSignature:  deviceSignature,
+			DevicePubCert:    deviceSignature,
 			OnboardingStatus: onboardStatus,
 			Capabilities:     nil,
 			LastStateSync:    time.Now().UTC(),
@@ -381,7 +381,7 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			},
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,
-				Signature:    row.DeviceSignature,
+				Signature:    row.DevicePubCert,
 			},
 			State: margoNonStdAPI.DeviceState{
 				Onboard: margoNonStdAPI.ONBOARDED,
@@ -555,5 +555,9 @@ func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceId stri
 }
 
 func (s *DeviceManager) GetDeviceFromSignature(ctx context.Context, sign string) (*DeviceDatabaseRow, error) {
-	return s.Database.GetDeviceUsingSignature(ctx, sign)
+	return s.Database.GetDeviceUsingPubCert(ctx, sign)
+}
+
+func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, id string) (*DeviceDatabaseRow, error) {
+	return s.Database.GetDevice(ctx, id)
 }
