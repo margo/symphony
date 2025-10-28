@@ -20,18 +20,18 @@ type PublishGroupName string
 type PublishFeed string
 
 var (
-	margoDbLogger                                      = logger.NewLogger("coa.runtime")
-	publishGroupNamePackageManager    PublishGroupName = "package-manager"
-	publishGroupNameDeploymentManager PublishGroupName = "deployment-manager"
-	publishGroupNameDeviceManager     PublishGroupName = "device-manager"
-	upsertPackageFeed                 PublishFeed      = "upsertPackage"
-	upsertDeploymentFeed              PublishFeed      = "upsertDeployment"
-	upsertDeviceFeed                  PublishFeed      = "upsertDevice"
-	deletePackageFeed                 PublishFeed      = "deletePackage"
-	deleteDeploymentFeed              PublishFeed      = "deleteDeployment"
-	deleteDeviceFeed                  PublishFeed      = "deleteDevice"
-	changeDeploymentCurrentState      PublishFeed      = "changeDeploymentCurrentState"
-	changeDeploymentDesiredState      PublishFeed      = "changeDeploymentDesiredState"
+	margoDbLogger                                    = logger.NewLogger("coa.runtime")
+	packageManagerPublisherGroup    PublishGroupName = "package-manager"
+	deploymentManagerPublisherGroup PublishGroupName = "deployment-manager"
+	deviceManagerPublisherGroup     PublishGroupName = "device-manager"
+	upsertPackageFeed               PublishFeed      = "upsertPackage"
+	upsertDeploymentFeed            PublishFeed      = "upsertDeployment"
+	upsertDeviceFeed                PublishFeed      = "upsertDevice"
+	deletePackageFeed               PublishFeed      = "deletePackage"
+	deleteDeploymentFeed            PublishFeed      = "deleteDeployment"
+	deleteDeviceFeed                PublishFeed      = "deleteDevice"
+	changeDeploymentCurrentState    PublishFeed      = "changeDeploymentCurrentState"
+	changeDeploymentDesiredState    PublishFeed      = "changeDeploymentDesiredState"
 )
 
 // AppPackageDatabaseRow represents a complete application package record in the database.
@@ -67,17 +67,17 @@ type DeploymentDatabaseRow struct {
 // DeviceDatabaseRow represents a device record in the database.
 // It contains device identification, capabilities, and synchronization information.
 type DeviceDatabaseRow struct {
-	// DeviceId is the unique identifier for the device
-	DeviceId string
+	// DeviceClientId is the unique identifier for the device
+	DeviceClientId string
 
-	// ClientId is the unique identifier for the device auth
-	ClientId string
+	// OAuthClientId is the unique identifier for the device auth
+	OAuthClientId string
 
 	// Client secret is the information that helps the device to generate/ask for an oauth token
-	ClientSecret string
+	OAuthClientSecret string
 
 	// OAuth token url
-	TokenURL string
+	OAuthTokenURL string
 
 	// unique signature that is bind to this device, eg TPM, certificate etc...
 	DevicePubCert string
@@ -528,7 +528,7 @@ func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId 
 func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabaseRow) error {
 	device.UpdatedAt = time.Now().UTC()
 
-	deviceId := device.DeviceId
+	deviceId := device.DeviceClientId
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: db.deviceMetadata,

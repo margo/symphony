@@ -329,9 +329,13 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device onboarding request", v1alpha2.BadRequest)
 	}
 
-	devicePubCert, exists := onboardingRequest["PublicCertificate"]
+	devicePubCert, exists := onboardingRequest["publicCertificate"]
 	if !exists {
 		err := fmt.Errorf("device pub cert must be passed in the request and should be non-empty value")
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
+	}
+	if len(devicePubCert.(string)) == 0 {
+		err := fmt.Errorf("device pub cert must be non-empty value")
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
 	}
 
@@ -397,8 +401,8 @@ func (self *DeviceAgentVendor) pollDesiredState(request v1alpha2.COARequest) v1a
 			"Invalid Request Signature", v1alpha2.BadRequest)
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: sign(%s), %s, %s, %s, %s", deviceSign, request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
 	// Parse request
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): pollDesiredState, method: %s, %s, %s, %s", request.Method, string(request.Body), request.Metadata, request.Context.Value("deviceId"), request.Context.Value("X-DEVICE-SIGNATURE"))
 	var syncReq margoStdSbiAPI.StateJSONRequestBody
 	if err := json.Unmarshal(request.Body, &syncReq); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
@@ -468,14 +472,14 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 
 func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
 	deviceClient, err := self.DeviceManager.GetDeviceClientUsingId(ctx, clientId)
-	if deviceClient.DevicePubCert == "" {
+	if len(deviceClient.DevicePubCert) == 0 {
 		return false, fmt.Errorf("device public certificate is not yet available with the wfm")
 	}
 
-	verifier, err := crypto.NewVerifier(deviceClient.DevicePubCert)
+	verifier, err := crypto.NewVerifier(deviceClient.DevicePubCert, true)
 	if err != nil {
 		// TODO: add proper logs over here
-		return false, fmt.Errorf("failed to verify the request using the device certificate")
+		return false, fmt.Errorf("failed to verify the request using the device certificate, %s", err.Error())
 	}
 
 	httpReq, err := COARequestToHTTPRequest(request)

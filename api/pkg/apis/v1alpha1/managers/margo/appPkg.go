@@ -57,7 +57,7 @@ func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.Ma
 		return err
 	}
 
-	s.Database = NewMargoDatabase(s.Context, publishGroupNamePackageManager, stateprovider)
+	s.Database = NewMargoDatabase(s.Context, packageManagerPublisherGroup, stateprovider)
 	appPkgLogger.Debug("MargoDatabase initialized successfully")
 
 	s.StateMachine = NewAppPkgStateMachine(s.Database, appPkgLogger)

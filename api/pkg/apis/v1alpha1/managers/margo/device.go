@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/keycloak"
@@ -63,7 +63,7 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 	if err != nil {
 		return err
 	}
-	s.Database = NewMargoDatabase(s.Context, publishGroupNameDeviceManager, stateprovider)
+	s.Database = NewMargoDatabase(s.Context, deviceManagerPublisherGroup, stateprovider)
 
 	for _, provider := range providers {
 		switch p := provider.(type) {
@@ -86,7 +86,7 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNameDeploymentManager) {
+			if producerName != string(deploymentManagerPublisherGroup) {
 				// we want updates from this producer only
 				return nil
 			}
@@ -102,7 +102,7 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNameDeploymentManager) {
+			if producerName != string(deploymentManagerPublisherGroup) {
 				// we want updates from this producer only
 				return nil
 			}
@@ -118,7 +118,7 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNamePackageManager) {
+			if producerName != string(packageManagerPublisherGroup) {
 				// we want updates from this producer only
 				return nil
 			}
@@ -134,8 +134,8 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNameDeploymentManager) &&
-				producerName != string(publishGroupNamePackageManager) {
+			if producerName != string(deploymentManagerPublisherGroup) &&
+				producerName != string(packageManagerPublisherGroup) {
 				// we want updates from this producer only
 				return nil
 			}
@@ -260,25 +260,25 @@ func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret st
 	}, nil
 }
 
-func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature string) (*DeviceOnboardingData, error) {
+func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string) (*DeviceOnboardingData, error) {
 	var success bool
 	// Generate unique client ID for the device
-	clientID := fmt.Sprintf("device-%s-%d", generateDeviceID(), time.Now().Unix())
-	clientSecret := ""
-	tokenUrl := ""
+	clientID := generateDeviceClientID()
+	authClientSecret := ""
+	authTokenUrl := ""
 
 	onboardStatus := margoNonStdAPI.INPROGRESS
 	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-		DeviceId:         clientID,
-		ClientSecret:     clientSecret,
-		ClientId:         clientID,
-		TokenURL:         dm.KeycloakProvider.GetTokenURL(),
-		DevicePubCert:    deviceSignature,
-		OnboardingStatus: onboardStatus,
-		Capabilities:     nil,
-		LastStateSync:    time.Now().UTC(),
-		CreatedAt:        time.Now().UTC(),
-		UpdatedAt:        time.Now().UTC(),
+		DeviceClientId:    clientID,
+		OAuthClientSecret: authClientSecret,
+		OAuthClientId:     clientID,
+		OAuthTokenURL:     authTokenUrl,
+		DevicePubCert:     devicePubCert,
+		OnboardingStatus:  onboardStatus,
+		Capabilities:      nil,
+		LastStateSync:     time.Now().UTC(),
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
 	}); err != nil {
 		return nil, fmt.Errorf("failed to save device details: %w", err)
 	}
@@ -289,63 +289,67 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 			onboardStatus = margoNonStdAPI.FAILED
 		}
 		_ = dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-			DeviceId:         clientID,
-			ClientSecret:     clientSecret,
-			ClientId:         clientID,
-			TokenURL:         dm.KeycloakProvider.GetTokenURL(),
-			DevicePubCert:    deviceSignature,
-			OnboardingStatus: onboardStatus,
-			Capabilities:     nil,
-			LastStateSync:    time.Now().UTC(),
-			CreatedAt:        time.Now().UTC(),
-			UpdatedAt:        time.Now().UTC(),
+			DeviceClientId:    clientID,
+			OAuthClientSecret: authClientSecret,
+			OAuthClientId:     clientID,
+			OAuthTokenURL:     authTokenUrl,
+			DevicePubCert:     devicePubCert,
+			OnboardingStatus:  onboardStatus,
+			Capabilities:      nil,
+			LastStateSync:     time.Now().UTC(),
+			CreatedAt:         time.Now().UTC(),
+			UpdatedAt:         time.Now().UTC(),
 		})
 	}()
 
-	// Define client configuration
-	config := keycloak.ClientConfig{
-		ClientID:                  clientID,
-		Enabled:                   true,
-		ServiceAccountsEnabled:    true,
-		StandardFlowEnabled:       false,
-		DirectAccessGrantsEnabled: true,
-		// Name: ,
-		Attributes: &map[string]string{
-			"device.onboarded": "true",
-			"created.by":       "device-manager",
-		},
+	// review: devise a cleaner way for this
+	if dm.KeycloakProvider != nil {
+		// Define client configuration
+		config := keycloak.ClientConfig{
+			ClientID:                  clientID,
+			Enabled:                   true,
+			ServiceAccountsEnabled:    true,
+			StandardFlowEnabled:       false,
+			DirectAccessGrantsEnabled: true,
+			// Name: ,
+			Attributes: &map[string]string{
+				"device.onboarded": "true",
+				"created.by":       "device-manager",
+			},
+		}
+
+		// Get admin token
+		clientResult, err := dm.KeycloakProvider.CreateClientWithClaims(ctx, config, map[string]interface{}{
+			"deviceId": clientID,
+		})
+		if err != nil {
+			success = false
+			return nil, fmt.Errorf("failed to authenticate with Keycloak: %s", err.Error())
+		}
+
+		// Verify client was created successfully
+		if clientResult.ClientID == "" {
+			success = false
+			return nil, fmt.Errorf("client creation returned empty ID")
+		}
+		if clientResult.ClientSecret == "" {
+			success = false
+			return nil, fmt.Errorf("client creation returned empty ID")
+		}
+		if clientResult.ClientUUID == "" {
+			success = false
+			return nil, fmt.Errorf("client creation returned empty ID")
+		}
+		if clientResult.TokenUrl == "" {
+			success = false
+			return nil, fmt.Errorf("client creation returned empty token url")
+		}
+
+		clientID = clientResult.ClientID
+		authClientSecret = clientResult.ClientSecret
+		authTokenUrl = clientResult.TokenUrl
 	}
 
-	// Get admin token
-	clientResult, err := dm.KeycloakProvider.CreateClientWithClaims(ctx, config, map[string]interface{}{
-		"deviceId": clientID,
-	})
-	if err != nil {
-		success = false
-		return nil, fmt.Errorf("failed to authenticate with Keycloak: %s", err.Error())
-	}
-
-	// Verify client was created successfully
-	if clientResult.ClientID == "" {
-		success = false
-		return nil, fmt.Errorf("client creation returned empty ID")
-	}
-	if clientResult.ClientSecret == "" {
-		success = false
-		return nil, fmt.Errorf("client creation returned empty ID")
-	}
-	if clientResult.ClientUUID == "" {
-		success = false
-		return nil, fmt.Errorf("client creation returned empty ID")
-	}
-	if clientResult.TokenUrl == "" {
-		success = false
-		return nil, fmt.Errorf("client creation returned empty token url")
-	}
-
-	clientID = clientResult.ClientID
-	clientSecret = clientResult.ClientSecret
-	tokenUrl = clientResult.TokenUrl
 	success = true
 
 	// Log successful onboarding
@@ -353,8 +357,8 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceSignature stri
 
 	return &DeviceOnboardingData{
 		ClientId:         clientID,
-		ClientSecret:     clientSecret,
-		TokenEndpointUrl: tokenUrl,
+		ClientSecret:     authClientSecret,
+		TokenEndpointUrl: authTokenUrl,
 	}, nil
 }
 
@@ -376,7 +380,7 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			ApiVersion: "non.margo.org",
 			Kind:       "Device",
 			Metadata: margoNonStdAPI.Metadata{
-				Id:                &row.DeviceId,
+				Id:                &row.DeviceClientId,
 				CreationTimestamp: &row.CreatedAt,
 			},
 			Spec: margoNonStdAPI.DeviceSpec{
@@ -393,8 +397,9 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 }
 
 // Helper function to generate unique device ID
-func generateDeviceID() string {
-	return fmt.Sprintf("%x", rand.Uint64())
+func generateDeviceClientID() string {
+	return fmt.Sprintf("client-%s-%d", fmt.Sprintf("%x", rand.Uint64()), time.Now().Unix())
+	// return )
 }
 
 type DeviceOnboardingData struct {
