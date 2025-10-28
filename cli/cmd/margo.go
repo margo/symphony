@@ -325,7 +325,7 @@ func applyAppConfig(filename string) error {
 }
 
 func onboardAppPkg(appPkg *nbi.ApplicationPackageManifestRequest) error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	if appPkg == nil {
 		return fmt.Errorf("no application Pkg specified")
@@ -347,7 +347,7 @@ func onboardAppPkg(appPkg *nbi.ApplicationPackageManifestRequest) error {
 }
 
 func createDeployment(deployment *nbi.ApplicationDeploymentManifestRequest) error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	if deployment == nil {
 		return fmt.Errorf("no application deployment specified")
@@ -368,7 +368,7 @@ func createDeployment(deployment *nbi.ApplicationDeploymentManifestRequest) erro
 }
 
 func deleteAppPkg(appPkgID string) error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	err := northboundCli.DeleteAppPkg(appPkgID)
 	if err != nil {
@@ -380,7 +380,7 @@ func deleteAppPkg(appPkgID string) error {
 }
 
 func deleteDeployment(deploymentID string) error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	err := northboundCli.DeleteDeployment(deploymentID)
 	if err != nil {
@@ -401,7 +401,7 @@ func printJson(data interface{}) {
 }
 
 func listDevices() error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	devices, err := northboundCli.ListDevices()
 	if err != nil {
@@ -419,7 +419,7 @@ func listDevices() error {
 }
 
 func listAppPkgs() error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	appPkgs, err := northboundCli.ListAppPkgs(margoCli.ListAppPkgsParams{})
 	if err != nil {
@@ -437,7 +437,7 @@ func listAppPkgs() error {
 }
 
 func listDeployments() error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	deployments, err := northboundCli.ListDeployments(margoCli.DeploymentListParams{})
 	if err != nil {
@@ -455,7 +455,7 @@ func listDeployments() error {
 }
 
 func getAppPkg(appPkgID string) error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	appPkg, err := northboundCli.GetAppPkg(appPkgID)
 	if err != nil {
@@ -476,7 +476,7 @@ func getAppPkg(appPkgID string) error {
 }
 
 func getDeployment(deploymentID string) error {
-	northboundCli := margoCli.NewWFMCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
 
 	deployment, err := northboundCli.GetDeployment(deploymentID)
 	if err != nil {

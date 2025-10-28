@@ -42,7 +42,7 @@ func (s *DeploymentManager) Init(context *contexts.VendorContext, config manager
 		return err
 	}
 
-	s.database = NewMargoDatabase(s.Context, publishGroupNameDeploymentManager, stateprovider)
+	s.database = NewMargoDatabase(s.Context, deploymentManagerPublisherGroup, stateprovider)
 	s.stateMachine = NewDeploymentStateMachine(s.database, deploymentLogger)
 	s.tranformer = NewMargoTransformer()
 
@@ -59,7 +59,7 @@ func (s *DeploymentManager) Init(context *contexts.VendorContext, config manager
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNameDeviceManager) {
+			if producerName != string(deviceManagerPublisherGroup) {
 				// we want updates from this producer only
 				return nil
 			}
@@ -75,7 +75,7 @@ func (s *DeploymentManager) Init(context *contexts.VendorContext, config manager
 				// not of our concern
 				return nil
 			}
-			if producerName != string(publishGroupNameDeviceManager) {
+			if producerName != string(deviceManagerPublisherGroup) {
 				// we want updates from this producer only
 				return nil
 			}

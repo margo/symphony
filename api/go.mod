@@ -1,8 +1,6 @@
 module github.com/eclipse-symphony/symphony/api
 
-go 1.24.3
-
-toolchain go1.24.4
+go 1.24.4
 
 replace github.com/eclipse-symphony/symphony/coa => ../coa
 
@@ -29,7 +27,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20250904100331-7fc9359344f5
+	github.com/margo/dev-repo v0.0.0-20251028072402-9d6c54cdf643
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	helm.sh/helm/v3 v3.18.4
@@ -72,6 +70,11 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
+	github.com/lestrrat-go/dsig v1.0.0 // indirect
+	github.com/lestrrat-go/htmsig v1.0.0 // indirect
+	github.com/lestrrat-go/option v1.0.1 // indirect
+	github.com/lestrrat-go/sfv v1.0.0 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/microsoft/ApplicationInsights-Go v0.4.4 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect

@@ -20,18 +20,18 @@ type PublishGroupName string
 type PublishFeed string
 
 var (
-	margoDbLogger                                      = logger.NewLogger("coa.runtime")
-	publishGroupNamePackageManager    PublishGroupName = "package-manager"
-	publishGroupNameDeploymentManager PublishGroupName = "deployment-manager"
-	publishGroupNameDeviceManager     PublishGroupName = "device-manager"
-	upsertPackageFeed                 PublishFeed      = "upsertPackage"
-	upsertDeploymentFeed              PublishFeed      = "upsertDeployment"
-	upsertDeviceFeed                  PublishFeed      = "upsertDevice"
-	deletePackageFeed                 PublishFeed      = "deletePackage"
-	deleteDeploymentFeed              PublishFeed      = "deleteDeployment"
-	deleteDeviceFeed                  PublishFeed      = "deleteDevice"
-	changeDeploymentCurrentState      PublishFeed      = "changeDeploymentCurrentState"
-	changeDeploymentDesiredState      PublishFeed      = "changeDeploymentDesiredState"
+	margoDbLogger                                    = logger.NewLogger("coa.runtime")
+	packageManagerPublisherGroup    PublishGroupName = "package-manager"
+	deploymentManagerPublisherGroup PublishGroupName = "deployment-manager"
+	deviceManagerPublisherGroup     PublishGroupName = "device-manager"
+	upsertPackageFeed               PublishFeed      = "upsertPackage"
+	upsertDeploymentFeed            PublishFeed      = "upsertDeployment"
+	upsertDeviceFeed                PublishFeed      = "upsertDevice"
+	deletePackageFeed               PublishFeed      = "deletePackage"
+	deleteDeploymentFeed            PublishFeed      = "deleteDeployment"
+	deleteDeviceFeed                PublishFeed      = "deleteDevice"
+	changeDeploymentCurrentState    PublishFeed      = "changeDeploymentCurrentState"
+	changeDeploymentDesiredState    PublishFeed      = "changeDeploymentDesiredState"
 )
 
 // AppPackageDatabaseRow represents a complete application package record in the database.
@@ -67,20 +67,20 @@ type DeploymentDatabaseRow struct {
 // DeviceDatabaseRow represents a device record in the database.
 // It contains device identification, capabilities, and synchronization information.
 type DeviceDatabaseRow struct {
-	// DeviceId is the unique identifier for the device
-	DeviceId string
+	// DeviceClientId is the unique identifier for the device
+	DeviceClientId string
 
-	// ClientId is the unique identifier for the device auth
-	ClientId string
+	// OAuthClientId is the unique identifier for the device auth
+	OAuthClientId string
 
 	// Client secret is the information that helps the device to generate/ask for an oauth token
-	ClientSecret string
+	OAuthClientSecret string
 
 	// OAuth token url
-	TokenURL string
+	OAuthTokenURL string
 
 	// unique signature that is bind to this device, eg TPM, certificate etc...
-	DeviceSignature string
+	DevicePubCert string
 
 	// status of the onboarding
 	OnboardingStatus margoNonStdAPI.DeviceOnboardStatus
@@ -528,7 +528,7 @@ func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId 
 func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabaseRow) error {
 	device.UpdatedAt = time.Now().UTC()
 
-	deviceId := device.DeviceId
+	deviceId := device.DeviceClientId
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: db.deviceMetadata,
@@ -567,18 +567,18 @@ func (db *MargoDatabase) GetDevice(ctx context.Context, deviceId string) (*Devic
 	return &device, nil
 }
 
-func (db *MargoDatabase) GetDeviceUsingSignature(ctx context.Context, sign string) (*DeviceDatabaseRow, error) {
+func (db *MargoDatabase) GetDeviceUsingPubCert(ctx context.Context, cert string) (*DeviceDatabaseRow, error) {
 	devices, err := db.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, device := range devices {
-		if device.DeviceSignature == sign {
+		if device.DevicePubCert == cert {
 			return &device, nil
 		}
 	}
-	return nil, fmt.Errorf("no device found with sign: %s", sign)
+	return nil, fmt.Errorf("no device found with sign: %s", cert)
 }
 
 func (db *MargoDatabase) DeleteDevice(ctx context.Context, deviceId string) error {
@@ -637,14 +637,14 @@ func (db *MargoDatabase) DeviceExists(ctx context.Context, deviceId string) (boo
 	return true, nil
 }
 
-func (db *MargoDatabase) DeviceSignatureExists(ctx context.Context, deviceSignature string) (DeviceDatabaseRow, bool, error) {
+func (db *MargoDatabase) DevicePubCertExists(ctx context.Context, deviceCert string) (DeviceDatabaseRow, bool, error) {
 	devices, err := db.ListDevices(ctx)
 	if err != nil {
 		return DeviceDatabaseRow{}, false, err
 	}
 
 	for _, device := range devices {
-		if device.DeviceSignature == deviceSignature {
+		if device.DevicePubCert == deviceCert {
 			return device, true, nil
 		}
 	}
