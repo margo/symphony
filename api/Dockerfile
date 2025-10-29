@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ##
 ## Copyright (c) Microsoft Corporation.
 ## Licensed under the MIT license.
@@ -93,22 +94,39 @@ RUN if [ "$FAULT_INJECTION_ENABLED" = "true" ]; then \
 fi
 RUN apt-get update && apt-get install -y git
 
-ARG GITHUB_USERNAME
-ARG GITHUB_TOKEN
-RUN git config --global url."https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-RUN go env -w GOPRIVATE=github.com/margo/*
 
 
-RUN if [ "$TARGETARCH" = "arm" ]; then \
-    CC=arm-linux-gnueabihf-gcc \
-    RUSTFLAGS="-C linker=arm-linux-gnueabihf-gcc" \
-    CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
-elif [ "$TARGETARCH" = "arm64" ]; then \
-    CC=aarch64-linux-gnu-gcc \
-    CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
-else \
-    CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
-fi
+
+#combining the git configuration, go env setup, and build into one RUN command with secrets mounted
+RUN --mount=type=secret,id=github_username \
+    --mount=type=secret,id=github_token \
+    set -e && \
+    GITHUB_USERNAME=$(cat /run/secrets/github_username) && \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
+    git config --global url."https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
+    go env -w GOPRIVATE=github.com/margo/* && \
+    echo "Building Symphony API with GitHub credentials..." && \
+    if [ "$TARGETARCH" = "arm" ]; then \
+        CC=arm-linux-gnueabihf-gcc \
+        RUSTFLAGS="-C linker=arm-linux-gnueabihf-gcc" \
+        CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CC=aarch64-linux-gnu-gcc \
+        CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
+    else \
+        CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
+    fi
+
+# RUN if [ "$TARGETARCH" = "arm" ]; then \
+#     CC=arm-linux-gnueabihf-gcc \
+#     RUSTFLAGS="-C linker=arm-linux-gnueabihf-gcc" \
+#     CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
+# elif [ "$TARGETARCH" = "arm64" ]; then \
+#     CC=aarch64-linux-gnu-gcc \
+#     CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
+# else \
+#     CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
+# fi
 
 FROM ${TARGET_BASE_IMAGE}
 
