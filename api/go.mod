@@ -14,7 +14,6 @@ require (
 	k8s.io/api v0.33.2
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.33.2
-
 )
 
 require (
@@ -27,7 +26,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20251028072402-9d6c54cdf643
+	github.com/margo/dev-repo v0.0.0-20251104101903-356dc1fa59d1
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	helm.sh/helm/v3 v3.18.4
@@ -190,7 +189,6 @@ require (
 	sigs.k8s.io/kustomize/api v0.19.0 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.19.0 // indirect
 	sigs.k8s.io/yaml v1.4.0
-
 )
 
 require (

@@ -419,7 +419,15 @@ func listDevices() error {
 }
 
 func listAppPkgs() error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	//northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+
+	// For development with self-signed certificates
+    northboundCli := margoCli.NewNbiHTTPCli(
+        margoServerHost, 
+        margoServerPort, 
+        &northboundBaseURL,
+        margoCli.WithInsecureTLS(),
+    )
 
 	appPkgs, err := northboundCli.ListAppPkgs(margoCli.ListAppPkgsParams{})
 	if err != nil {
