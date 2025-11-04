@@ -26,7 +26,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/dev-repo v0.0.0-20251104101903-356dc1fa59d1
+	github.com/margo/dev-repo v0.0.0-20251104113129-efcaabe94079
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	helm.sh/helm/v3 v3.18.4
