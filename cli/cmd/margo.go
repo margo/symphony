@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+
+
 var (
 	// margo compliant server details
 	margoServerHost   string
@@ -324,8 +326,22 @@ func applyAppConfig(filename string) error {
 	}
 }
 
+// createNorthboundClient creates a configured northbound client
+func createNorthboundClient() *margoCli.NbiApiClient {
+    // For development with self-signed certificates (TODO: Change to use WithCustomCA instead of InsecureTLS)
+    return margoCli.NewNbiHTTPCli(
+        margoServerHost, 
+        margoServerPort, 
+        &northboundBaseURL,
+        margoCli.WithInsecureTLS(),
+    )
+}
+
+
+
+
 func onboardAppPkg(appPkg *nbi.ApplicationPackageManifestRequest) error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	if appPkg == nil {
 		return fmt.Errorf("no application Pkg specified")
@@ -347,7 +363,7 @@ func onboardAppPkg(appPkg *nbi.ApplicationPackageManifestRequest) error {
 }
 
 func createDeployment(deployment *nbi.ApplicationDeploymentManifestRequest) error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	if deployment == nil {
 		return fmt.Errorf("no application deployment specified")
@@ -368,7 +384,7 @@ func createDeployment(deployment *nbi.ApplicationDeploymentManifestRequest) erro
 }
 
 func deleteAppPkg(appPkgID string) error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	err := northboundCli.DeleteAppPkg(appPkgID)
 	if err != nil {
@@ -380,7 +396,7 @@ func deleteAppPkg(appPkgID string) error {
 }
 
 func deleteDeployment(deploymentID string) error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	err := northboundCli.DeleteDeployment(deploymentID)
 	if err != nil {
@@ -401,7 +417,7 @@ func printJson(data interface{}) {
 }
 
 func listDevices() error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	devices, err := northboundCli.ListDevices()
 	if err != nil {
@@ -419,16 +435,8 @@ func listDevices() error {
 }
 
 func listAppPkgs() error {
-	//northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
-
-	// For development with self-signed certificates
-    northboundCli := margoCli.NewNbiHTTPCli(
-        margoServerHost, 
-        margoServerPort, 
-        &northboundBaseURL,
-        margoCli.WithInsecureTLS(),
-    )
-
+	northboundCli := createNorthboundClient()
+	
 	appPkgs, err := northboundCli.ListAppPkgs(margoCli.ListAppPkgsParams{})
 	if err != nil {
 		return fmt.Errorf("failed to list application Pkgs: %w", err)
@@ -445,7 +453,7 @@ func listAppPkgs() error {
 }
 
 func listDeployments() error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	deployments, err := northboundCli.ListDeployments(margoCli.DeploymentListParams{})
 	if err != nil {
@@ -463,7 +471,7 @@ func listDeployments() error {
 }
 
 func getAppPkg(appPkgID string) error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	appPkg, err := northboundCli.GetAppPkg(appPkgID)
 	if err != nil {
@@ -484,7 +492,7 @@ func getAppPkg(appPkgID string) error {
 }
 
 func getDeployment(deploymentID string) error {
-	northboundCli := margoCli.NewNbiHTTPCli(margoServerHost, margoServerPort, &northboundBaseURL, nil)
+	northboundCli := createNorthboundClient()
 
 	deployment, err := northboundCli.GetDeployment(deploymentID)
 	if err != nil {
