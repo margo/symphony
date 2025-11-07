@@ -18,7 +18,6 @@ import (
 	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
 	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
-	"github.com/margo/dev-repo/standard/pkg"
 )
 
 var (
@@ -30,7 +29,7 @@ type PackageData struct {
 }
 
 type DeploymentData struct {
-	DeviceId                string
+	deviceClientId          string
 	DeploymentRequest       margoNonStdAPI.ApplicationDeploymentManifestResp
 	CurrentState            *margoStdAPI.AppState
 	DesiredState            *margoStdAPI.AppState
@@ -144,6 +143,38 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 		Group: "events-from-package-manager",
 	})
 
+	pCtx.Subscribe(string(upsertDeploymentBundleFeed), v1alpha2.EventHandler{
+		Handler: func(topic string, event v1alpha2.Event) error {
+			producerName, exists := event.Metadata["producerName"]
+			if !exists {
+				// not of our concern
+				return nil
+			}
+			if producerName != string(deploymentBundleManagerPublisherGroup) {
+				// we want updates from this producer only
+				return nil
+			}
+			return s.upsertObjectInCache(topic, event)
+		},
+		Group: "events-from-deployment-bundle-manager",
+	})
+
+	pCtx.Subscribe(string(deleteDeploymentBundleFeed), v1alpha2.EventHandler{
+		Handler: func(topic string, event v1alpha2.Event) error {
+			producerName, exists := event.Metadata["producerName"]
+			if !exists {
+				// not of our concern
+				return nil
+			}
+			if producerName != string(deploymentBundleManagerPublisherGroup) {
+				// we want updates from this producer only
+				return nil
+			}
+			return s.deleteObjectFromCache(topic, event)
+		},
+		Group: "events-from-deployment-bundle-manager",
+	})
+
 	return nil
 }
 
@@ -159,6 +190,8 @@ func (s *DeviceManager) upsertObjectInCache(topic string, event v1alpha2.Event) 
 		err = s.Database.UpsertDeployment(context.Background(), event.Body.(DeploymentDatabaseRow), false)
 	case DeviceDatabaseRow:
 		err = s.Database.UpsertDevice(context.Background(), event.Body.(DeviceDatabaseRow))
+	case DeploymentBundleRow:
+		err = s.Database.UpsertDeploymentBundle(context.Background(), event.Body.(DeploymentBundleRow), false)
 	default:
 		deviceLogger.ErrorfCtx(context.Background(), "upsertObjectInCache: Invalid event body: known object is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -185,6 +218,8 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Metadata.Id, false)
 	case DeviceDatabaseRow:
 		err = s.Database.DeleteDevice(context.Background(), event.Body.(DeviceDatabaseRow).Capabilities.Properties.Id)
+	case DeploymentBundleRow:
+		err = s.Database.DeleteDeploymentBundle(context.Background(), event.Body.(DeploymentBundleRow).DeviceClientId, false)
 	default:
 		deviceLogger.ErrorfCtx(context.Background(), "deleteObjectFromCache: Invalid event body: known object is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -200,13 +235,13 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 }
 
 // Called when device reports status update for the deployments
-func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploymentId string, status string) error {
-	if deviceId == "" || deploymentId == "" || status == "" {
-		return fmt.Errorf("deviceId, deploymentId, and status are required")
+func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, status string) error {
+	if deviceClientId == "" || deploymentId == "" || status == "" {
+		return fmt.Errorf("deviceClientId, deploymentId, and status are required")
 	}
 	deviceLogger.DebugCtx(ctx,
 		"msg", "deployment status update request received",
-		"deviceId", deviceId,
+		"deviceClientId", deviceClientId,
 		"deploymentId", deploymentId,
 		"status", status)
 
@@ -218,7 +253,7 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceId, deploy
 	}
 
 	// Update the current state (what device reports)
-	currentState := dbRow.CurrentDeployment
+	currentState := dbRow.DeploymentOnDevice
 	currentState.AppState = sbi.AppStateAppState(status)
 
 	switch currentState.AppState {
@@ -320,7 +355,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string
 
 		// Get admin token
 		clientResult, err := dm.KeycloakProvider.CreateClientWithClaims(ctx, config, map[string]interface{}{
-			"deviceId": clientID,
+			"deviceClientId": clientID,
 		})
 		if err != nil {
 			success = false
@@ -402,108 +437,31 @@ func generateDeviceClientID() string {
 	// return )
 }
 
+type Deployment struct {
+	State        sbi.DeploymentStatusStatusState
+	ETag         string
+	DeploymentId string
+}
+
 type DeviceOnboardingData struct {
 	ClientId         string
 	ClientSecret     string
 	TokenEndpointUrl string
 }
 
-func (s *DeviceManager) PollDesiredState(ctx context.Context, deviceId string, currentStates margoStdAPI.CurrentAppStates) (margoStdAPI.DesiredAppStates, error) {
-	deviceLogger.InfofCtx(ctx, "PollDesiredState: Polling desired state for device '%s'", deviceId)
-
-	// Get all deployments for this device
-	dbRows, err := s.Database.GetDeploymentsByDevice(ctx, deviceId)
+func (s *DeviceManager) FetchBundle(ctx context.Context, deviceClientId string, digest *string) (hasNewDigest bool, path string, err error) {
+	bundleManifest, archivePath, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
 	if err != nil {
-		deviceLogger.ErrorfCtx(ctx, "PollDesiredState: Failed to get deployments: %v", err)
-		return nil, fmt.Errorf("failed to get deployments for device %s: %w", deviceId, err)
+		return false, "", err
 	}
 
-	desiredStates := make(margoStdAPI.DesiredAppStates, 0, len(dbRows))
-
-	for _, row := range dbRows {
-		// Use the actual desired state from database, not the operation
-		if row.DesiredDeployment.AppId == "" {
-			// If no desired state set, derive from deployment request
-			desiredState := s.deriveDesiredStateFromDeployment(row.DeploymentRequest)
-			row.DesiredDeployment = desiredState
-
-			// Update database with derived state
-			s.Database.UpsertDeploymentDesiredState(ctx, *row.DeploymentRequest.Metadata.Id, desiredState, true)
-		}
-
-		desiredStates = append(desiredStates, row.DesiredDeployment)
+	if digest != nil && *bundleManifest.Bundle.Digest == *digest {
+		// the bundle has not changed hence no need to send any changes
+		return false, "", nil
 	}
 
-	// If no current states provided, return all desired states
-	if len(currentStates) == 0 {
-		deviceLogger.InfofCtx(ctx, "PollDesiredState: Returning all %d desired states", len(desiredStates))
-		return desiredStates, nil
-	}
-
-	// Filter based on differences
-	filteredStates := make(margoStdAPI.DesiredAppStates, 0)
-	for _, desired := range desiredStates {
-		needsUpdate := true
-
-		for _, current := range currentStates {
-			if desired.AppId == current.AppId {
-				if s.statesAreEqual(desired, current) {
-					needsUpdate = false
-					break
-				}
-			}
-		}
-
-		if needsUpdate {
-			filteredStates = append(filteredStates, desired)
-		}
-	}
-
-	deviceLogger.InfofCtx(ctx, "PollDesiredState: Returning %d filtered states", len(filteredStates))
-	return filteredStates, nil
-}
-
-// Helper to derive desired state from deployment request
-func (s *DeviceManager) deriveDesiredStateFromDeployment(deployment margoNonStdAPI.ApplicationDeploymentManifestResp) sbi.AppState {
-	var appState sbi.AppStateAppState
-
-	switch deployment.RecentOperation.Op {
-	case margoNonStdAPI.DEPLOY:
-		appState = sbi.RUNNING
-	case margoNonStdAPI.UPDATE:
-		appState = sbi.UPDATING
-	case margoNonStdAPI.DELETE:
-		appState = sbi.REMOVING
-	default:
-		appState = sbi.RUNNING // Default
-	}
-
-	// Convert deployment to SBI format
-	sbiDeployment, _ := ConvertNBIAppDeploymentToSBIAppDeployment(&deployment)
-
-	// Create proper AppState
-	desiredState, _ := pkg.ConvertAppDeploymentToAppState(
-		sbiDeployment,
-		deployment.Spec.AppPackageRef.Id,
-		"v1",
-		string(appState))
-
-	return desiredState
-}
-
-// Helper method to compare states
-func (s *DeviceManager) statesAreEqual(desired, current margoStdAPI.AppState) bool {
-	// Compare app state
-	if desired.AppState != current.AppState {
-		return false
-	}
-
-	// Compare deployment hash (configuration changes)
-	if desired.AppDeploymentYAMLHash != current.AppDeploymentYAMLHash {
-		return false
-	}
-
-	return true
+	deviceLogger.InfofCtx(ctx, "FetchBundle: Found bundle with a different digest %s, sizeBytes: %d", *bundleManifest.Bundle.Digest, *bundleManifest.Bundle.SizeBytes)
+	return true, archivePath, nil
 }
 
 // Shutdown is required by the symphony's manager plugin interface
@@ -512,8 +470,8 @@ func (s *DeviceManager) Shutdown(ctx context.Context) error {
 }
 
 // getCompositeKey generates a composite key from device ID and deployment ID.
-func (s *DeviceManager) getCompositeKey(deviceId string, deploymentId string) string {
-	return fmt.Sprintf("%s-%s", deviceId, deploymentId)
+func (s *DeviceManager) getCompositeKey(deviceClientId string, deploymentId string) string {
+	return fmt.Sprintf("%s-%s", deviceClientId, deploymentId)
 }
 
 // ConvertNBIAppDeploymentToSBIAppDeployment converts AppDeployment to AppState.
@@ -530,29 +488,29 @@ func ConvertNBIAppDeploymentToSBIAppDeployment(appDeployment *margoNonStdAPI.App
 	return &appDeploymentOnSBI, nil
 }
 
-func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceId string, capabilities margoStdAPI.DeviceCapabilities) error {
-	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Saving capabilities for device '%s'", deviceId)
+func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilities) error {
+	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Saving capabilities for device '%s'", deviceClientId)
 
-	if deviceId == "" {
+	if deviceClientId == "" {
 		return fmt.Errorf("device ID is required")
 	}
 
 	// Check if device already exists
-	err := s.Database.UpdateDeviceCapabilities(ctx, deviceId, &capabilities)
+	err := s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
 	if err != nil {
 		return fmt.Errorf("failed to save device capabilities: %w", err)
 	}
 
-	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Successfully saved capabilities for device '%s'", deviceId)
+	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Successfully saved capabilities for device '%s'", deviceClientId)
 	return nil
 }
 
-func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceId string, capabilities margoStdAPI.DeviceCapabilities) error {
-	return s.Database.UpdateDeviceCapabilities(ctx, deviceId, &capabilities)
+func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilities) error {
+	return s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
 }
 
-func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceId string) (*margoStdAPI.DeviceCapabilities, error) {
-	device, err := s.Database.GetDevice(ctx, deviceId)
+func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceClientId string) (*margoStdAPI.DeviceCapabilities, error) {
+	device, err := s.Database.GetDevice(ctx, deviceClientId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device capabilities: %w", err)
 	}
