@@ -92,7 +92,11 @@ func (s *DeploymentBundleManager) upsertObjectInCache(topic string, event v1alph
 	switch event.Body.(type) {
 	case DeploymentDatabaseRow:
 		err = s.Database.UpsertDeployment(context.Background(), event.Body.(DeploymentDatabaseRow), false)
-		s.rebuildTheBundleForDevice(*event.Body.(DeploymentDatabaseRow).DeploymentRequest.Spec.DeviceRef.Id)
+		if err != nil {
+			deploymentBundleLogger.ErrorfCtx(context.Background(), "upsertObjectInCache: Failed to cache object %v", err)
+			return fmt.Errorf("failed to cache object %w", err)
+		}
+		err = s.rebuildTheBundleForDevice(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Spec.DeviceRef.Id)
 	default:
 		deploymentBundleLogger.ErrorfCtx(context.Background(), "upsertObjectInCache: Invalid event body: known object is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -130,9 +134,17 @@ func (s *DeploymentBundleManager) deleteObjectFromCache(topic string, event v1al
 }
 
 func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context, deviceClientId string) error {
-	// TODO: add a caching logic here, later
-	// s.Database.IsBundleOutdated(bundleDigestOnDevice)
-	// if not outdated, return that there is no change
+	manifestVersion := margoStdAPI.ManifestVersion(1)
+
+	// fetch existing bundle first
+	existingBundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
+	if err != nil {
+		return err
+	}
+
+	if existingBundle == nil {
+		manifestVersion = existingBundle.Manifest.ManifestVersion + 1
+	}
 
 	// else we'll prepare the bundle now
 	// 1. Get all deployments for this device
@@ -151,7 +163,10 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 
 	// 2. prepare manifest object for response
 	archiver := archive.NewArchiver(archive.ArchiveFormatTarGZ)
-	newBundleManifest := margoStdAPI.UnsignedStateManifest{}
+	newBundleManifest := margoStdAPI.UnsignedStateManifest{
+		ManifestVersion: manifestVersion,
+	}
+
 	for _, row := range dbRows {
 		data, _ := yaml.Marshal(row)
 		_, _, err = archiver.AppendContent(data, ".")
@@ -160,16 +175,16 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 			return fmt.Errorf("failed to append content to bundle: %w", err)
 		}
 
-		digest, err := crypto.GetDigestOfContent(data)
+		yamlDigest, err := crypto.GetDigestOfContent(data)
 		if err != nil {
 			deviceLogger.ErrorfCtx(ctx, "PollDeviceBundle: Failed to calculate digest of deployment content: %v", err)
 			return fmt.Errorf("failed to calculate digest of deployment content: %w", err)
 		}
 		newBundleManifest.Deployments = append(newBundleManifest.Deployments, margoStdAPI.Deployment{
 			DeploymentId: *row.DesiredDeployment.Metadata.Id,
-			Digest:       digest,
+			Digest:       yamlDigest,
 			SizeBytes:    pointers.Ptr(float32(len(data))),
-			Url:          "",
+			Url:          fmt.Sprintf("/api/v1/clients/%s/deployments/%s/%s", deviceClientId, *row.DesiredDeployment.Metadata.Id, yamlDigest),
 		})
 	}
 

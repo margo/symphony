@@ -745,7 +745,7 @@ func (db *MargoDatabase) UpsertDeploymentBundle(ctx context.Context, bundleRow D
 }
 
 func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClientId string, publishEvent bool) error {
-	existingBundle, _, err := db.GetDeploymentBundle(ctx, deviceClientId, nil)
+	existingBundle, err := db.GetDeploymentBundle(ctx, deviceClientId)
 	if err != nil {
 		return fmt.Errorf("app package doesn't exist, hence can't perform deletion")
 	}
@@ -773,7 +773,7 @@ func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClien
 	return nil
 }
 
-func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId string) (manifest *margoStdAPI.UnsignedStateManifest, archivePath string, err error) {
+func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId string) (row *DeploymentBundleRow, err error) {
 	// NOTE: there will one single bundle of deployments against a device
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.bundleMetadata,
@@ -781,7 +781,7 @@ func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId
 	})
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle for device client '%s': %v", deviceClientId, err)
-		return nil, "", fmt.Errorf("failed to get deployment bundle for device client '%s': %w", deviceClientId, err)
+		return nil, fmt.Errorf("failed to get deployment bundle for device client '%s': %w", deviceClientId, err)
 	}
 
 	var bundle DeploymentBundleRow
@@ -789,9 +789,9 @@ func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId
 	err = json.Unmarshal(jData, &bundle)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal device '%s': %v", deviceClientId, err)
-		return nil, "", fmt.Errorf("failed to unmarshal device '%s': %w", deviceClientId, err)
+		return nil, fmt.Errorf("failed to unmarshal device '%s': %w", deviceClientId, err)
 	}
 
 	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle retrieved successfully for device: %s", deviceClientId)
-	return &bundle.Manifest, bundle.ArchivePath, nil
+	return &bundle, nil
 }

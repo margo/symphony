@@ -449,19 +449,34 @@ type DeviceOnboardingData struct {
 	TokenEndpointUrl string
 }
 
-func (s *DeviceManager) FetchBundle(ctx context.Context, deviceClientId string, digest *string) (hasNewDigest bool, path string, err error) {
-	bundleManifest, archivePath, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
+func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, digest *string) (shouldReplace bool, bundleArchivePath string, bundleManifest *margoStdAPI.UnsignedStateManifest, err error) {
+	bundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
 	if err != nil {
-		return false, "", err
+		return false, "", nil, err
 	}
 
 	if digest != nil && *bundleManifest.Bundle.Digest == *digest {
 		// the bundle has not changed hence no need to send any changes
-		return false, "", nil
+		return false, "", nil, nil
 	}
 
-	deviceLogger.InfofCtx(ctx, "FetchBundle: Found bundle with a different digest %s, sizeBytes: %d", *bundleManifest.Bundle.Digest, *bundleManifest.Bundle.SizeBytes)
-	return true, archivePath, nil
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Found bundle with a different digest %s, sizeBytes: %d", bundle.Manifest.Bundle.Digest, bundle.Manifest.Bundle.SizeBytes)
+	return true, bundle.ArchivePath, &bundle.Manifest, nil
+}
+
+func (s *DeviceManager) GetBundle(ctx context.Context, deviceClientId string, digest *string) (bundleArchivePath string, bundleManifest *margoStdAPI.UnsignedStateManifest, err error) {
+	bundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if digest != nil && *bundleManifest.Bundle.Digest != *digest {
+		// no bundle found with the mentioned digest
+		return "", nil, nil
+	}
+
+	deviceLogger.InfofCtx(ctx, "GetBundle: Found bundle with digest %s, sizeBytes: %d", bundle.Manifest.Bundle.Digest, bundle.Manifest.Bundle.SizeBytes)
+	return bundle.ArchivePath, &bundle.Manifest, nil
 }
 
 // Shutdown is required by the symphony's manager plugin interface
