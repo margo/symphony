@@ -26,7 +26,8 @@ const (
 	// Created = HTTP 201
 	Created State = 201
 	// Accepted = HTTP 202
-	Accepted State = 202
+	Accepted    State = 202
+	NotModified State = 304
 	// BadRequest = HTTP 400
 	BadRequest State = 400
 	// Unauthorized = HTTP 403
@@ -35,6 +36,7 @@ const (
 	NotFound State = 404
 	// MethodNotAllowed = HTTP 405
 	MethodNotAllowed          State = 405
+	NotAcceptable             State = 406
 	Conflict                  State = 409
 	StatusUnprocessableEntity State = 422
 	// InternalError = HTTP 500
@@ -162,6 +164,8 @@ func GetHttpStatus(code int) State {
 		return Accepted
 	case code >= 203 && code < 300:
 		return OK
+	case code == 304:
+		return NotModified
 	case code == 403:
 		return Unauthorized
 	case code == 404:
@@ -193,6 +197,8 @@ func (s State) String() string {
 		return "Accepted"
 	case BadRequest:
 		return "Bad Request"
+	case NotModified:
+		return "Not Modified"
 	case Unauthorized:
 		return "Unauthorized"
 	case NotFound:

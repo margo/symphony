@@ -661,53 +661,76 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 }
 
 func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
+    t := table.NewWriter()
+    t.SetOutputMirror(os.Stdout)
 
-	// Set headers
-	t.AppendHeader(table.Row{
-		"ID", "Name", "Pkg", "Device", "Op" /*"OpStatus",*/, "RunningState" /*"Created",*/, "Updated",
-	})
+    // Set headers
+    t.AppendHeader(table.Row{
+        "ID", "Name", "Pkg", "Device", "Op", "RunningState", "Updated",
+    })
 
-	// Add data rows
-	for _, dep := range resp.Items {
-		row := table.Row{
-			truncateString(*dep.Metadata.Id, 48),
-			truncateString(dep.Metadata.Name, 10),
-			truncateString(dep.Spec.AppPackageRef.Id, 10),
-			truncateString(*dep.Spec.DeviceRef.Id, 10),
-			string(dep.RecentOperation.Op),
-			/*string(dep.RecentOperation.Status),*/
-			string(*dep.Status.State),
-			// formatTime(*dep.Metadata.CreationTimestamp),
-			formatTime(*dep.Status.LastUpdateTime),
-		}
+    // Add data rows
+    for _, dep := range resp.Items {
+        // Add nil checks to prevent panic
+        var deviceId string
+        if dep.Spec.DeviceRef != nil && dep.Spec.DeviceRef.Id != nil {
+            deviceId = *dep.Spec.DeviceRef.Id
+        } 
 
-		t.AppendRow(row)
-	}
+        var deploymentId string
+        if dep.Metadata.Id != nil {
+            deploymentId = *dep.Metadata.Id
+        } 
+        var state string
+        if dep.Status != nil && dep.Status.State != nil {
+            state = string(*dep.Status.State)
+        } 
 
-	// Add footer with pagination
-	t.AppendFooter(table.Row{
-		"", "", "", "", "", "",
-		fmt.Sprintf("Page %d/%d", 1, 1), //resp.Metadata.Page, resp.Metadata.TotalPages),
-		fmt.Sprintf("Total: %d", 1),     //resp.Metadata.TotalItems),
-	})
+        var lastUpdate time.Time
+        if dep.Status != nil && dep.Status.LastUpdateTime != nil {
+            lastUpdate = *dep.Status.LastUpdateTime
+        } else {
+            lastUpdate = time.Time{}
+        }
 
-	// Configure column settings
-	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 48}, // ID
-		{Number: 2, WidthMax: 25}, // Name
-		{Number: 3, WidthMax: 35}, // Pkg
-		{Number: 4, WidthMax: 35}, // Device
-		{Number: 5, WidthMax: 12}, // Op
-		//{Number: 6, WidthMax: 12}, // OpStatus
-		{Number: 7, WidthMax: 12}, // RunningState
-		// {Number: 8, WidthMax: 16}, // Created
-		{Number: 9, WidthMax: 16}, // Updated
-	})
+		var operation string
+        if dep.RecentOperation != nil {
+            operation = string(dep.RecentOperation.Op)
+        } 
 
-	t.Render()
+        row := table.Row{
+            truncateString(deploymentId, 48),
+            truncateString(dep.Metadata.Name, 10),
+            truncateString(dep.Spec.AppPackageRef.Id, 10),
+            truncateString(deviceId, 10),
+            operation,
+            state,
+            formatTime(lastUpdate),
+        }
+
+        t.AppendRow(row)
+    }
+
+    // Add footer with pagination
+    t.AppendFooter(table.Row{
+        "", "", "", "", "", "",
+        fmt.Sprintf("Total: %d", len(resp.Items)),
+    })
+
+    // Configure column settings
+    t.SetColumnConfigs([]table.ColumnConfig{
+        {Number: 1, WidthMax: 48}, // ID
+        {Number: 2, WidthMax: 25}, // Name
+        {Number: 3, WidthMax: 35}, // Pkg
+        {Number: 4, WidthMax: 35}, // Device
+        {Number: 5, WidthMax: 12}, // Op
+        {Number: 6, WidthMax: 12}, // RunningState
+        {Number: 7, WidthMax: 16}, // Updated
+    })
+
+    t.Render()
 }
+
 
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -716,8 +739,12 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+
 func formatTime(t time.Time) string {
-	return t.Format("2006-01-02 15:04")
+    if t.IsZero() {
+        return "N/A"
+    }
+    return t.Format("2006-01-02 15:04")
 }
 
 func extractSource(source nbi.ApplicationPackageSpec_Source) string {

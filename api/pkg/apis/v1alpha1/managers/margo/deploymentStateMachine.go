@@ -3,6 +3,7 @@ package margo
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
@@ -15,28 +16,29 @@ type DeploymentState string
 
 const (
 	// Core states that actually exist in the code
-	DeploymentStatePending   DeploymentState = "PENDING"   // Initial state when deployment is created
-	DeploymentStateDeploying DeploymentState = "DEPLOYING" // Being deployed to device
-	DeploymentStateRunning   DeploymentState = "RUNNING"   // Successfully deployed and running
-	DeploymentStateUpdating  DeploymentState = "UPDATING"  // Being updated on device
-	DeploymentStateDeleting  DeploymentState = "DELETING"  // Marked for deletion, waiting for device confirmation
-	DeploymentStateFailed    DeploymentState = "FAILED"    // Deployment failed
-	DeploymentStateRemoved   DeploymentState = "REMOVED"   // Confirmed deleted by device (terminal state)
+	DeploymentStatePending    DeploymentState = "PENDING"    // Initial state when deployment is created
+	DeploymentStateInstalling DeploymentState = "INSTALLING" // Being deployed to device
+	DeploymentStateInstalled  DeploymentState = "INSTALLED"  // Successfully deployed and running
+	DeploymentStateRunning    DeploymentState = "RUNNING"    // Being deployed to device
+	DeploymentStateUpdating   DeploymentState = "UPDATING"   // Being updated on device
+	DeploymentStateRemoving   DeploymentState = "REMOVING"   // Marked for deletion, waiting for device confirmation
+	DeploymentStateRemoved    DeploymentState = "REMOVED"    // Confirmed deleted by device (terminal state)
+	DeploymentStateFailed     DeploymentState = "FAILED"     // Deployment failed
 )
 
 // Simplified events based on actual code flow
 type DeploymentEvent string
 
 const (
-	EventStartDeployment   DeploymentEvent = "START_DEPLOYMENT"
-	EventDeploymentSuccess DeploymentEvent = "DEPLOYMENT_SUCCESS"
-	EventDeploymentFailed  DeploymentEvent = "DEPLOYMENT_FAILED"
-	EventStartUpdate       DeploymentEvent = "START_UPDATE"
-	EventUpdateSuccess     DeploymentEvent = "UPDATE_SUCCESS"
-	EventUpdateFailed      DeploymentEvent = "UPDATE_FAILED"
-	EventStartDeletion     DeploymentEvent = "START_DELETION"
-	EventDeletionConfirmed DeploymentEvent = "DELETION_CONFIRMED"
-	EventDeletionFailed    DeploymentEvent = "DELETION_FAILED"
+	EventStartInstallation   DeploymentEvent = "START_INSTALLATION"
+	EventInstallationSuccess DeploymentEvent = "INSTALLATION_SUCCESSFUL"
+	EventInstallationFailed  DeploymentEvent = "INSTALLATION_FAILED"
+	EventStartUpdate         DeploymentEvent = "START_UPDATE"
+	EventUpdateSuccess       DeploymentEvent = "UPDATE_SUCCESSFUL"
+	EventUpdateFailed        DeploymentEvent = "UPDATE_FAILED"
+	EventStartRemoval        DeploymentEvent = "START_REMOVAL"
+	EventRemovalSuccess      DeploymentEvent = "REMOVAL_SUCCESSFUL"
+	EventRemovalFailed       DeploymentEvent = "REMOVAL_FAILED"
 )
 
 // Simplified state machine
@@ -62,30 +64,35 @@ func (sm *DeploymentStateMachine) ProcessEvent(ctx context.Context, deploymentId
 		return fmt.Errorf("failed to get deployment: %w", dbErr)
 	}
 
-	currentState := DeploymentState(*deployment.DeploymentRequest.Status.State)
+	// Normalize state to uppercase for consistent comparison
+	currentStateRaw := string(*deployment.DeploymentRequest.Status.State)
+	currentState := DeploymentState(strings.ToUpper(currentStateRaw))
+
+	sm.log.InfofCtx(ctx, "DeploymentStateMachine: Current state '%s' (normalized: '%s')", currentStateRaw, currentState)
+
 	var newState DeploymentState
 	var operationStatus margoNonStdAPI.ApplicationDeploymentOperationStatus
 
 	// Simple state transitions based on events
 	switch event {
-	case EventStartDeployment:
+	case EventStartInstallation:
 		if currentState == DeploymentStatePending {
-			newState = DeploymentStateDeploying
+			newState = DeploymentStateInstalling
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusPROCESSING
 		} else {
 			return fmt.Errorf("cannot start deployment from state %s", currentState)
 		}
 
-	case EventDeploymentSuccess:
-		if currentState == DeploymentStateDeploying {
-			newState = DeploymentStateRunning
+	case EventInstallationSuccess:
+		if currentState == DeploymentStateInstalling {
+			newState = DeploymentStateInstalled
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusCOMPLETED
 		} else {
 			return fmt.Errorf("cannot complete deployment from state %s", currentState)
 		}
 
-	case EventDeploymentFailed:
-		if currentState == DeploymentStateDeploying {
+	case EventInstallationFailed:
+		if currentState == DeploymentStateInstalling {
 			newState = DeploymentStateFailed
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusFAILED
 		} else {
@@ -93,7 +100,7 @@ func (sm *DeploymentStateMachine) ProcessEvent(ctx context.Context, deploymentId
 		}
 
 	case EventStartUpdate:
-		if currentState == DeploymentStateRunning {
+		if currentState == DeploymentStateInstalled {
 			newState = DeploymentStateUpdating
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusPROCESSING
 		} else {
@@ -102,7 +109,7 @@ func (sm *DeploymentStateMachine) ProcessEvent(ctx context.Context, deploymentId
 
 	case EventUpdateSuccess:
 		if currentState == DeploymentStateUpdating {
-			newState = DeploymentStateRunning
+			newState = DeploymentStateInstalled
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusCOMPLETED
 		} else {
 			return fmt.Errorf("cannot complete update from state %s", currentState)
@@ -116,24 +123,29 @@ func (sm *DeploymentStateMachine) ProcessEvent(ctx context.Context, deploymentId
 			return fmt.Errorf("cannot fail update from state %s", currentState)
 		}
 
-	case EventStartDeletion:
-		if currentState == DeploymentStateRunning || currentState == DeploymentStateFailed {
-			newState = DeploymentStateDeleting
+	case EventStartRemoval:
+		// Allow deletion from Pending, Installed, or Failed states
+		if currentState == DeploymentStatePending ||
+			currentState == DeploymentStateInstalled ||
+			currentState == DeploymentStateFailed {
+			newState = DeploymentStateRemoving
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusPROCESSING
+			sm.log.InfofCtx(ctx, "DeploymentStateMachine: Transitioning from '%s' to REMOVING", currentState)
 		} else {
-			return fmt.Errorf("cannot start deletion from state %s", currentState)
+			return fmt.Errorf("cannot start deletion from state %s (must be Pending, Installed, or Failed)", currentState)
 		}
 
-	case EventDeletionConfirmed:
-		if currentState == DeploymentStateDeleting {
+	case EventRemovalSuccess:
+		// Added missing EventRemovalSuccess case
+		if currentState == DeploymentStateRemoving {
 			newState = DeploymentStateRemoved
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusCOMPLETED
 		} else {
 			return fmt.Errorf("cannot confirm deletion from state %s", currentState)
 		}
 
-	case EventDeletionFailed:
-		if currentState == DeploymentStateDeleting {
+	case EventRemovalFailed:
+		if currentState == DeploymentStateRemoving {
 			newState = DeploymentStateFailed
 			operationStatus = margoNonStdAPI.ApplicationDeploymentOperationStatusFAILED
 		} else {
@@ -157,28 +169,30 @@ func (sm *DeploymentStateMachine) updateDeploymentState(
 	contextInfo string,
 	err error) error {
 
-	var desiredState sbi.AppStateAppState
+	var desiredState sbi.DeploymentStatusManifestStatusState
+	state := margoNonStdAPI.ApplicationDeploymentStatusState("")
 	now := time.Now().UTC()
-	state := margoNonStdAPI.ApplicationDeploymentStatusState(newState)
 	switch newState {
-	case DeploymentStatePending, DeploymentStateDeploying:
+	case DeploymentStatePending, DeploymentStateInstalling:
 		state = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
-		desiredState = sbi.PENDING
-	case DeploymentStateRunning:
-		state = margoNonStdAPI.ApplicationDeploymentStatusStateRUNNING
-		desiredState = sbi.RUNNING
+		desiredState = sbi.DeploymentStatusManifestStatusStatePending
+	case DeploymentStateInstalled:
+		state = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLED
+		desiredState = sbi.DeploymentStatusManifestStatusStateInstalled
 	case DeploymentStateUpdating:
 		state = margoNonStdAPI.ApplicationDeploymentStatusStateUPDATING
-		desiredState = sbi.UPDATING
-	case DeploymentStateDeleting:
+		desiredState = sbi.DeploymentStatusManifestStatusStateUpdating
+	case DeploymentStateRemoving:
 		state = margoNonStdAPI.ApplicationDeploymentStatusStateREMOVING
-		desiredState = sbi.REMOVING
+		desiredState = sbi.DeploymentStatusManifestStatusStateRemoving
 	case DeploymentStateFailed:
-		state = margoNonStdAPI.ApplicationDeploymentStatusStateUNKNOWN
-		desiredState = sbi.STOPPED
+		state = margoNonStdAPI.ApplicationDeploymentStatusStateFAILED
+		desiredState = sbi.DeploymentStatusManifestStatusStateFailed
 	case DeploymentStateRemoved:
-		state = margoNonStdAPI.ApplicationDeploymentStatusStateUNKNOWN
-		desiredState = sbi.REMOVING
+		state = margoNonStdAPI.ApplicationDeploymentStatusStateREMOVED
+		desiredState = sbi.DeploymentStatusManifestStatusStateRemoved
+	default:
+		state = margoNonStdAPI.ApplicationDeploymentStatusState(newState)
 	}
 
 	// Update deployment fields
@@ -186,7 +200,7 @@ func (sm *DeploymentStateMachine) updateDeploymentState(
 	deployment.DeploymentRequest.Status.LastUpdateTime = &now
 	deployment.DeploymentRequest.RecentOperation.Status = operationStatus
 	deployment.LastStatusUpdate = now
-	deployment.DesiredDeployment.AppState = desiredState
+	deployment.DesiredState.Status.Status.State = desiredState
 
 	// Update contextual info
 	if contextInfo != "" || err != nil {

@@ -1,4 +1,4 @@
-apiVersion: non-margo.org
+apiVersion: margo.org
 kind: ApplicationPackage
 metadata:
   name: otel-demo-pkg
