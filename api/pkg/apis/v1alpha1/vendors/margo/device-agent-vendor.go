@@ -652,6 +652,9 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
             "Signature verification failed", v1alpha2.Unauthorized)
     }
 
+    //Extract If-None-Match header from client
+    clientETag := headers["if-none-match"]
+    
     // Get bundle from database
     path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
     if err != nil {
@@ -665,6 +668,28 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
             v1alpha2.NotFound,
             (*int)(nil),
         )
+    }
+
+    //  Check If-None-Match before reading file
+    if manifest.Bundle != nil && manifest.Bundle.Digest != nil {
+        serverETag := fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
+        
+        // Normalize ETags for comparison (remove quotes)
+        clientETagClean := strings.Trim(clientETag, "\"")
+        serverETagClean := strings.Trim(serverETag, "\"")
+        
+        if clientETag != "" && clientETagClean == serverETagClean {
+            deviceVendorLogger.InfofCtx(pCtx, 
+                "Bundle not modified for device %s (304) - ETag: %s", 
+                deviceClientId, serverETag)
+            
+            // Return 304 Not Modified
+            return v1alpha2.COAResponse{
+                State:       v1alpha2.NotModified,
+                Body:        []byte{},
+                ContentType: "application/vnd.margo.bundle.v1+tar+gzip",
+            }
+        }
     }
 
     // Read bundle archive (this is the "exact bytes" that will be sent)
@@ -708,6 +733,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
         &bundleData,
     )
 }
+
 
 
 func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
@@ -769,6 +795,9 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
             "Signature verification failed", v1alpha2.Unauthorized)
     }
 
+    // Extract If-None-Match header from client
+    clientETag := headers["if-none-match"]
+
     // Get deployment from database
     deployment, err := self.DeviceManager.Database.GetDeployment(pCtx, deploymentId)
     if err != nil {
@@ -791,9 +820,27 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
             "Failed to marshal deployment", v1alpha2.InternalError)
     }
 
-    // CRITICAL: Compute digest of the YAML content (Exact Bytes Rule)
+    // Compute digest of the YAML content (Exact Bytes Rule)
     hash := sha256.Sum256(yamlContent)
     actualDigest := fmt.Sprintf("sha256:%x", hash)
+
+    // Check If-None-Match before verifying digest match
+    serverETag := fmt.Sprintf("\"%s\"", actualDigest)
+    clientETagClean := strings.Trim(clientETag, "\"")
+    serverETagClean := strings.Trim(serverETag, "\"")
+    
+    if clientETag != "" && clientETagClean == serverETagClean {
+        deviceVendorLogger.InfofCtx(pCtx, 
+            "Deployment not modified (304) - deploymentId: %s, ETag: %s", 
+            deploymentId, serverETag)
+        
+        // Return 304 Not Modified
+        return v1alpha2.COAResponse{
+            State:       v1alpha2.NotModified,
+            Body:        []byte{},
+            ContentType: "application/yaml",
+        }
+    }
 
     // Verify digest matches the requested digest
     if actualDigest != requestedDigest {
@@ -827,6 +874,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
         &yamlContent,
     )
 }
+
 
 
 func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
