@@ -1,0 +1,23 @@
+apiVersion: non-margo.org
+kind: ApplicationDeployment
+metadata:
+  name: nginx-instance
+spec:
+  appPackageRef:
+    id: {{PACKAGE_ID}}
+  deviceRef:
+    id: {{DEVICE_ID}}
+  deploymentProfile:
+    type: helm.v3
+    components:
+      - name: nginx
+        properties:  
+          repository: {{REPOSITORY}}
+          revision: "2.2.2"
+          wait: true
+  parameters:
+    serviceType:
+      value: "NodePort"
+      targets:
+      - pointer: controller.service.type
+        components: ["nginx"]

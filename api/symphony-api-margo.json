@@ -12,7 +12,7 @@
       "version": "0.45.1"
     },
     "currentSite": {
-      "baseUrl": "172.19.59.148:8082/v1alpha2/",
+      "baseUrl": "http://localhost:8082/v1alpha2/",
       "username": "admin",
       "password": "admin"
     }
@@ -214,8 +214,8 @@
               "user": "admin",
               "password": "",
               "interval": "#15",
-              "poll.enabled": "true",
-              "schedule.enabled": "true"                 
+              "poll.enabled": "false",
+              "schedule.enabled": "false"                 
             },
             "providers": {
               "mem-state": {
@@ -377,6 +377,7 @@
         "route": "users",
         "properties": {
           "test-users": "true"
+         
         },
         "managers": [
           {
@@ -507,7 +508,7 @@
             "name": "staging-manager",
             "type": "managers.symphony.staging",
             "properties": {
-              "poll.enabled": "true",
+              "poll.enabled": "false",
               "interval": "#15",
               "providers.queue": "memory-queue",
               "providers.volatilestate": "memory-state"              
@@ -605,24 +606,25 @@
         ]
       },
       {
-        "type": "vendors.margo.nbi",
+        "type": "vendors.margo.workload.mgmt",
         "route": "margo/nbi/v1",
         "managers": [
           {
-            "name": "margo-manager",
-            "type": "managers.margo",
+            "name": "catalogs-manager",
+            "type": "managers.symphony.catalogs",
             "properties": {
-              "providers.persistentstate": "memory",
-              "singleton": "true"
+              "providers.persistentstate": "redis-state",
+              "singleton": "true"              
             },
-            "providers": {
-              "memory": {
-                "type": "providers.state.memory",
-                "config": {}
-              },
-              "graph": {
-                "type": "providers.graph.memory",
-                "config": {}
+           "providers": {
+              "redis-state": {
+                "type": "providers.state.redis",
+                "config": {
+                  "name": "redis",
+                  "host": "localhost:6379",
+                  "requireTLS": false,
+                  "password": ""
+                }
               }
             }
           },
@@ -630,12 +632,126 @@
             "name": "solutions-manager",
             "type": "managers.symphony.solutions",
             "properties": {
-              "providers.persistentstate": "k8s-state"
+              "providers.persistentstate": "memory"
             },
             "providers": {
-              "k8s-state": {
+              "memory": {
                 "type": "providers.state.memory",
                 "config": {}
+              }
+            }
+          },
+          {
+            "name": "solution-container-manager",
+            "type": "managers.symphony.solutioncontainers",
+            "properties": {
+              "providers.persistentstate": "memory"
+            },
+            "providers": {
+              "memory": {
+                "type": "providers.state.memory",
+                "config": {}
+              }
+            }
+          },
+          {
+            "name": "margo-deployment-manager",
+            "type": "managers.margo.deployment",
+            "properties": {
+              "providers.persistentstate": "redis-state",
+              "singleton": "true"              
+            },
+           "providers": {
+              "redis-state": {
+                "type": "providers.state.redis",
+                "config": {
+                  "name": "redis",
+                  "host": "localhost:6379",
+                  "requireTLS": false,
+                  "password": ""
+                }
+              }
+            }
+          },
+          {
+            "name": "margo-package-manager",
+            "type": "managers.margo.apppkg",
+            "properties": {
+              "providers.persistentstate": "redis-state",
+              "singleton": "true"              
+            },
+           "providers": {
+              "redis-state": {
+                "type": "providers.state.redis",
+                "config": {
+                  "name": "redis",
+                  "host": "localhost:6379",
+                  "requireTLS": false,
+                  "password": ""
+                }
+              }
+            }
+          },
+          {
+            "name": "solutions-manager",
+            "type": "managers.symphony.solutions",
+            "properties": {
+              "providers.persistentstate": "memory"
+            },
+            "providers": {
+              "memory": {
+                "type": "providers.state.memory",
+                "config": {}
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "vendors.margo.device.mgmt",
+        "route": "margo/nbi/v1",
+        "managers": [
+          {
+            "name": "margo-device-manager",
+            "type": "managers.margo.device",
+            "properties": {
+              "providers.persistentstate": "redis-state",
+              "singleton": "true"              
+            },
+           "providers": {
+              "redis-state": {
+                "type": "providers.state.redis",
+                "config": {
+                  "name": "redis",
+                  "host": "localhost:6379",
+                  "requireTLS": false,
+                  "password": ""
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "vendors.margo.device.agent",
+        "route": "margo/api/v1",
+        "managers": [
+          {
+            "name": "margo-device-manager",
+            "type": "managers.margo.device",
+            "properties": {
+              "providers.persistentstate": "redis-state",
+              "singleton": "true"              
+            },
+           "providers": {
+              "redis-state": {
+                "type": "providers.state.redis",
+                "config": {
+                  "name": "redis",
+                  "host": "localhost:6379",
+                  "requireTLS": false,
+                  "password": ""
+                }
               }
             }
           }
@@ -648,7 +764,17 @@
       "type": "bindings.http",
       "config": {
         "port": 8082,
+        "tls": true,
+        "certProvider": {
+          "type": "certs.localfile",
+          "config":{
+            "name": "symphony-serving-cert",
+	          "cert": "./certificates/server-cert.pem",
+	          "key": "./certificates/server-key.pem"
+          }
+        },
         "pipeline": [
+          
           {
             "type": "middleware.http.cors",
             "properties": {

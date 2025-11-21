@@ -19,20 +19,35 @@ export const options: NextAuthOptions = {
             },
             async authorize(credentials) {
                 const symphonyApi = process.env.SYMPHONY_API;
-  
+                console.log("symphonyApi", symphonyApi);
+            
+                // Only send username and password
+                const { username, password } = credentials ?? {};
                 const res = await fetch(`${symphonyApi}users/auth`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify(credentials)
+                    body: JSON.stringify({ username, password })
                 });
-                const user = await res.json();
+            
+                const text = await res.text();
+                console.log("API Response:", text);
+            
+                let user;
+                try {
+                    user = JSON.parse(text);
+                } catch (err) {
+                    console.error("JSON parse error:", err);
+                    return null;
+                }
+            
                 if (res.ok && user) {                    
                     return user;
                 } 
                 return null;
             }
+            
         })
     ],
     callbacks: {

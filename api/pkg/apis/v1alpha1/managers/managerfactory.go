@@ -16,6 +16,7 @@ import (
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/devices"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/instances"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/jobs"
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/models"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/reference"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/secrets"
@@ -103,6 +104,12 @@ func (c *SymphonyManagerFactory) CreateManager(config cm.ManagerConfig) (cm.IMan
 		manager = &skills.SkillsManager{}
 	case "managers.symphony.trails":
 		manager = &trails.TrailsManager{}
+	case "managers.margo.apppkg":
+		manager = &margo.AppPkgManager{}
+	case "managers.margo.deployment":
+		manager = &margo.DeploymentManager{}
+	case "managers.margo.device":
+		manager = &margo.DeviceManager{}
 	}
 	if manager != nil && config.Properties["singleton"] == "true" {
 		c.SingletonsCache[config.Type] = manager

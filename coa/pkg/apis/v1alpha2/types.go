@@ -23,8 +23,11 @@ const (
 	None State = 0
 	// OK = HTTP 200
 	OK State = 200
+	// Created = HTTP 201
+	Created State = 201
 	// Accepted = HTTP 202
-	Accepted State = 202
+	Accepted    State = 202
+	NotModified State = 304
 	// BadRequest = HTTP 400
 	BadRequest State = 400
 	// Unauthorized = HTTP 403
@@ -33,6 +36,7 @@ const (
 	NotFound State = 404
 	// MethodNotAllowed = HTTP 405
 	MethodNotAllowed          State = 405
+	NotAcceptable             State = 406
 	Conflict                  State = 409
 	StatusUnprocessableEntity State = 422
 	// InternalError = HTTP 500
@@ -154,10 +158,14 @@ func GetHttpStatus(code int) State {
 	switch {
 	case code == 200:
 		return OK
+	case code == 201:
+		return Created
 	case code == 202:
 		return Accepted
-	case code >= 200 && code < 300:
+	case code >= 203 && code < 300:
 		return OK
+	case code == 304:
+		return NotModified
 	case code == 403:
 		return Unauthorized
 	case code == 404:
@@ -183,10 +191,14 @@ func (s State) String() string {
 	switch s {
 	case OK:
 		return "OK"
+	case Created:
+		return "Created"
 	case Accepted:
 		return "Accepted"
 	case BadRequest:
 		return "Bad Request"
+	case NotModified:
+		return "Not Modified"
 	case Unauthorized:
 		return "Unauthorized"
 	case NotFound:
@@ -398,6 +410,7 @@ const (
 	ProviderQueue            = "providers.queue"
 	ProviderLedger           = "providers.ledger"
 	ProvidersKeyLock         = "providers.keylock"
+	ProvidersAuth            = "providers.auth"
 	StatusOutput             = "status"
 	ErrorOutput              = "error"
 	StateOutput              = "__state"

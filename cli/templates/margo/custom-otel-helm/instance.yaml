@@ -1,0 +1,24 @@
+apiVersion: margo.org
+kind: ApplicationDeployment
+metadata:
+  name: otel-demo-instance
+spec:
+  appPackageRef:
+    id: {{PACKAGE_ID}}
+  deviceRef:
+    id: {{DEVICE_ID}}
+  deploymentProfile:
+    type: helm.v3
+    components:
+      - name: otel-demo
+        properties:  
+          repository: {{REPOSITORY}}
+          revision: 0.1.0
+          wait: true
+          timeout: 5m
+  parameters:
+    otlpEndpoint:
+      value: "http://otel-collector-opentelemetry-collector.observability:4318"
+      targets:
+      - pointer: env.OTEL_EXPORTER_OTLP_ENDPOINT
+        components: ["otel-demo"]

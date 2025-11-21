@@ -13,6 +13,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	contexts "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
 	providers "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/auth"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/config"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/keylock"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/ledger"
@@ -261,6 +262,21 @@ func GetReporter(config ManagerConfig, providers map[string]providers.IProvider)
 		return nil, v1alpha2.NewCOAError(nil, "supplied provider is not a reporter provider", v1alpha2.BadConfig)
 	}
 	return reporterProvider, nil
+}
+func GetAuthProvider(config ManagerConfig, providers map[string]providers.IProvider) (auth.IAuthProvider, error) {
+	authProviderName, ok := config.Properties[v1alpha2.ProvidersAuth]
+	if !ok {
+		return nil, v1alpha2.NewCOAError(nil, "auth provider is not configured", v1alpha2.MissingConfig)
+	}
+	provider, ok := providers[authProviderName]
+	if !ok {
+		return nil, v1alpha2.NewCOAError(nil, "auth provider is not supplied", v1alpha2.MissingConfig)
+	}
+	authProvider, ok := provider.(auth.IAuthProvider)
+	if !ok {
+		return nil, v1alpha2.NewCOAError(nil, "supplied provider is not a auth provider", v1alpha2.BadConfig)
+	}
+	return authProvider, nil
 }
 
 func NeedObjectValidate(config ManagerConfig, providers map[string]providers.IProvider) bool {

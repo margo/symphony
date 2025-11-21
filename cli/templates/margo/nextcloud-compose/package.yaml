@@ -1,0 +1,17 @@
+apiVersion: non-margo.org
+kind: ApplicationPackage
+metadata:
+  name: nextcloud-pkg
+  labels:
+    env: dev
+  annotations:
+    description: "A web application for NextCloud"
+spec:
+  sourceType: GIT_REPO
+  source:
+    # url: "http://52.224.241.180:3000/gogsadmin/nextcloud"
+    # branch: "master"
+    url: {{URL}}
+    branch: {{BRANCH}}
+    #commit: <commit id>
+    #token: <pass-pat>  

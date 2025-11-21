@@ -107,12 +107,13 @@ func (j JWT) JWT(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 					return
 				}
 				log.Debugf("JWT: Validating token with username plus pwd.")
-				_, roles, err := j.validateToken(tokenStr)
+				claims, roles, err := j.validateToken(tokenStr)
 				if err != nil {
 					log.Error("JWT: Validate token with user creds failed. %s\n", err.Error())
 					ctx.Response.SetStatusCode(fasthttp.StatusForbidden)
 					return
 				} else {
+					ctx.SetUserValue("userClaims", claims)
 					if j.EnableRBAC {
 						path := string(ctx.Path())
 						method := string(ctx.Method())
