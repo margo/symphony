@@ -60,10 +60,8 @@ github.com/lestrrat-go/option v1.0.1 h1:oAzP2fvZGQKWkvHa1/SAcFolBEca1oN+mQ7eooNB
 github.com/lestrrat-go/option v1.0.1/go.mod h1:5ZHFbivi4xwXxhxY9XHDe2FHo6/Z7WWmtT7T5nBBp3I=
 github.com/lestrrat-go/sfv v1.0.0 h1:+/VOs7lhUWAwNIklow4kPYlit0fPBC6HsF+GHKXrhGM=
 github.com/lestrrat-go/sfv v1.0.0/go.mod h1:wawOORrbzB4Vh0QT7WtbWEbMuTbjS8OPxum1wZAYCiQ=
-github.com/margo/dev-repo v0.0.0-20251114041949-a07f0e139470 h1:rvPJzS9UF5pwGPtQI4FzVVM1i7Q5lJmoPxE91AeNuUk=
-github.com/margo/dev-repo v0.0.0-20251114041949-a07f0e139470/go.mod h1:F32jf5GyqF6y7FDLto81Bntqx2ZvC+d3Sf7UU9+Xego=
-github.com/margo/dev-repo v0.0.0-20251114140153-c8bbd182db97 h1:P2Be8lodxiCR4Dztc6pgab+F/+I+yhLh9K0rZsF5aBM=
-github.com/margo/dev-repo v0.0.0-20251114140153-c8bbd182db97/go.mod h1:F32jf5GyqF6y7FDLto81Bntqx2ZvC+d3Sf7UU9+Xego=
+github.com/margo/dev-repo v0.0.0-20251126132351-1784ac74cba6 h1:8LftuJnemuoFmbJGwVHL5lmaV6PoXdxfrLvDfmK/wjY=
+github.com/margo/dev-repo v0.0.0-20251126132351-1784ac74cba6/go.mod h1:F32jf5GyqF6y7FDLto81Bntqx2ZvC+d3Sf7UU9+Xego=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
