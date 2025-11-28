@@ -1,18 +1,18 @@
 apiVersion: non-margo.org
 kind: ApplicationPackage
 metadata:
-  name: nginx-pkg
+  name: nginx-helm-app
   labels:
     env: dev
   annotations:
-    description: "A web application for running nginx"
+    description: "Nginx Helm application"
 spec:
   sourceType: OCI_REPO
   source:
-    ociRegistry:
-      url: "{{REGISTRY_URL}}"
-      repository: "{{REPOSITORY}}"
-      tag: "{{TAG}}"
-      auth:
-        username: "{{REGISTRY_USER}}"
-        password: "{{REGISTRY_PASS}}"
+    registryUrl: "{{REGISTRY_URL}}"
+    repository: "{{REPOSITORY}}"
+    tag: "{{TAG}}"
+    authentication:
+      type: "basic"
+      username: "{{REGISTRY_USER}}"
+      password: "{{REGISTRY_PASS}}"
