@@ -7,11 +7,12 @@ metadata:
   annotations:
     description: "A web application for running nginx"
 spec:
-  sourceType: GIT_REPO
+  sourceType: OCI_REPO
   source:
-    # url: "http://52.224.241.180:3000/gogsadmin/nginx"
-    # branch: "master"
-    url: {{URL}}
-    branch: {{BRANCH}}
-    #commit: <commit id>
-    #token: <pass-pat>
+    ociRegistry:
+      url: "{{REGISTRY_URL}}"
+      repository: "{{REPOSITORY}}"
+      tag: "{{TAG}}"
+      auth:
+        username: "{{REGISTRY_USER}}"
+        password: "{{REGISTRY_PASS}}"

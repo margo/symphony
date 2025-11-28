@@ -1,4 +1,4 @@
-apiVersion: margo.org
+apiVersion: non-margo.org
 kind: ApplicationDeployment
 metadata:
   name: otel-demo-instance
