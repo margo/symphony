@@ -3,7 +3,7 @@ package margo
 import (
 	"context"
 	"fmt"
-    "time"
+    "os"
     "gopkg.in/yaml.v2"
     "sort" 
     "encoding/json"
@@ -160,19 +160,19 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
     
     // Use uint64 for all version calculations
     manifestVersionInt := uint64(1)
+    var oldArchivePath string
 
     // Check for existing bundle to increment version
     existingBundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
     if err == nil && existingBundle != nil {
         // CAST: float32 to uint64 for increment operation
         manifestVersionInt = uint64(existingBundle.Manifest.ManifestVersion) + 1
-        deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Found existing bundle, incrementing version to %d", manifestVersionInt)
+        oldArchivePath = existingBundle.ArchivePath  // ✅ Save for cleanup later
+        deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Found existing bundle version %d, incrementing to %d", 
+            uint64(existingBundle.Manifest.ManifestVersion), manifestVersionInt)
     }
 
-    // Clear old bundle first (this will also cleanup old archive file)
-    _ = s.Database.DeleteDeploymentBundle(ctx, deviceClientId, false)
-    time.Sleep(100 * time.Millisecond)
-
+    
     // Get all deployments for this device
     dbRows, err := s.Database.GetDeploymentsByDevice(ctx, deviceClientId)
     if err != nil {
@@ -207,7 +207,7 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 
     var archivePath string
 
-    //  Use activeDeployments instead of dbRows
+    // Use activeDeployments instead of dbRows
     if len(activeDeployments) > 0 {
         // Sort deployments by ID for deterministic ordering
         sort.Slice(activeDeployments, func(i, j int) bool {
@@ -296,13 +296,22 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
         deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: No active deployments for device %s, creating empty bundle", deviceClientId)
     }
 
-    // Store bundle
+    // ✅ Store new bundle FIRST (atomic replacement)
     if err := s.Database.UpsertDeploymentBundle(ctx, DeploymentBundleRow{
         DeviceClientId: deviceClientId,
         Manifest:       newBundleManifest,
         ArchivePath:    archivePath,
     }, true); err != nil {
         return fmt.Errorf("failed to upsert deployment bundle: %w", err)
+    }
+
+    // ✅ NOW cleanup old archive file (after new bundle is safely stored)
+    if oldArchivePath != "" && oldArchivePath != archivePath {
+        deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Cleaning up old archive file: %s", oldArchivePath)
+        if err := os.Remove(oldArchivePath); err != nil {
+            // Log warning but don't fail - cleanup is best-effort
+            deploymentBundleLogger.WarnfCtx(ctx, "rebuildTheBundleForDevice: Failed to remove old archive file %s: %v (continuing anyway)", oldArchivePath, err)
+        }
     }
 
     // DEBUG: List all bundles after storage
@@ -313,9 +322,3 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
         deviceClientId, len(activeDeployments), manifestVersionInt)
     return nil
 }
-
-
-
-
-
-
