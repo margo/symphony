@@ -257,6 +257,19 @@ func (s *AppPkgManager) processPackageAsync(
 		appPkg.Resources = processedPkg.Resources
 		contextualInfo = "Package processed and Symphony objects created successfully"
 
+	case margoNonStdAPI.OCIREPO:
+		processedPkg, err := s.processOciRepositoryWithStateTracking(ctx, pkgMgr, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
+		if err != nil {
+			processingError = err
+			contextualInfo = fmt.Sprintf("Git repository processing failed: %s", err.Error())
+			return
+		}
+
+		// Update the package with processed data
+		appPkg.Description = processedPkg.Description
+		appPkg.Resources = processedPkg.Resources
+		contextualInfo = "Package processed and Symphony objects created successfully"
+
 	default:
 		processingError = fmt.Errorf("unsupported source type: %s", appPkg.Package.Spec.SourceType)
 		contextualInfo = fmt.Sprintf("Unsupported source type: %s", appPkg.Package.Spec.SourceType)
@@ -459,6 +472,201 @@ func (s *AppPkgManager) processGitRepositoryWithStateTracking(
 
 	totalProcessDuration := time.Since(gitProcessStart)
 	appPkgLogger.Info("Git repository processing completed successfully",
+		"packageId", packageId,
+		"totalProcessDuration", totalProcessDuration,
+		"downloadDuration", downloadDuration)
+
+	// Prepare return package
+	resultPkg := pkg
+	resultPkg.Description = appDesc
+	resultPkg.Resources = allResources
+
+	return &resultPkg, nil
+}
+
+// processOciRepositoryWithStateTracking handles OCI repository processing with detailed state tracking
+func (s *AppPkgManager) processOciRepositoryWithStateTracking(
+	ctx context.Context,
+	pkgMgr *packageManager.PackageManager,
+	pkg ApplicationPackage,
+	solutionsManager *solutions.SolutionsManager,
+	solutionContainerManager *solutioncontainers.SolutionContainersManager,
+	catalogsManager *catalogs.CatalogsManager) (*ApplicationPackage, error) {
+
+	ociProcessStart := time.Now()
+	packageId := *pkg.Package.Metadata.Id
+
+	appPkgLogger.Info("Starting OCI repository processing with state tracking",
+		"packageId", packageId,
+		"ociProcessStart", ociProcessStart)
+
+	// Phase 1: Parse and validate OCI repository configuration
+	appPkgLogger.Debug("Phase 1: Parsing OCI repository configuration", "packageId", packageId)
+	ociRepo, err := pkg.Package.Spec.Source.AsOciRepo()
+	if err != nil {
+		appPkgLogger.Error("Failed to parse OCI repository configuration",
+			"packageId", packageId,
+			"error", err)
+		return nil, fmt.Errorf("failed to parse OCI repository spec: %w", err)
+	}
+
+	appPkgLogger.Info("OCI repository configuration parsed successfully",
+		"packageId", packageId,
+		"registryUrl", ociRepo.RegistryUrl,
+		"repository", ociRepo.Repository,
+		"hasAuthInfo", ociRepo.Authentication != nil,
+		"isTagBasedFetch", ociRepo.Tag != nil,
+		"isDigestBasedFetch", ociRepo.Digest != nil)
+
+	// Phase 2: Set up authentication
+	appPkgLogger.Debug("Phase 2: Setting up OCI authentication", "packageId", packageId)
+	var username, token string
+	if ociRepo.Authentication != nil {
+		if ociRepo.Authentication.Username != nil {
+			username = *ociRepo.Authentication.Username
+		}
+
+		if ociRepo.Authentication.Password != nil {
+			appPkgLogger.Debug("OCI authentication configured with basic password", "packageId", packageId, "username", username)
+		} else if ociRepo.Authentication.Token != nil {
+			token = *ociRepo.Authentication.Token
+			appPkgLogger.Debug("OCI authentication configured with token", "packageId", packageId, "username", username)
+		}
+	}
+	if username == "" {
+		appPkgLogger.Debug("No OCI authentication provided, using anonymous access", "packageId", packageId)
+	}
+
+	// Phase 3: Determine OCI tag
+	tag := "latest"
+	if ociRepo.Tag != nil {
+		tag = *ociRepo.Tag
+	}
+
+	// Phase 4: Download package from OCI repository
+	appPkgLogger.Info("Phase 4: Downloading package from OCI repository",
+		"packageId", packageId,
+		"ociUrl", ociRepo.RegistryUrl,
+		"tag", tag)
+
+	pkgPath, downloadedAppPkg, err := pkgMgr.LoadPackageFromOci(
+		ociRepo.RegistryUrl,
+		ociRepo.Repository,
+		tag,
+		username,
+		token,
+		false,
+		time.Second*60,
+	)
+	if err != nil {
+		appPkgLogger.Error("Failed to download package from OCI repository",
+			"packageId", packageId,
+			"ociUrl", ociRepo.RegistryUrl,
+			"error", err)
+		return nil, fmt.Errorf("failed to download package from OCI: %w", err)
+	}
+
+	// Ensure cleanup of downloaded package
+	defer func() {
+		if cleanupErr := os.RemoveAll(pkgPath); cleanupErr != nil {
+			appPkgLogger.Warn("Failed to cleanup downloaded package",
+				"packageId", packageId,
+				"packagePath", pkgPath,
+				"error", cleanupErr)
+		} else {
+			appPkgLogger.Debug("Successfully cleaned up downloaded package",
+				"packageId", packageId,
+				"packagePath", pkgPath)
+		}
+	}()
+
+	downloadDuration := time.Since(ociProcessStart)
+	appPkgLogger.Info("Package downloaded successfully from OCI",
+		"packageId", packageId,
+		"packagePath", pkgPath,
+		"resourceCount", len(downloadedAppPkg.Resources),
+		"downloadDuration", downloadDuration)
+
+	// Phase 5: Parse application description
+	appPkgLogger.Info("Phase 5: Parsing application description from downloaded package",
+		"packageId", packageId,
+		"packagePath", pkgPath)
+
+	appDesc, packageResources, err := s.parseApplicationDescription(pkgPath)
+	if err != nil {
+		appPkgLogger.Error("Failed to parse application description",
+			"packageId", packageId,
+			"packagePath", pkgPath,
+			"error", err)
+		return nil, fmt.Errorf("failed to parse application description: %w", err)
+	}
+
+	// Phase 6: Validate application description
+	appPkgLogger.Debug("Phase 6: Validating application description", "packageId", packageId)
+	if err := s.validateApplicationDescription(appDesc); err != nil {
+		appPkgLogger.Error("Application description validation failed",
+			"packageId", packageId,
+			"appId", appDesc.Metadata.Id,
+			"error", err)
+		return nil, fmt.Errorf("application description validation failed: %w", err)
+	}
+
+	// Phase 7: Merge resources from OCI download and package parsing
+	appPkgLogger.Debug("Phase 7: Merging resources", "packageId", packageId)
+	allResources := make(map[string][]byte)
+	for k, v := range downloadedAppPkg.Resources {
+		allResources[k] = v
+	}
+	for k, v := range packageResources {
+		allResources[k] = v
+	}
+
+	appPkgLogger.Info("Application description parsed and validated successfully",
+		"packageId", packageId,
+		"appId", appDesc.Metadata.Id,
+		"appName", appDesc.Metadata.Name,
+		"appVersion", appDesc.Metadata.Version,
+		"totalResourceCount", len(allResources))
+
+	// Phase 8: Convert to Symphony objects
+	appPkgLogger.Info("Phase 8: Converting application to Symphony objects",
+		"packageId", packageId,
+		"appId", appDesc.Metadata.Id)
+
+	dbRow := AppPackageDatabaseRow{
+		PackageRequest: pkg.Package,
+		AppDescription: appDesc,
+		AppResources:   allResources,
+	}
+
+	catalog, solution, solutionContainer, err := s.Transformer.AppPackageToSymphonyObjects(ctx, dbRow, allResources)
+	if err != nil {
+		appPkgLogger.Error("Failed to convert to Symphony objects",
+			"packageId", packageId,
+			"appId", appDesc.Metadata.Id,
+			"error", err)
+		return nil, fmt.Errorf("failed to convert to Symphony objects: %w", err)
+	}
+
+	appPkgLogger.Info("Successfully converted to Symphony objects",
+		"packageId", packageId,
+		"catalogId", catalog.ObjectMeta.Name,
+		"solutionId", solution.ObjectMeta.Name,
+		"containerId", solutionContainer.ObjectMeta.Name)
+
+	// Phase 9: Store Symphony objects
+	appPkgLogger.Info("Phase 9: Storing Symphony objects in state provider",
+		"packageId", packageId)
+
+	if err := s.storeSymphonyObjects(ctx, catalog, solution, solutionContainer, solutionsManager, solutionContainerManager, catalogsManager); err != nil {
+		appPkgLogger.Error("Failed to store Symphony objects",
+			"packageId", packageId,
+			"error", err)
+		return nil, fmt.Errorf("failed to store Symphony objects: %w", err)
+	}
+
+	totalProcessDuration := time.Since(ociProcessStart)
+	appPkgLogger.Info("OCI repository processing completed successfully",
 		"packageId", packageId,
 		"totalProcessDuration", totalProcessDuration,
 		"downloadDuration", downloadDuration)

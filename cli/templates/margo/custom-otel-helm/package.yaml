@@ -1,17 +1,18 @@
-apiVersion: margo.org
+apiVersion: non-margo.org
 kind: ApplicationPackage
 metadata:
-  name: otel-demo-pkg
+  name: custom-otel-helm-app
   labels:
     env: dev
   annotations:
-    description: "A web application for running otel demo app"
+    description: "A custom OTEL Helm application with observability features"
 spec:
-  sourceType: GIT_REPO
+  sourceType: OCI_REPO
   source:
-    # url: "http://52.224.241.180:3000/gogsadmin/otel"
-    # branch: "master"
-    url: {{URL}}
-    branch: {{BRANCH}}
-    #commit: <commit id>
-    #token: <pass-pat>
+    registryUrl: "{{REGISTRY_URL}}"
+    repository: "{{REPOSITORY}}"
+    tag: "{{TAG}}"
+    authentication:
+      type: "basic"
+      username: "{{REGISTRY_USER}}"
+      password: "{{REGISTRY_PASS}}"

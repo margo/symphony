@@ -241,11 +241,9 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
     if deviceClientId == "" || deploymentId == "" || state == "" {
         return fmt.Errorf("deviceClientId, deploymentId, and status are required")
     }
-    deviceLogger.DebugCtx(ctx,
-        "msg", "deployment status update request received",
-        "deviceClientId", deviceClientId,
-        "deploymentId", deploymentId,
-        "status", state)
+    
+    deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s", 
+        deviceClientId, deploymentId, state)
 
     // Get deployment
     dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
@@ -253,39 +251,58 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
         return fmt.Errorf("deployment not found: %w", err)
     }
 
-    // Update the current state (what device has reported)
-    existingState := dbRow.CurrentState
-
-    switch state {
-    case string(sbi.DeploymentStatusManifestStatusStateRemoved):
+    // Special handling for REMOVED state
+    if state == string(sbi.DeploymentStatusManifestStatusStateRemoved) {
         deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Device confirmed removal of deployment %s", deploymentId)
         
-        // Remove the entry from the database
+        // Delete the deployment from database
         if err := s.Database.DeleteDeployment(ctx, deploymentId, true); err != nil {
             return fmt.Errorf("failed to delete deployment from database: %w", err)
         }
         
-        // Trigger bundle regeneration after confirmed removal
-        deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Triggering bundle regeneration for device %s after confirmed removal", deviceClientId)
+        deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully deleted deployment %s after device confirmation", deploymentId)
         
-        // Note: This requires access to bundleManager - you may need to pass it to DeviceManager
-        // For now, the bundle will be regenerated on next sync or you can trigger it via event
-        
-    default:
-        // Update database
-        existingState.Status.Status.State = margoStdAPI.DeploymentStatusManifestStatusState(state)
-        if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, existingState, true); err != nil {
-            return fmt.Errorf("failed to update current state: %w", err)
-        }
-
-        // Also update the deployment request status for backward compatibility
-        dbRow.DeploymentRequest.Status.State = (*margoNonStdAPI.ApplicationDeploymentStatusState)(&state)
-        if err := s.Database.UpsertDeployment(ctx, *dbRow, true); err != nil {
-            return fmt.Errorf("failed to update deployment: %w", err)
-        }
+        // Note: Bundle regeneration is triggered by DeleteDeployment event subscription
+        return nil
     }
+
+    // Normal state updates (not REMOVED)
+    existingState := dbRow.CurrentState
+    existingState.Status.Status.State = margoStdAPI.DeploymentStatusManifestStatusState(state)
+    
+    if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, existingState, true); err != nil {
+        return fmt.Errorf("failed to update current state: %w", err)
+    }
+
+    // Update the deployment request status for CLI display
+    var nbiState margoNonStdAPI.ApplicationDeploymentStatusState
+    switch margoStdAPI.DeploymentStatusManifestStatusState(state) {
+    case margoStdAPI.DeploymentStatusManifestStatusStateInstalled:
+        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLED
+    case margoStdAPI.DeploymentStatusManifestStatusStateInstalling:
+        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLING
+    case margoStdAPI.DeploymentStatusManifestStatusStateFailed:
+        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateFAILED
+    case margoStdAPI.DeploymentStatusManifestStatusStateRemoving:
+        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateREMOVING
+    case margoStdAPI.DeploymentStatusManifestStatusStatePending:
+        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
+    default:
+        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
+    }
+    
+    dbRow.DeploymentRequest.Status.State = &nbiState
+    now := time.Now().UTC()
+    dbRow.DeploymentRequest.Status.LastUpdateTime = &now
+    
+    if err := s.Database.UpsertDeployment(ctx, *dbRow, true); err != nil {
+        return fmt.Errorf("failed to update deployment: %w", err)
+    }
+    
+    deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s", deploymentId, nbiState)
     return nil
 }
+
 
 func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret string, userClaims map[string]interface{}) (*TokenData, error) {
 	// dm.AuthProvider.ValidateToken(ctx, )
