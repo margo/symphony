@@ -117,17 +117,6 @@ RUN --mount=type=secret,id=github_username \
         CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
     fi
 
-# RUN if [ "$TARGETARCH" = "arm" ]; then \
-#     CC=arm-linux-gnueabihf-gcc \
-#     RUSTFLAGS="-C linker=arm-linux-gnueabihf-gcc" \
-#     CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
-# elif [ "$TARGETARCH" = "arm64" ]; then \
-#     CC=aarch64-linux-gnu-gcc \
-#     CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
-# else \
-#     CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
-# fi
-
 FROM ${TARGET_BASE_IMAGE}
 
 ARG TARGETARCH
@@ -147,6 +136,25 @@ RUN \
         ./get_helm.sh; \
     fi \
     && apt upgrade -y
+
+# Install ORAS CLI for OCI artifact operations
+RUN set -x \
+    && ORAS_VERSION="1.1.0" \
+    && if [ "${TARGETARCH}" = "arm64" ]; then \
+        wget "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_arm64.tar.gz" && \
+        tar -xzf "oras_${ORAS_VERSION}_linux_arm64.tar.gz" && \
+        mv oras /usr/local/bin/ && \
+        rm "oras_${ORAS_VERSION}_linux_arm64.tar.gz"; \
+    else \
+        wget "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz" && \
+        tar -xzf "oras_${ORAS_VERSION}_linux_amd64.tar.gz" && \
+        mv oras /usr/local/bin/ && \
+        rm "oras_${ORAS_VERSION}_linux_amd64.tar.gz"; \
+    fi \
+    && chmod +x /usr/local/bin/oras \
+    && oras version
+
+# Rest of Dockerfile stays the same...
 ADD https://github.com/golang/go/raw/master/lib/time/zoneinfo.zip /zoneinfo.zip
 ENV ZONEINFO=/zoneinfo.zip
 COPY --from=build /dist /
@@ -157,5 +165,5 @@ EXPOSE 8080
 EXPOSE 8081
 ENV LOG_LEVEL=Debug
 ENV GOFAIL_HTTP="127.0.0.1:22381"
-# ENV CONFIG /symphony-api.json
+							   
 CMD sh -c 'if [ -f /etc/pki/ca-trust/source/anchors/proxy-cert.crt ]; then update-ca-trust; fi && exec /symphony-api -c $CONFIG -l $LOG_LEVEL'
