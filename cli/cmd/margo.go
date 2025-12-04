@@ -9,12 +9,10 @@ import (
 	"github.com/eclipse-symphony/symphony/cli/utils"
 	"github.com/ghodss/yaml"
 	"github.com/jedib0t/go-pretty/v6/table"
-	nbi "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
-	margoCli "github.com/margo/dev-repo/poc/wfm/cli"
+	nbi "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	margoCli "github.com/margo/sandbox/poc/wfm/cli"
 	"github.com/spf13/cobra"
 )
-
-
 
 var (
 	// margo compliant server details
@@ -328,17 +326,14 @@ func applyAppConfig(filename string) error {
 
 // createNorthboundClient creates a configured northbound client
 func createNorthboundClient() *margoCli.NbiApiClient {
-    // For development with self-signed certificates (TODO: Change to use WithCustomCA instead of InsecureTLS)
-    return margoCli.NewNbiHTTPCli(
-        margoServerHost, 
-        margoServerPort, 
-        &northboundBaseURL,
-        margoCli.WithInsecureTLS(),
-    )
+	// For development with self-signed certificates (TODO: Change to use WithCustomCA instead of InsecureTLS)
+	return margoCli.NewNbiHTTPCli(
+		margoServerHost,
+		margoServerPort,
+		&northboundBaseURL,
+		margoCli.WithInsecureTLS(),
+	)
 }
-
-
-
 
 func onboardAppPkg(appPkg *nbi.ApplicationPackageManifestRequest) error {
 	northboundCli := createNorthboundClient()
@@ -436,7 +431,7 @@ func listDevices() error {
 
 func listAppPkgs() error {
 	northboundCli := createNorthboundClient()
-	
+
 	appPkgs, err := northboundCli.ListAppPkgs(margoCli.ListAppPkgsParams{})
 	if err != nil {
 		return fmt.Errorf("failed to list application Pkgs: %w", err)
@@ -661,76 +656,75 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 }
 
 func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
-    t := table.NewWriter()
-    t.SetOutputMirror(os.Stdout)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
 
-    // Set headers
-    t.AppendHeader(table.Row{
-        "ID", "Name", "Pkg", "Device", "Op", "RunningState", "Updated",
-    })
+	// Set headers
+	t.AppendHeader(table.Row{
+		"ID", "Name", "Pkg", "Device", "Op", "RunningState", "Updated",
+	})
 
-    // Add data rows
-    for _, dep := range resp.Items {
-        // Add nil checks to prevent panic
-        var deviceId string
-        if dep.Spec.DeviceRef != nil && dep.Spec.DeviceRef.Id != nil {
-            deviceId = *dep.Spec.DeviceRef.Id
-        } 
+	// Add data rows
+	for _, dep := range resp.Items {
+		// Add nil checks to prevent panic
+		var deviceId string
+		if dep.Spec.DeviceRef != nil && dep.Spec.DeviceRef.Id != nil {
+			deviceId = *dep.Spec.DeviceRef.Id
+		}
 
-        var deploymentId string
-        if dep.Metadata.Id != nil {
-            deploymentId = *dep.Metadata.Id
-        } 
-        var state string
-        if dep.Status != nil && dep.Status.State != nil {
-            state = string(*dep.Status.State)
-        } 
+		var deploymentId string
+		if dep.Metadata.Id != nil {
+			deploymentId = *dep.Metadata.Id
+		}
+		var state string
+		if dep.Status != nil && dep.Status.State != nil {
+			state = string(*dep.Status.State)
+		}
 
-        var lastUpdate time.Time
-        if dep.Status != nil && dep.Status.LastUpdateTime != nil {
-            lastUpdate = *dep.Status.LastUpdateTime
-        } else {
-            lastUpdate = time.Time{}
-        }
+		var lastUpdate time.Time
+		if dep.Status != nil && dep.Status.LastUpdateTime != nil {
+			lastUpdate = *dep.Status.LastUpdateTime
+		} else {
+			lastUpdate = time.Time{}
+		}
 
 		var operation string
-        if dep.RecentOperation != nil {
-            operation = string(dep.RecentOperation.Op)
-        } 
+		if dep.RecentOperation != nil {
+			operation = string(dep.RecentOperation.Op)
+		}
 
-        row := table.Row{
-            truncateString(deploymentId, 48),
-            truncateString(dep.Metadata.Name, 10),
-            truncateString(dep.Spec.AppPackageRef.Id, 10),
-            truncateString(deviceId, 10),
-            operation,
-            state,
-            formatTime(lastUpdate),
-        }
+		row := table.Row{
+			truncateString(deploymentId, 48),
+			truncateString(dep.Metadata.Name, 10),
+			truncateString(dep.Spec.AppPackageRef.Id, 10),
+			truncateString(deviceId, 10),
+			operation,
+			state,
+			formatTime(lastUpdate),
+		}
 
-        t.AppendRow(row)
-    }
+		t.AppendRow(row)
+	}
 
-    // Add footer with pagination
-    t.AppendFooter(table.Row{
-        "", "", "", "", "", "",
-        fmt.Sprintf("Total: %d", len(resp.Items)),
-    })
+	// Add footer with pagination
+	t.AppendFooter(table.Row{
+		"", "", "", "", "", "",
+		fmt.Sprintf("Total: %d", len(resp.Items)),
+	})
 
-    // Configure column settings
-    t.SetColumnConfigs([]table.ColumnConfig{
-        {Number: 1, WidthMax: 48}, // ID
-        {Number: 2, WidthMax: 25}, // Name
-        {Number: 3, WidthMax: 35}, // Pkg
-        {Number: 4, WidthMax: 35}, // Device
-        {Number: 5, WidthMax: 12}, // Op
-        {Number: 6, WidthMax: 12}, // RunningState
-        {Number: 7, WidthMax: 16}, // Updated
-    })
+	// Configure column settings
+	t.SetColumnConfigs([]table.ColumnConfig{
+		{Number: 1, WidthMax: 48}, // ID
+		{Number: 2, WidthMax: 25}, // Name
+		{Number: 3, WidthMax: 35}, // Pkg
+		{Number: 4, WidthMax: 35}, // Device
+		{Number: 5, WidthMax: 12}, // Op
+		{Number: 6, WidthMax: 12}, // RunningState
+		{Number: 7, WidthMax: 16}, // Updated
+	})
 
-    t.Render()
+	t.Render()
 }
-
 
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -739,12 +733,11 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-
 func formatTime(t time.Time) string {
-    if t.IsZero() {
-        return "N/A"
-    }
-    return t.Format("2006-01-02 15:04")
+	if t.IsZero() {
+		return "N/A"
+	}
+	return t.Format("2006-01-02 15:04")
 }
 
 func extractSource(source nbi.ApplicationPackageSpec_Source) string {

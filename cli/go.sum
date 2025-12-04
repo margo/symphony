@@ -60,8 +60,8 @@ github.com/lestrrat-go/option v1.0.1 h1:oAzP2fvZGQKWkvHa1/SAcFolBEca1oN+mQ7eooNB
 github.com/lestrrat-go/option v1.0.1/go.mod h1:5ZHFbivi4xwXxhxY9XHDe2FHo6/Z7WWmtT7T5nBBp3I=
 github.com/lestrrat-go/sfv v1.0.0 h1:+/VOs7lhUWAwNIklow4kPYlit0fPBC6HsF+GHKXrhGM=
 github.com/lestrrat-go/sfv v1.0.0/go.mod h1:wawOORrbzB4Vh0QT7WtbWEbMuTbjS8OPxum1wZAYCiQ=
-github.com/margo/dev-repo v0.0.0-20251201053820-a5bd8a94de4f h1:MvEZRLzJi+5sK6/VRMjjbHvfH96OlRJeBHcfA5wJ7sI=
-github.com/margo/dev-repo v0.0.0-20251201053820-a5bd8a94de4f/go.mod h1:F32jf5GyqF6y7FDLto81Bntqx2ZvC+d3Sf7UU9+Xego=
+github.com/margo/sandbox v0.0.0-20251204100039-62467928c285 h1:+UBcBUKtXTrQCn62K5e42CA/OGF9qV/ajn1L7hf2khE=
+github.com/margo/sandbox v0.0.0-20251204100039-62467928c285/go.mod h1:gBTRXfa7fLT5E+a1YHLwx4yIZ+bWuTF8eEG76lX7nXg=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
