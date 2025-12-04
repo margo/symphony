@@ -15,7 +15,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	"github.com/kr/pretty"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"github.com/valyala/fasthttp"
 )
 

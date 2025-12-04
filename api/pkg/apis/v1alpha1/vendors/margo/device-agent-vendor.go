@@ -1,32 +1,31 @@
 package margo
 
 import (
-    "bytes"
-    "context"
-    "crypto/sha256"  
-    "encoding/json"
-    "fmt"
-    "io"
-    "net/http"
-    "net/url"
-    "os"
-    "strings"
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
 
-    "github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
-    "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
-    "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
-    "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/observability"
-    "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
-    "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
-    "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
-    "github.com/eclipse-symphony/symphony/coa/pkg/logger"
-    "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
-    "github.com/margo/dev-repo/shared-lib/crypto"
-    margoStdSbiAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
-    "github.com/valyala/fasthttp"
-    "gopkg.in/yaml.v2" 
+	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/observability"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
+	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/sandbox/shared-lib/crypto"
+	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+	"github.com/valyala/fasthttp"
+	"gopkg.in/yaml.v2"
 )
-
 
 var deviceVendorLogger = logger.NewLogger("coa.runtime")
 
@@ -210,7 +209,6 @@ func (self *DeviceAgentVendor) saveDeviceCapabilities(request v1alpha2.COAReques
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
 	}
 
-	
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.Created,
 		Body:        []byte(`{"message": "Device capabilities reported successfully"}`),
@@ -274,8 +272,6 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update device capabilities", v1alpha2.InternalError)
 	}
-
-	
 
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.Created,
@@ -366,7 +362,7 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 	}
 
 	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, devicePubCert.(string))
-	
+
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
 	}
@@ -381,7 +377,6 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 	} else {
 		deviceVendorLogger.InfofCtx(pCtx, "VERIFIED: Device %s exists with status %s", onboardingResult.ClientId, device.OnboardingStatus)
 	}
-
 
 	// Create response
 	response := DeviceOnboardingResponse{
@@ -441,482 +436,474 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 }
 
 func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v1alpha2.COAResponse {
-    pCtx, span := observability.StartSpan("Margo Device Vendor",
-        request.Context,
-        &map[string]string{
-            "method": "getDesiredManifest",
-            "route":  request.Route,
-            "verb":   request.Method,
-        })
-    defer span.End()
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "getDesiredManifest",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
 
-    // Extract the fasthttp request from the context
-    headers, err := ParseRequestHeaders(request.Context)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(err, "Failed to extract fasthttp request from context", v1alpha2.InternalError),
-            "Internal server error", v1alpha2.InternalError)
-    }
+	// Extract the fasthttp request from the context
+	headers, err := ParseRequestHeaders(request.Context)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(err, "Failed to extract fasthttp request from context", v1alpha2.InternalError),
+			"Internal server error", v1alpha2.InternalError)
+	}
 
-    deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getDesiredManifest, parsedHeaders, method: sign(%v)", headers)
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getDesiredManifest, parsedHeaders, method: sign(%v)", headers)
 
-    if accept := headers["accept"]; accept != "application/vnd.margo.manifest.v1+json" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "The accept header should be application/vnd.margo.manifest.v1+json", v1alpha2.NotAcceptable),
-            "Not Acceptable", v1alpha2.NotAcceptable)
-    }
+	if accept := headers["accept"]; accept != "application/vnd.margo.manifest.v1+json" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "The accept header should be application/vnd.margo.manifest.v1+json", v1alpha2.NotAcceptable),
+			"Not Acceptable", v1alpha2.NotAcceptable)
+	}
 
-    // Access a specific header
-    deviceClientId := request.Parameters["__clientId"]
-    if deviceClientId == "" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-            "Missing deviceId parameter", v1alpha2.BadRequest)
-    }
+	// Access a specific header
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
+			"Missing deviceId parameter", v1alpha2.BadRequest)
+	}
 
-    deviceVendorLogger.InfofCtx(pCtx, "Processing request for deviceClientId: %s", deviceClientId)
+	deviceVendorLogger.InfofCtx(pCtx, "Processing request for deviceClientId: %s", deviceClientId)
 
-    validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
-    }
-    if !validReq {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "request signature is invalid", v1alpha2.BadRequest),
-            "Invalid Request Signature", v1alpha2.BadRequest)
-    }
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "request signature is invalid", v1alpha2.BadRequest),
+			"Invalid Request Signature", v1alpha2.BadRequest)
+	}
 
-    // Fix: Use lowercase header key
-    digest := headers["if-none-match"]
-    deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
+	// Fix: Use lowercase header key
+	digest := headers["if-none-match"]
+	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
-    shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceClientId, &digest)
-    if err != nil {
-        deviceVendorLogger.ErrorfCtx(pCtx, "ShouldReplaceBundle failed for device %s: %v", deviceClientId, err)
-        return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get the desired states", v1alpha2.InternalError)
-    }
+	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceClientId, &digest)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(pCtx, "ShouldReplaceBundle failed for device %s: %v", deviceClientId, err)
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get the desired states", v1alpha2.InternalError)
+	}
 
-    if manifest == nil {
-        deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceClientId)
-        return createErrorResponse2(deviceVendorLogger, span, 
-            v1alpha2.NewCOAError(nil, "manifest is nil", v1alpha2.InternalError),
-            "Internal server error", v1alpha2.InternalError)
-    }
+	if manifest == nil {
+		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceClientId)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "manifest is nil", v1alpha2.InternalError),
+			"Internal server error", v1alpha2.InternalError)
+	}
 
-    // SPEC-COMPLIANT: Compute ETag as digest of the manifest JSON
-    var etag string
-    manifestVersionInt := uint64(manifest.ManifestVersion)
-    
-    if manifest.Bundle == nil {
-        // Empty bundle: Compute digest of the manifest JSON (per spec)
-        manifestJSON, err := json.Marshal(manifest)
-        if err != nil {
-            deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
-            return createErrorResponse2(deviceVendorLogger, span, err, "Failed to compute manifest digest", v1alpha2.InternalError)
-        }
-        
-        // Compute SHA-256 digest of the manifest JSON
-        hash := sha256.Sum256(manifestJSON)
-        etag = fmt.Sprintf("\"sha256:%x\"", hash)
-        
-        deviceVendorLogger.InfofCtx(pCtx, "Returning empty manifest for device %s - Version: %d, ETag: %s", 
-            deviceClientId, manifestVersionInt, etag)
-    } else {
-        if manifest.Bundle.Digest == nil {
-            deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceClientId)
-            return createErrorResponse2(deviceVendorLogger, span, 
-                v1alpha2.NewCOAError(nil, "manifest bundle digest is nil", v1alpha2.InternalError),
-                "Internal server error", v1alpha2.InternalError)
-        }
-        
-        // Bundle with deployments: Use bundle digest as ETag
-        etag = fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
-        
-        deviceVendorLogger.InfofCtx(pCtx, "Returning bundle manifest for device %s - Version: %d, Digest: %s, Deployments: %d", 
-            deviceClientId, manifestVersionInt, *manifest.Bundle.Digest, len(manifest.Deployments))
-    }
+	// SPEC-COMPLIANT: Compute ETag as digest of the manifest JSON
+	var etag string
+	manifestVersionInt := uint64(manifest.ManifestVersion)
 
-    // Set headers directly in fasthttp context
-    if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
- 
+	if manifest.Bundle == nil {
+		// Empty bundle: Compute digest of the manifest JSON (per spec)
+		manifestJSON, err := json.Marshal(manifest)
+		if err != nil {
+			deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
+			return createErrorResponse2(deviceVendorLogger, span, err, "Failed to compute manifest digest", v1alpha2.InternalError)
+		}
+
+		// Compute SHA-256 digest of the manifest JSON
+		hash := sha256.Sum256(manifestJSON)
+		etag = fmt.Sprintf("\"sha256:%x\"", hash)
+
+		deviceVendorLogger.InfofCtx(pCtx, "Returning empty manifest for device %s - Version: %d, ETag: %s",
+			deviceClientId, manifestVersionInt, etag)
+	} else {
+		if manifest.Bundle.Digest == nil {
+			deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceClientId)
+			return createErrorResponse2(deviceVendorLogger, span,
+				v1alpha2.NewCOAError(nil, "manifest bundle digest is nil", v1alpha2.InternalError),
+				"Internal server error", v1alpha2.InternalError)
+		}
+
+		// Bundle with deployments: Use bundle digest as ETag
+		etag = fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
+
+		deviceVendorLogger.InfofCtx(pCtx, "Returning bundle manifest for device %s - Version: %d, Digest: %s, Deployments: %d",
+			deviceClientId, manifestVersionInt, *manifest.Bundle.Digest, len(manifest.Deployments))
+	}
+
+	// Set headers directly in fasthttp context
+	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+
 		fhCtx.Response.Header.Set("ETag", etag)
-        fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
-        fhCtx.Response.Header.Set("Content-Type", "application/vnd.margo.manifest.v1+json")
-        
-        deviceVendorLogger.InfofCtx(pCtx, "Set response headers directly - ETag: %s", etag)
-    } else {
-        deviceVendorLogger.WarnfCtx(pCtx, "Could not access fasthttp context to set headers")
-    }
+		fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+		fhCtx.Response.Header.Set("Content-Type", "application/vnd.margo.manifest.v1+json")
+
+		deviceVendorLogger.InfofCtx(pCtx, "Set response headers directly - ETag: %s", etag)
+	} else {
+		deviceVendorLogger.WarnfCtx(pCtx, "Could not access fasthttp context to set headers")
+	}
 
 	// Check if client already has this manifest (digest matches)
 	if !shouldReplaceBundle {
 		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", deviceClientId, etag)
-		
+
 		// Return NotModified state - COA framework will convert to HTTP 304
 		response := v1alpha2.COAResponse{
-			State:       v1alpha2.NotModified,  
+			State:       v1alpha2.NotModified,
 			Body:        []byte{},
 			ContentType: "application/vnd.margo.manifest.v1+json",
 		}
-		
-		deviceVendorLogger.InfofCtx(pCtx, "Created 304 response - State: %v, BodyLen: %d", 
+
+		deviceVendorLogger.InfofCtx(pCtx, "Created 304 response - State: %v, BodyLen: %d",
 			response.State, len(response.Body))
-		
+
 		return response
 	}
 
-    deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", deviceClientId, etag)
-    
-    // Serialize manifest
-    manifestJSON, err := json.Marshal(manifest)
-    if err != nil {
-        deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest: %v", err)
-        return createErrorResponse2(deviceVendorLogger, span, err, "Failed to marshal manifest", v1alpha2.InternalError)
-    }
-    
-    return v1alpha2.COAResponse{
-        State:       v1alpha2.OK,
-        Body:        manifestJSON,
-        ContentType: "application/vnd.margo.manifest.v1+json",
-    }
+	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", deviceClientId, etag)
+
+	// Serialize manifest
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest: %v", err)
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to marshal manifest", v1alpha2.InternalError)
+	}
+
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        manifestJSON,
+		ContentType: "application/vnd.margo.manifest.v1+json",
+	}
 }
-
-
 
 func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alpha2.COAResponse {
-    pCtx, span := observability.StartSpan("Margo Device Vendor",
-        request.Context,
-        &map[string]string{
-            "method": "downloadBundle",
-            "route":  request.Route,
-            "verb":   request.Method,
-        })
-    defer span.End()
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "downloadBundle",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
 
-    // Extract headers
-    headers, err := ParseRequestHeaders(request.Context)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(err, "Failed to extract headers", v1alpha2.InternalError),
-            "Internal server error", v1alpha2.InternalError)
-    }
+	// Extract headers
+	headers, err := ParseRequestHeaders(request.Context)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(err, "Failed to extract headers", v1alpha2.InternalError),
+			"Internal server error", v1alpha2.InternalError)
+	}
 
-    // Validate Accept header (406 Not Acceptable)
-    acceptedTypes := []string{
-        "application/vnd.margo.bundle.v1+tar+gzip",
-        "application/octet-stream",
-        "*/*",
-    }
-    accept := headers["accept"]
-    if accept != "" {
-        validAccept := false
-        for _, validType := range acceptedTypes {
-            if accept == validType {
-                validAccept = true
-                break
-            }
-        }
-        if !validAccept {
-            return createErrorResponse2(deviceVendorLogger, span,
-                v1alpha2.NewCOAError(nil, 
-                    "Accept header must be application/vnd.margo.bundle.v1+tar+gzip", 
-                    v1alpha2.NotAcceptable),
-                "Not Acceptable", v1alpha2.NotAcceptable)
-        }
-    }
+	// Validate Accept header (406 Not Acceptable)
+	acceptedTypes := []string{
+		"application/vnd.margo.bundle.v1+tar+gzip",
+		"application/octet-stream",
+		"*/*",
+	}
+	accept := headers["accept"]
+	if accept != "" {
+		validAccept := false
+		for _, validType := range acceptedTypes {
+			if accept == validType {
+				validAccept = true
+				break
+			}
+		}
+		if !validAccept {
+			return createErrorResponse2(deviceVendorLogger, span,
+				v1alpha2.NewCOAError(nil,
+					"Accept header must be application/vnd.margo.bundle.v1+tar+gzip",
+					v1alpha2.NotAcceptable),
+				"Not Acceptable", v1alpha2.NotAcceptable)
+		}
+	}
 
-    // Extract and validate parameters
-    deviceClientId := request.Parameters["__clientId"]
-    if deviceClientId == "" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-            "Missing clientId parameter", v1alpha2.BadRequest)
-    }
+	// Extract and validate parameters
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
+			"Missing clientId parameter", v1alpha2.BadRequest)
+	}
 
-    requestedDigest := request.Parameters["__digest"]
-    if requestedDigest == "" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "digest is required", v1alpha2.BadRequest),
-            "Missing digest parameter", v1alpha2.BadRequest)
-    }
+	requestedDigest := request.Parameters["__digest"]
+	if requestedDigest == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "digest is required", v1alpha2.BadRequest),
+			"Missing digest parameter", v1alpha2.BadRequest)
+	}
 
-    // Verify request signature
-    validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, 
-            "Signature verification failed", v1alpha2.Unauthorized)
-    }
-    if !validReq {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "Invalid signature", v1alpha2.Unauthorized),
-            "Signature verification failed", v1alpha2.Unauthorized)
-    }
+	// Verify request signature
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err,
+			"Signature verification failed", v1alpha2.Unauthorized)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Invalid signature", v1alpha2.Unauthorized),
+			"Signature verification failed", v1alpha2.Unauthorized)
+	}
 
-    //Extract If-None-Match header from client
-    clientETag := headers["if-none-match"]
-    
-    // Get bundle from database
-    path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, 
-            "Bundle not found", v1alpha2.NotFound)
-    }
-    if path == "" || manifest == nil {
-        return createSuccessResponseWithHeaders(span,
-            "application/vnd.margo.bundle.v1+tar+gzip",
-            nil,
-            v1alpha2.NotFound,
-            (*int)(nil),
-        )
-    }
+	//Extract If-None-Match header from client
+	clientETag := headers["if-none-match"]
 
-    //  Check If-None-Match before reading file
-    if manifest.Bundle != nil && manifest.Bundle.Digest != nil {
-        serverETag := fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
-        
-        // Normalize ETags for comparison (remove quotes)
-        clientETagClean := strings.Trim(clientETag, "\"")
-        serverETagClean := strings.Trim(serverETag, "\"")
-        
-        if clientETag != "" && clientETagClean == serverETagClean {
-            deviceVendorLogger.InfofCtx(pCtx, 
-                "Bundle not modified for device %s (304) - ETag: %s", 
-                deviceClientId, serverETag)
-            
-            // Return 304 Not Modified
-            return v1alpha2.COAResponse{
-                State:       v1alpha2.NotModified,
-                Body:        []byte{},
-                ContentType: "application/vnd.margo.bundle.v1+tar+gzip",
-            }
-        }
-    }
+	// Get bundle from database
+	path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err,
+			"Bundle not found", v1alpha2.NotFound)
+	}
+	if path == "" || manifest == nil {
+		return createSuccessResponseWithHeaders(span,
+			"application/vnd.margo.bundle.v1+tar+gzip",
+			nil,
+			v1alpha2.NotFound,
+			(*int)(nil),
+		)
+	}
 
-    // Read bundle archive (this is the "exact bytes" that will be sent)
-    bundleData, err := os.ReadFile(path)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, 
-            "Failed to read bundle", v1alpha2.InternalError)
-    }
+	//  Check If-None-Match before reading file
+	if manifest.Bundle != nil && manifest.Bundle.Digest != nil {
+		serverETag := fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
 
-    // Verify digest of the bundle archive (Exact Bytes Rule)
-    hash := sha256.Sum256(bundleData)
-    actualDigest := fmt.Sprintf("sha256:%x", hash)
+		// Normalize ETags for comparison (remove quotes)
+		clientETagClean := strings.Trim(clientETag, "\"")
+		serverETagClean := strings.Trim(serverETag, "\"")
 
-    if actualDigest != requestedDigest {
-        deviceVendorLogger.ErrorfCtx(pCtx, 
-            "Bundle digest mismatch for device %s: requested=%s, actual=%s", 
-            deviceClientId, requestedDigest, actualDigest)
-        
-        // Per spec: "If the server cannot produce content whose digest matches this value 
-        // it MUST return 404 Not Found"
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, 
-                fmt.Sprintf("Digest mismatch: requested %s, actual %s", 
-                    requestedDigest, actualDigest),
-                v1alpha2.NotFound),
-            "Bundle not found for the given digest", v1alpha2.NotFound)
-    }
+		if clientETag != "" && clientETagClean == serverETagClean {
+			deviceVendorLogger.InfofCtx(pCtx,
+				"Bundle not modified for device %s (304) - ETag: %s",
+				deviceClientId, serverETag)
 
-    deviceVendorLogger.InfofCtx(pCtx, 
-        "Serving bundle for device %s with verified digest %s (%d bytes)", 
-        deviceClientId, actualDigest, len(bundleData))
+			// Return 304 Not Modified
+			return v1alpha2.COAResponse{
+				State:       v1alpha2.NotModified,
+				Body:        []byte{},
+				ContentType: "application/vnd.margo.bundle.v1+tar+gzip",
+			}
+		}
+	}
 
-    // Return with proper headers
-    return createSuccessResponseWithHeaders(span,
-        "application/vnd.margo.bundle.v1+tar+gzip",
-        map[string]string{
-            "Cache-Control": "public, max-age=31536000, immutable",
-            "ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
-        },
-        v1alpha2.OK,
-        &bundleData,
-    )
+	// Read bundle archive (this is the "exact bytes" that will be sent)
+	bundleData, err := os.ReadFile(path)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err,
+			"Failed to read bundle", v1alpha2.InternalError)
+	}
+
+	// Verify digest of the bundle archive (Exact Bytes Rule)
+	hash := sha256.Sum256(bundleData)
+	actualDigest := fmt.Sprintf("sha256:%x", hash)
+
+	if actualDigest != requestedDigest {
+		deviceVendorLogger.ErrorfCtx(pCtx,
+			"Bundle digest mismatch for device %s: requested=%s, actual=%s",
+			deviceClientId, requestedDigest, actualDigest)
+
+		// Per spec: "If the server cannot produce content whose digest matches this value
+		// it MUST return 404 Not Found"
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil,
+				fmt.Sprintf("Digest mismatch: requested %s, actual %s",
+					requestedDigest, actualDigest),
+				v1alpha2.NotFound),
+			"Bundle not found for the given digest", v1alpha2.NotFound)
+	}
+
+	deviceVendorLogger.InfofCtx(pCtx,
+		"Serving bundle for device %s with verified digest %s (%d bytes)",
+		deviceClientId, actualDigest, len(bundleData))
+
+	// Return with proper headers
+	return createSuccessResponseWithHeaders(span,
+		"application/vnd.margo.bundle.v1+tar+gzip",
+		map[string]string{
+			"Cache-Control": "public, max-age=31536000, immutable",
+			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+		},
+		v1alpha2.OK,
+		&bundleData,
+	)
 }
-
-
 
 func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
-    pCtx, span := observability.StartSpan("Margo Device Vendor",
-        request.Context,
-        &map[string]string{
-            "method": "downloadDeployment",
-            "route":  request.Route,
-            "verb":   request.Method,
-        })
-    defer span.End()
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "downloadDeployment",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
 
-    // Extract headers
-    headers, err := ParseRequestHeaders(request.Context)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(err, "Failed to extract headers", v1alpha2.InternalError),
-            "Internal server error", v1alpha2.InternalError)
-    }
+	// Extract headers
+	headers, err := ParseRequestHeaders(request.Context)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(err, "Failed to extract headers", v1alpha2.InternalError),
+			"Internal server error", v1alpha2.InternalError)
+	}
 
-    // Validate Accept header (406 Not Acceptable)
-    if accept := headers["accept"]; accept != "" && accept != "application/yaml" && accept != "*/*" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "Accept header must be application/yaml", v1alpha2.NotAcceptable),
-            "Not Acceptable", v1alpha2.NotAcceptable)
-    }
+	// Validate Accept header (406 Not Acceptable)
+	if accept := headers["accept"]; accept != "" && accept != "application/yaml" && accept != "*/*" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Accept header must be application/yaml", v1alpha2.NotAcceptable),
+			"Not Acceptable", v1alpha2.NotAcceptable)
+	}
 
-    // Extract and validate parameters
-    deviceClientId := request.Parameters["__clientId"]
-    if deviceClientId == "" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-            "Missing clientId parameter", v1alpha2.BadRequest)
-    }
+	// Extract and validate parameters
+	deviceClientId := request.Parameters["__clientId"]
+	if deviceClientId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
+			"Missing clientId parameter", v1alpha2.BadRequest)
+	}
 
-    deploymentId := request.Parameters["__deploymentId"]
-    if deploymentId == "" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "deploymentId is required", v1alpha2.BadRequest),
-            "Missing deploymentId parameter", v1alpha2.BadRequest)
-    }
+	deploymentId := request.Parameters["__deploymentId"]
+	if deploymentId == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "deploymentId is required", v1alpha2.BadRequest),
+			"Missing deploymentId parameter", v1alpha2.BadRequest)
+	}
 
-    requestedDigest := request.Parameters["__digest"]
-    if requestedDigest == "" {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "digest is required", v1alpha2.BadRequest),
-            "Missing digest parameter", v1alpha2.BadRequest)
-    }
+	requestedDigest := request.Parameters["__digest"]
+	if requestedDigest == "" {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "digest is required", v1alpha2.BadRequest),
+			"Missing digest parameter", v1alpha2.BadRequest)
+	}
 
-    // Verify request signature
-    validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, 
-            "Signature verification failed", v1alpha2.Unauthorized)
-    }
-    if !validReq {
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, "Invalid signature", v1alpha2.Unauthorized),
-            "Signature verification failed", v1alpha2.Unauthorized)
-    }
+	// Verify request signature
+	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err,
+			"Signature verification failed", v1alpha2.Unauthorized)
+	}
+	if !validReq {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Invalid signature", v1alpha2.Unauthorized),
+			"Signature verification failed", v1alpha2.Unauthorized)
+	}
 
-    // Extract If-None-Match header from client
-    clientETag := headers["if-none-match"]
+	// Extract If-None-Match header from client
+	clientETag := headers["if-none-match"]
 
-    // Get deployment from database
-    deployment, err := self.DeviceManager.Database.GetDeployment(pCtx, deploymentId)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, 
-            "Deployment not found", v1alpha2.NotFound)
-    }
-    if deployment == nil {
-        return createSuccessResponseWithHeaders(span,
-            "application/yaml",
-            nil,
-            v1alpha2.NotFound,
-            (*int)(nil),
-        )
-    }
+	// Get deployment from database
+	deployment, err := self.DeviceManager.Database.GetDeployment(pCtx, deploymentId)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err,
+			"Deployment not found", v1alpha2.NotFound)
+	}
+	if deployment == nil {
+		return createSuccessResponseWithHeaders(span,
+			"application/yaml",
+			nil,
+			v1alpha2.NotFound,
+			(*int)(nil),
+		)
+	}
 
-    // Marshal to YAML (this is the "exact bytes" that will be sent)
-    yamlContent, err := yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
-    if err != nil {
-        return createErrorResponse2(deviceVendorLogger, span, err, 
-            "Failed to marshal deployment", v1alpha2.InternalError)
-    }
+	// Marshal to YAML (this is the "exact bytes" that will be sent)
+	yamlContent, err := yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err,
+			"Failed to marshal deployment", v1alpha2.InternalError)
+	}
 
-    // Compute digest of the YAML content (Exact Bytes Rule)
-    hash := sha256.Sum256(yamlContent)
-    actualDigest := fmt.Sprintf("sha256:%x", hash)
+	// Compute digest of the YAML content (Exact Bytes Rule)
+	hash := sha256.Sum256(yamlContent)
+	actualDigest := fmt.Sprintf("sha256:%x", hash)
 
-    // Check If-None-Match before verifying digest match
-    serverETag := fmt.Sprintf("\"%s\"", actualDigest)
-    clientETagClean := strings.Trim(clientETag, "\"")
-    serverETagClean := strings.Trim(serverETag, "\"")
-    
-    if clientETag != "" && clientETagClean == serverETagClean {
-        deviceVendorLogger.InfofCtx(pCtx, 
-            "Deployment not modified (304) - deploymentId: %s, ETag: %s", 
-            deploymentId, serverETag)
-        
-        // Return 304 Not Modified
-        return v1alpha2.COAResponse{
-            State:       v1alpha2.NotModified,
-            Body:        []byte{},
-            ContentType: "application/yaml",
-        }
-    }
+	// Check If-None-Match before verifying digest match
+	serverETag := fmt.Sprintf("\"%s\"", actualDigest)
+	clientETagClean := strings.Trim(clientETag, "\"")
+	serverETagClean := strings.Trim(serverETag, "\"")
 
-    // Verify digest matches the requested digest
-    if actualDigest != requestedDigest {
-        deviceVendorLogger.ErrorfCtx(pCtx, 
-            "Digest mismatch for deployment %s: requested=%s, actual=%s", 
-            deploymentId, requestedDigest, actualDigest)
-        
-        // Per spec: "If the server cannot produce content whose digest matches this value 
-        // it MUST return 404 Not Found"
-        return createErrorResponse2(deviceVendorLogger, span,
-            v1alpha2.NewCOAError(nil, 
-                fmt.Sprintf("Digest mismatch: requested %s, actual %s", 
-                    requestedDigest, actualDigest),
-                v1alpha2.NotFound),
-            "Deployment not found for the given digest", v1alpha2.NotFound)
-    }
+	if clientETag != "" && clientETagClean == serverETagClean {
+		deviceVendorLogger.InfofCtx(pCtx,
+			"Deployment not modified (304) - deploymentId: %s, ETag: %s",
+			deploymentId, serverETag)
 
-    deviceVendorLogger.InfofCtx(pCtx, 
-        "Serving deployment %s with verified digest %s (%d bytes)", 
-        deploymentId, actualDigest, len(yamlContent))
+		// Return 304 Not Modified
+		return v1alpha2.COAResponse{
+			State:       v1alpha2.NotModified,
+			Body:        []byte{},
+			ContentType: "application/yaml",
+		}
+	}
 
-    // Return with proper headers
-    return createSuccessResponseWithHeaders(span,
-        "application/yaml",
-        map[string]string{
-            "Cache-Control": "public, max-age=31536000, immutable",
-            "ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
-            "Vary":          "Accept-Encoding",
-        },
-        v1alpha2.OK, 
-        &yamlContent,
-    )
+	// Verify digest matches the requested digest
+	if actualDigest != requestedDigest {
+		deviceVendorLogger.ErrorfCtx(pCtx,
+			"Digest mismatch for deployment %s: requested=%s, actual=%s",
+			deploymentId, requestedDigest, actualDigest)
+
+		// Per spec: "If the server cannot produce content whose digest matches this value
+		// it MUST return 404 Not Found"
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil,
+				fmt.Sprintf("Digest mismatch: requested %s, actual %s",
+					requestedDigest, actualDigest),
+				v1alpha2.NotFound),
+			"Deployment not found for the given digest", v1alpha2.NotFound)
+	}
+
+	deviceVendorLogger.InfofCtx(pCtx,
+		"Serving deployment %s with verified digest %s (%d bytes)",
+		deploymentId, actualDigest, len(yamlContent))
+
+	// Return with proper headers
+	return createSuccessResponseWithHeaders(span,
+		"application/yaml",
+		map[string]string{
+			"Cache-Control": "public, max-age=31536000, immutable",
+			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+			"Vary":          "Accept-Encoding",
+		},
+		v1alpha2.OK,
+		&yamlContent,
+	)
 }
-
-
 
 func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
-    deviceClient, err := self.DeviceManager.GetDeviceClientUsingId(ctx, clientId)
-    if err != nil {
-        deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to get device %s: %v", clientId, err)
-        return false, fmt.Errorf("device %s not found: %w", clientId, err)
-    }
-    
-    // Add nil check for device
-    if deviceClient == nil {
-        deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Device %s is nil", clientId)
-        return false, fmt.Errorf("device %s not found", clientId)
-    }
-    
-    // Check if device certificate exists
-    if len(deviceClient.DevicePubCert) == 0 {
-        deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Device %s has no public certificate", clientId)
-        return false, fmt.Errorf("device public certificate is not yet available with the wfm")
-    }
+	deviceClient, err := self.DeviceManager.GetDeviceClientUsingId(ctx, clientId)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to get device %s: %v", clientId, err)
+		return false, fmt.Errorf("device %s not found: %w", clientId, err)
+	}
 
-    verifier, err := crypto.NewVerifier(deviceClient.DevicePubCert, true)
-    if err != nil {
-        deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to create verifier for device %s: %v", clientId, err)
-        return false, fmt.Errorf("failed to verify the request using the device certificate, %s", err.Error())
-    }
+	// Add nil check for device
+	if deviceClient == nil {
+		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Device %s is nil", clientId)
+		return false, fmt.Errorf("device %s not found", clientId)
+	}
+
+	// Check if device certificate exists
+	if len(deviceClient.DevicePubCert) == 0 {
+		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Device %s has no public certificate", clientId)
+		return false, fmt.Errorf("device public certificate is not yet available with the wfm")
+	}
+
+	verifier, err := crypto.NewVerifier(deviceClient.DevicePubCert, true)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to create verifier for device %s: %v", clientId, err)
+		return false, fmt.Errorf("failed to verify the request using the device certificate, %s", err.Error())
+	}
 	httpReq, err := COARequestToHTTPRequest(request)
-    if err != nil {
-        deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to convert request for device %s: %v", clientId, err)
-        return false, fmt.Errorf("failed to parse the request, %s", err.Error())
-    }
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to convert request for device %s: %v", clientId, err)
+		return false, fmt.Errorf("failed to parse the request, %s", err.Error())
+	}
 
-    if err := verifier.VerifyRequest(ctx, httpReq); err != nil {
-        deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Signature verification failed for device %s: %v", clientId, err)
-        return false, err
-    }
-    
-    deviceVendorLogger.DebugfCtx(ctx, "verifyRequestSignature: Successfully verified signature for device %s", clientId)
-    return true, nil
+	if err := verifier.VerifyRequest(ctx, httpReq); err != nil {
+		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Signature verification failed for device %s: %v", clientId, err)
+		return false, err
+	}
+
+	deviceVendorLogger.DebugfCtx(ctx, "verifyRequestSignature: Successfully verified signature for device %s", clientId)
+	return true, nil
 }
-
-
 
 // Create a utility function for consistent header parsing
 func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {

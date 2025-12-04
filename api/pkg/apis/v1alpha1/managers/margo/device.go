@@ -2,13 +2,13 @@ package margo
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
-	"time"
-	"crypto/sha256"
 	"strings"
-	
+	"time"
+
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/providers/keycloak"
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -17,9 +17,9 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
-	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
-	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+	margoStdAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
 
 var (
@@ -238,71 +238,70 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 
 // Called when device reports status update for the deployments
 func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, state string) error {
-    if deviceClientId == "" || deploymentId == "" || state == "" {
-        return fmt.Errorf("deviceClientId, deploymentId, and status are required")
-    }
-    
-    deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s", 
-        deviceClientId, deploymentId, state)
+	if deviceClientId == "" || deploymentId == "" || state == "" {
+		return fmt.Errorf("deviceClientId, deploymentId, and status are required")
+	}
 
-    // Get deployment
-    dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
-    if err != nil {
-        return fmt.Errorf("deployment not found: %w", err)
-    }
+	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s",
+		deviceClientId, deploymentId, state)
 
-    // Special handling for REMOVED state
-    if state == string(sbi.DeploymentStatusManifestStatusStateRemoved) {
-        deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Device confirmed removal of deployment %s", deploymentId)
-        
-        // Delete the deployment from database
-        if err := s.Database.DeleteDeployment(ctx, deploymentId, true); err != nil {
-            return fmt.Errorf("failed to delete deployment from database: %w", err)
-        }
-        
-        deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully deleted deployment %s after device confirmation", deploymentId)
-        
-        // Note: Bundle regeneration is triggered by DeleteDeployment event subscription
-        return nil
-    }
+	// Get deployment
+	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
 
-    // Normal state updates (not REMOVED)
-    existingState := dbRow.CurrentState
-    existingState.Status.Status.State = margoStdAPI.DeploymentStatusManifestStatusState(state)
-    
-    if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, existingState, true); err != nil {
-        return fmt.Errorf("failed to update current state: %w", err)
-    }
+	// Special handling for REMOVED state
+	if state == string(sbi.DeploymentStatusManifestStatusStateRemoved) {
+		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Device confirmed removal of deployment %s", deploymentId)
 
-    // Update the deployment request status for CLI display
-    var nbiState margoNonStdAPI.ApplicationDeploymentStatusState
-    switch margoStdAPI.DeploymentStatusManifestStatusState(state) {
-    case margoStdAPI.DeploymentStatusManifestStatusStateInstalled:
-        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLED
-    case margoStdAPI.DeploymentStatusManifestStatusStateInstalling:
-        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLING
-    case margoStdAPI.DeploymentStatusManifestStatusStateFailed:
-        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateFAILED
-    case margoStdAPI.DeploymentStatusManifestStatusStateRemoving:
-        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateREMOVING
-    case margoStdAPI.DeploymentStatusManifestStatusStatePending:
-        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
-    default:
-        nbiState = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
-    }
-    
-    dbRow.DeploymentRequest.Status.State = &nbiState
-    now := time.Now().UTC()
-    dbRow.DeploymentRequest.Status.LastUpdateTime = &now
-    
-    if err := s.Database.UpsertDeployment(ctx, *dbRow, true); err != nil {
-        return fmt.Errorf("failed to update deployment: %w", err)
-    }
-    
-    deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s", deploymentId, nbiState)
-    return nil
+		// Delete the deployment from database
+		if err := s.Database.DeleteDeployment(ctx, deploymentId, true); err != nil {
+			return fmt.Errorf("failed to delete deployment from database: %w", err)
+		}
+
+		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully deleted deployment %s after device confirmation", deploymentId)
+
+		// Note: Bundle regeneration is triggered by DeleteDeployment event subscription
+		return nil
+	}
+
+	// Normal state updates (not REMOVED)
+	existingState := dbRow.CurrentState
+	existingState.Status.Status.State = margoStdAPI.DeploymentStatusManifestStatusState(state)
+
+	if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, existingState, true); err != nil {
+		return fmt.Errorf("failed to update current state: %w", err)
+	}
+
+	// Update the deployment request status for CLI display
+	var nbiState margoNonStdAPI.ApplicationDeploymentStatusState
+	switch margoStdAPI.DeploymentStatusManifestStatusState(state) {
+	case margoStdAPI.DeploymentStatusManifestStatusStateInstalled:
+		nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLED
+	case margoStdAPI.DeploymentStatusManifestStatusStateInstalling:
+		nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLING
+	case margoStdAPI.DeploymentStatusManifestStatusStateFailed:
+		nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateFAILED
+	case margoStdAPI.DeploymentStatusManifestStatusStateRemoving:
+		nbiState = margoNonStdAPI.ApplicationDeploymentStatusStateREMOVING
+	case margoStdAPI.DeploymentStatusManifestStatusStatePending:
+		nbiState = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
+	default:
+		nbiState = margoNonStdAPI.ApplicationDeploymentStatusStatePENDING
+	}
+
+	dbRow.DeploymentRequest.Status.State = &nbiState
+	now := time.Now().UTC()
+	dbRow.DeploymentRequest.Status.LastUpdateTime = &now
+
+	if err := s.Database.UpsertDeployment(ctx, *dbRow, true); err != nil {
+		return fmt.Errorf("failed to update deployment: %w", err)
+	}
+
+	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s", deploymentId, nbiState)
+	return nil
 }
-
 
 func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret string, userClaims map[string]interface{}) (*TokenData, error) {
 	// dm.AuthProvider.ValidateToken(ctx, )
@@ -425,7 +424,6 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string
 	}, nil
 }
 
-
 func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.DeviceListResp, error) {
 	devices := margoNonStdAPI.DeviceListResp{
 		ApiVersion: "non.margo.org",
@@ -473,174 +471,165 @@ type DeviceOnboardingData struct {
 }
 
 func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, error) {
-    deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Processing request for device %s", deviceClientId)
-    
-    // Log client's ETag if provided
-    if clientETag != nil && *clientETag != "" {
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Client provided ETag: %s", *clientETag)
-    } else {
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No client ETag provided (first sync)")
-    }
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Processing request for device %s", deviceClientId)
 
-    // Call GetBundle to retrieve bundle information
-    bundleArchivePath, bundleManifest, err := s.GetBundle(ctx, deviceClientId, nil)
-    
-    // Log the return values from GetBundle
-    if err != nil {
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: GetBundle returned error: %v", err)
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No bundle found for device %s, creating initial empty bundle", deviceClientId)
-        
-        // Create initial empty bundle (version 1) per WFM-SBI.yaml spec
-        initialBundle := DeploymentBundleRow{
-            DeviceClientId: deviceClientId,
-            Manifest: margoStdAPI.UnsignedAppStateManifest{
-                ManifestVersion: margoStdAPI.ManifestVersion(1.0),
-                Bundle:          nil,
-                Deployments:     []margoStdAPI.DeploymentManifestRef{},
-            },
-            ArchivePath: "",
-        }
+	// Log client's ETag if provided
+	if clientETag != nil && *clientETag != "" {
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Client provided ETag: %s", *clientETag)
+	} else {
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No client ETag provided (first sync)")
+	}
 
-        // Store the initial bundle
-        if createErr := s.Database.UpsertDeploymentBundle(ctx, initialBundle, false); createErr != nil {
-            deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to create initial bundle for device %s: %v", deviceClientId, createErr)
-            return false, "", nil, fmt.Errorf("failed to create initial bundle: %w", createErr)
-        }
+	// Call GetBundle to retrieve bundle information
+	bundleArchivePath, bundleManifest, err := s.GetBundle(ctx, deviceClientId, nil)
 
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Created initial empty bundle (version 1) for device %s", deviceClientId)
-        
-        // Return the initial bundle (client needs to fetch it)
-        return true, "", &initialBundle.Manifest, nil
-																											  
-    }
-    
-    // Validate manifest
-    if bundleManifest == nil {
-        deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: GetBundle returned nil manifest for device %s", deviceClientId)
-        return false, "", nil, fmt.Errorf("bundle manifest is nil for device %s", deviceClientId)
-																									
-    }
+	// Log the return values from GetBundle
+	if err != nil {
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: GetBundle returned error: %v", err)
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No bundle found for device %s, creating initial empty bundle", deviceClientId)
 
-    bundleVersionInt := uint64(bundleManifest.ManifestVersion)
-																		   
-    deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Retrieved bundle - Version: %d, Deployments: %d, Bundle nil: %t", 
-        bundleVersionInt, len(bundleManifest.Deployments), bundleManifest.Bundle == nil)
+		// Create initial empty bundle (version 1) per WFM-SBI.yaml spec
+		initialBundle := DeploymentBundleRow{
+			DeviceClientId: deviceClientId,
+			Manifest: margoStdAPI.UnsignedAppStateManifest{
+				ManifestVersion: margoStdAPI.ManifestVersion(1.0),
+				Bundle:          nil,
+				Deployments:     []margoStdAPI.DeploymentManifestRef{},
+			},
+			ArchivePath: "",
+		}
 
-    // SPEC-COMPLIANT: Compute server-side ETag
-    var serverETag string
+		// Store the initial bundle
+		if createErr := s.Database.UpsertDeploymentBundle(ctx, initialBundle, false); createErr != nil {
+			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to create initial bundle for device %s: %v", deviceClientId, createErr)
+			return false, "", nil, fmt.Errorf("failed to create initial bundle: %w", createErr)
+		}
 
-    if bundleManifest.Bundle == nil {
-        // Empty bundle: Compute SHA-256 digest of the manifest JSON (per spec)
-        manifestJSON, err := json.Marshal(bundleManifest)
-        if err != nil {
-            deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
-            return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
-        }
-        
-        hash := sha256.Sum256(manifestJSON)
-        serverETag = fmt.Sprintf("\"sha256:%x\"", hash)
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Created initial empty bundle (version 1) for device %s", deviceClientId)
 
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Computed ETag for empty bundle: %s", serverETag)
-    } else {
-        // Bundle with deployments: Use bundle digest as ETag
-        if bundleManifest.Bundle.Digest == nil {
-            deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Bundle digest is nil for device %s", deviceClientId)
-            return false, "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
-        }
-        
-        serverETag = fmt.Sprintf("\"%s\"", *bundleManifest.Bundle.Digest)
-												
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Using bundle digest as ETag: %s", serverETag)
- 
-    }
+		// Return the initial bundle (client needs to fetch it)
+		return true, "", &initialBundle.Manifest, nil
 
-    // Compare client ETag with server ETag
-    if clientETag != nil && *clientETag != "" {
-        // Normalize ETags for comparison (remove quotes)
-        clientETagClean := strings.Trim(*clientETag, "\"")
-        serverETagClean := strings.Trim(serverETag, "\"")
-        
-        if clientETagClean == serverETagClean {
-            deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: ✅ ETags match - Client: %s, Server: %s", *clientETag, serverETag)
-										 
-            deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: RETURN - shouldReplace=false (304 Not Modified), version=%d, deployments=%d", 
-                bundleVersionInt, len(bundleManifest.Deployments))
-            return false, bundleArchivePath, bundleManifest, nil
-        }
-        
-										   
-																					  
-										   
-        deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: ❌ ETags differ - Client: %s, Server: %s", *clientETag, serverETag)
-																																							   
-													 
-			 
-    }
+	}
 
-    // ETags don't match or client didn't send one - return new manifest
-    deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Returning new/updated manifest - ETag: %s, Version: %d, Deployments: %d", 
-        serverETag, bundleVersionInt, len(bundleManifest.Deployments))
-    deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: RETURN - shouldReplace=true, archivePath='%s', version=%d, deployments=%d", 
-        bundleArchivePath, bundleVersionInt, len(bundleManifest.Deployments))
-									 
-    return true, bundleArchivePath, bundleManifest, nil
+	// Validate manifest
+	if bundleManifest == nil {
+		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: GetBundle returned nil manifest for device %s", deviceClientId)
+		return false, "", nil, fmt.Errorf("bundle manifest is nil for device %s", deviceClientId)
+
+	}
+
+	bundleVersionInt := uint64(bundleManifest.ManifestVersion)
+
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Retrieved bundle - Version: %d, Deployments: %d, Bundle nil: %t",
+		bundleVersionInt, len(bundleManifest.Deployments), bundleManifest.Bundle == nil)
+
+	// SPEC-COMPLIANT: Compute server-side ETag
+	var serverETag string
+
+	if bundleManifest.Bundle == nil {
+		// Empty bundle: Compute SHA-256 digest of the manifest JSON (per spec)
+		manifestJSON, err := json.Marshal(bundleManifest)
+		if err != nil {
+			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
+			return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
+		}
+
+		hash := sha256.Sum256(manifestJSON)
+		serverETag = fmt.Sprintf("\"sha256:%x\"", hash)
+
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Computed ETag for empty bundle: %s", serverETag)
+	} else {
+		// Bundle with deployments: Use bundle digest as ETag
+		if bundleManifest.Bundle.Digest == nil {
+			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Bundle digest is nil for device %s", deviceClientId)
+			return false, "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
+		}
+
+		serverETag = fmt.Sprintf("\"%s\"", *bundleManifest.Bundle.Digest)
+
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Using bundle digest as ETag: %s", serverETag)
+
+	}
+
+	// Compare client ETag with server ETag
+	if clientETag != nil && *clientETag != "" {
+		// Normalize ETags for comparison (remove quotes)
+		clientETagClean := strings.Trim(*clientETag, "\"")
+		serverETagClean := strings.Trim(serverETag, "\"")
+
+		if clientETagClean == serverETagClean {
+			deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: ✅ ETags match - Client: %s, Server: %s", *clientETag, serverETag)
+
+			deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: RETURN - shouldReplace=false (304 Not Modified), version=%d, deployments=%d",
+				bundleVersionInt, len(bundleManifest.Deployments))
+			return false, bundleArchivePath, bundleManifest, nil
+		}
+
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: ❌ ETags differ - Client: %s, Server: %s", *clientETag, serverETag)
+
+	}
+
+	// ETags don't match or client didn't send one - return new manifest
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Returning new/updated manifest - ETag: %s, Version: %d, Deployments: %d",
+		serverETag, bundleVersionInt, len(bundleManifest.Deployments))
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: RETURN - shouldReplace=true, archivePath='%s', version=%d, deployments=%d",
+		bundleArchivePath, bundleVersionInt, len(bundleManifest.Deployments))
+
+	return true, bundleArchivePath, bundleManifest, nil
 }
-
 
 func (s *DeviceManager) GetBundle(ctx context.Context, deviceClientId string, digest *string) (bundleArchivePath string, bundleManifest *margoStdAPI.UnsignedAppStateManifest, err error) {
-    bundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
-    if err != nil {
-        return "", nil, err
-    }
+	bundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
+	if err != nil {
+		return "", nil, err
+	}
 
-    // Check if bundle is nil
-    if bundle == nil {
-        return "", nil, fmt.Errorf("bundle is nil for device %s", deviceClientId)
-    }
-    
-    // SPEC: Empty bundles (no deployments) have Bundle = nil
-    // This is VALID and expected
-    if len(bundle.Manifest.Deployments) == 0 {
-        if bundle.Manifest.Bundle != nil {
-            deviceLogger.WarnfCtx(ctx, "GetBundle: SPEC VIOLATION - Empty deployments but Bundle is not null for device %s", deviceClientId)
-        }
-        // Return empty bundle (Bundle field is nil, which is correct)
-        deviceLogger.InfofCtx(ctx, "GetBundle: Returning empty bundle for device %s, version: %d", 
-            deviceClientId, uint64(bundle.Manifest.ManifestVersion))
-        return bundle.ArchivePath, &bundle.Manifest, nil
-    }
-    
-    // SPEC: Bundles with deployments MUST have Bundle field populated
-    if bundle.Manifest.Bundle == nil {
-        deviceLogger.ErrorfCtx(ctx, "GetBundle: SPEC VIOLATION - Has deployments but Bundle is nil for device %s", deviceClientId)
-        return "", nil, fmt.Errorf("invalid bundle structure: has deployments but Bundle field is nil for device %s", deviceClientId)
-    }
-    
-    if bundle.Manifest.Bundle.Digest == nil {
-        deviceLogger.ErrorfCtx(ctx, "GetBundle: Bundle digest is nil for device %s", deviceClientId)
-        return "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
-    }
+	// Check if bundle is nil
+	if bundle == nil {
+		return "", nil, fmt.Errorf("bundle is nil for device %s", deviceClientId)
+	}
 
-    // Check digest match if provided
-    if digest != nil && *bundle.Manifest.Bundle.Digest != *digest {
-        deviceLogger.InfofCtx(ctx, "GetBundle: Digest mismatch for device %s - requested: %s, found: %s", 
-            deviceClientId, *digest, *bundle.Manifest.Bundle.Digest)
-        return "", nil, nil
-    }
+	// SPEC: Empty bundles (no deployments) have Bundle = nil
+	// This is VALID and expected
+	if len(bundle.Manifest.Deployments) == 0 {
+		if bundle.Manifest.Bundle != nil {
+			deviceLogger.WarnfCtx(ctx, "GetBundle: SPEC VIOLATION - Empty deployments but Bundle is not null for device %s", deviceClientId)
+		}
+		// Return empty bundle (Bundle field is nil, which is correct)
+		deviceLogger.InfofCtx(ctx, "GetBundle: Returning empty bundle for device %s, version: %d",
+			deviceClientId, uint64(bundle.Manifest.ManifestVersion))
+		return bundle.ArchivePath, &bundle.Manifest, nil
+	}
 
-    bundleVersionInt := uint64(bundle.Manifest.ManifestVersion)
-    deviceLogger.InfofCtx(ctx, "GetBundle: Found bundle with digest %s, version: %d, deployments: %d, sizeBytes: %d", 
-        *bundle.Manifest.Bundle.Digest, bundleVersionInt, len(bundle.Manifest.Deployments), *bundle.Manifest.Bundle.SizeBytes)
-    return bundle.ArchivePath, &bundle.Manifest, nil
+	// SPEC: Bundles with deployments MUST have Bundle field populated
+	if bundle.Manifest.Bundle == nil {
+		deviceLogger.ErrorfCtx(ctx, "GetBundle: SPEC VIOLATION - Has deployments but Bundle is nil for device %s", deviceClientId)
+		return "", nil, fmt.Errorf("invalid bundle structure: has deployments but Bundle field is nil for device %s", deviceClientId)
+	}
+
+	if bundle.Manifest.Bundle.Digest == nil {
+		deviceLogger.ErrorfCtx(ctx, "GetBundle: Bundle digest is nil for device %s", deviceClientId)
+		return "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
+	}
+
+	// Check digest match if provided
+	if digest != nil && *bundle.Manifest.Bundle.Digest != *digest {
+		deviceLogger.InfofCtx(ctx, "GetBundle: Digest mismatch for device %s - requested: %s, found: %s",
+			deviceClientId, *digest, *bundle.Manifest.Bundle.Digest)
+		return "", nil, nil
+	}
+
+	bundleVersionInt := uint64(bundle.Manifest.ManifestVersion)
+	deviceLogger.InfofCtx(ctx, "GetBundle: Found bundle with digest %s, version: %d, deployments: %d, sizeBytes: %d",
+		*bundle.Manifest.Bundle.Digest, bundleVersionInt, len(bundle.Manifest.Deployments), *bundle.Manifest.Bundle.SizeBytes)
+	return bundle.ArchivePath, &bundle.Manifest, nil
 }
-
-
 
 // Shutdown is required by the symphony's manager plugin interface
 func (s *DeviceManager) Shutdown(ctx context.Context) error {
 	return nil
 }
-
 
 // ConvertNBIAppDeploymentToSBIAppDeployment converts AppDeployment to AppState.
 func ConvertNBIAppDeploymentToSBIAppDeployment(appDeployment *margoNonStdAPI.ApplicationDeploymentManifestResp) (*AppDeploymentState, error) {
@@ -690,17 +679,16 @@ func (s *DeviceManager) GetDeviceFromSignature(ctx context.Context, sign string)
 }
 
 func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, clientId string) (*DeviceDatabaseRow, error) {
-    device, err := s.Database.GetDevice(ctx, clientId)
-    if err != nil {
-        deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Failed to get device %s: %v", clientId, err)
-        return nil, err
-    }
-    
-    if device == nil {
-        deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Device %s not found", clientId)
-        return nil, fmt.Errorf("device %s not found", clientId)
-    }
-    
-    return device, nil
-}
+	device, err := s.Database.GetDevice(ctx, clientId)
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Failed to get device %s: %v", clientId, err)
+		return nil, err
+	}
 
+	if device == nil {
+		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Device %s not found", clientId)
+		return nil, fmt.Errorf("device %s not found", clientId)
+	}
+
+	return device, nil
+}

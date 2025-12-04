@@ -11,7 +11,7 @@ import (
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	observ_utils "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/observability/utils"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"go.opentelemetry.io/otel/trace"
 )
 
