@@ -19,10 +19,10 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	powerfulYaml "github.com/ghodss/yaml"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
-	"github.com/margo/dev-repo/non-standard/pkg/packageManager"
-	margoUtils "github.com/margo/dev-repo/non-standard/pkg/utils"
-	margoGitHelper "github.com/margo/dev-repo/shared-lib/git"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/sandbox/non-standard/pkg/packageManager"
+	margoUtils "github.com/margo/sandbox/non-standard/pkg/utils"
+	margoGitHelper "github.com/margo/sandbox/shared-lib/git"
 )
 
 var appPkgLogger = logger.NewLogger("coa.runtime")

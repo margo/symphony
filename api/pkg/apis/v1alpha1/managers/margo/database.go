@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 	"os"
 	"strings"
-	
+	"time"
+
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/contexts"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
-	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
-	margoStdAPI "github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+	margoStdAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
 
 type PublishGroupName string
@@ -109,12 +109,11 @@ type DeviceDatabaseRow struct {
 }
 
 type DeploymentBundleRow struct {
-    DeviceClientId string                                `json:"deviceClientId"`
-    Manifest       margoStdAPI.UnsignedAppStateManifest `json:"manifest"`
-    ArchivePath    string                                `json:"archivePath"`
-    UpdatedAt      time.Time                             `json:"updatedAt"`
+	DeviceClientId string                               `json:"deviceClientId"`
+	Manifest       margoStdAPI.UnsignedAppStateManifest `json:"manifest"`
+	ArchivePath    string                               `json:"archivePath"`
+	UpdatedAt      time.Time                            `json:"updatedAt"`
 }
-
 
 // MargoDatabase provides a centralized database interface for all Margo entities.
 // It abstracts the underlying state provider and provides type-safe operations
@@ -314,25 +313,25 @@ func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment Deploy
 }
 
 func (db *MargoDatabase) GetDeployment(ctx context.Context, deploymentId string) (*DeploymentDatabaseRow, error) {
-    entry, err := db.StateProvider.Get(ctx, states.GetRequest{
-        Metadata: db.deploymentMetadata,
-        ID:       deploymentId,
-    })
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeployment: Failed to get deployment '%s': %v", deploymentId, err)
-        return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
-    }
+	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.deploymentMetadata,
+		ID:       deploymentId,
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeployment: Failed to get deployment '%s': %v", deploymentId, err)
+		return nil, fmt.Errorf("failed to get deployment '%s': %w", deploymentId, err)
+	}
 
-    var deployment DeploymentDatabaseRow
-    jData, _ := json.Marshal(entry.Body)
-    err = json.Unmarshal(jData, &deployment)
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeployment: Failed to unmarshal deployment '%s': %v", deploymentId, err)
-        return nil, fmt.Errorf("failed to unmarshal deployment '%s': %w", deploymentId, err)
-    }
+	var deployment DeploymentDatabaseRow
+	jData, _ := json.Marshal(entry.Body)
+	err = json.Unmarshal(jData, &deployment)
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeployment: Failed to unmarshal deployment '%s': %v", deploymentId, err)
+		return nil, fmt.Errorf("failed to unmarshal deployment '%s': %w", deploymentId, err)
+	}
 
-    db.MgrContext.Logger.InfofCtx(ctx, "GetDeployment: deployment '%s' retrieved successfully", deploymentId)
-    return &deployment, nil
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeployment: deployment '%s' retrieved successfully", deploymentId)
+	return &deployment, nil
 }
 
 func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId string, publishEvent bool) error {
@@ -510,37 +509,36 @@ func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deplo
 }
 
 func (db *MargoDatabase) GetDeploymentsByDevice(ctx context.Context, deviceId string) ([]DeploymentDatabaseRow, error) {
-    // Get all deployments first
-    allDeployments, err := db.ListDeployments(ctx)
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentsByDevice: Failed to list deployments for device filtering: %v", err)
-        return nil, fmt.Errorf("failed to list deployments for device '%s': %w", deviceId, err)
-    }
+	// Get all deployments first
+	allDeployments, err := db.ListDeployments(ctx)
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentsByDevice: Failed to list deployments for device filtering: %v", err)
+		return nil, fmt.Errorf("failed to list deployments for device '%s': %w", deviceId, err)
+	}
 
-    db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Checking %d total deployments for device '%s'", len(allDeployments), deviceId)
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Checking %d total deployments for device '%s'", len(allDeployments), deviceId)
 
-    var deviceDeployments []DeploymentDatabaseRow
-    for _, deployment := range allDeployments {
-        
-        if deployment.DeploymentRequest.Spec.DeviceRef != nil && deployment.DeploymentRequest.Spec.DeviceRef.Id != nil {
-            db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Found deployment %s assigned to device %s", 
-                *deployment.DeploymentRequest.Metadata.Id, *deployment.DeploymentRequest.Spec.DeviceRef.Id)
-            
-            if *deployment.DeploymentRequest.Spec.DeviceRef.Id == deviceId {
-                deviceDeployments = append(deviceDeployments, deployment)
-                db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: MATCH - Adding deployment %s to device %s", 
-                    *deployment.DeploymentRequest.Metadata.Id, deviceId)
-            }
-        } else {
-            db.MgrContext.Logger.WarnfCtx(ctx, "GetDeploymentsByDevice: Deployment %s has no device reference", 
-                *deployment.DeploymentRequest.Metadata.Id)
-        }
-    }
+	var deviceDeployments []DeploymentDatabaseRow
+	for _, deployment := range allDeployments {
 
-    db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Found %d deployments for device '%s'", len(deviceDeployments), deviceId)
-    return deviceDeployments, nil
+		if deployment.DeploymentRequest.Spec.DeviceRef != nil && deployment.DeploymentRequest.Spec.DeviceRef.Id != nil {
+			db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Found deployment %s assigned to device %s",
+				*deployment.DeploymentRequest.Metadata.Id, *deployment.DeploymentRequest.Spec.DeviceRef.Id)
+
+			if *deployment.DeploymentRequest.Spec.DeviceRef.Id == deviceId {
+				deviceDeployments = append(deviceDeployments, deployment)
+				db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: MATCH - Adding deployment %s to device %s",
+					*deployment.DeploymentRequest.Metadata.Id, deviceId)
+			}
+		} else {
+			db.MgrContext.Logger.WarnfCtx(ctx, "GetDeploymentsByDevice: Deployment %s has no device reference",
+				*deployment.DeploymentRequest.Metadata.Id)
+		}
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Found %d deployments for device '%s'", len(deviceDeployments), deviceId)
+	return deviceDeployments, nil
 }
-
 
 func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId string) ([]DeploymentDatabaseRow, error) {
 	// Get all deployments first
@@ -563,41 +561,40 @@ func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId 
 }
 
 func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabaseRow) error {
-    device.UpdatedAt = time.Now().UTC()
+	device.UpdatedAt = time.Now().UTC()
 
-    deviceId := device.DeviceClientId
-    
-    // Add pre-upsert logging
-    db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: About to store device '%s' with status '%s'", deviceId, device.OnboardingStatus)
-    
-    _, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
-        Options:  states.UpsertOption{},
-        Metadata: db.deviceMetadata,
-        Value: states.StateEntry{
-            ID:   deviceId,
-            Body: device,
-        },
-    })
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDevice: Failed to upsert device '%s': %v", deviceId, err)
-        return fmt.Errorf("failed to upsert device '%s': %w", deviceId, err)
-    }
-    
-    // Add verification immediately after storage
-    _, verifyErr := db.StateProvider.Get(ctx, states.GetRequest{
-        Metadata: db.deviceMetadata,
-        ID:       deviceId,
-    })
-    if verifyErr != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDevice: CRITICAL - Device '%s' not found immediately after storage: %v", deviceId, verifyErr)
-    } else {
-        db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: VERIFIED - Device '%s' successfully stored and retrievable", deviceId)
-    }
-    
-    db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: device '%s' stored successfully", deviceId)
-    return nil
+	deviceId := device.DeviceClientId
+
+	// Add pre-upsert logging
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: About to store device '%s' with status '%s'", deviceId, device.OnboardingStatus)
+
+	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: db.deviceMetadata,
+		Value: states.StateEntry{
+			ID:   deviceId,
+			Body: device,
+		},
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDevice: Failed to upsert device '%s': %v", deviceId, err)
+		return fmt.Errorf("failed to upsert device '%s': %w", deviceId, err)
+	}
+
+	// Add verification immediately after storage
+	_, verifyErr := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.deviceMetadata,
+		ID:       deviceId,
+	})
+	if verifyErr != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDevice: CRITICAL - Device '%s' not found immediately after storage: %v", deviceId, verifyErr)
+	} else {
+		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: VERIFIED - Device '%s' successfully stored and retrievable", deviceId)
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: device '%s' stored successfully", deviceId)
+	return nil
 }
-
 
 func (db *MargoDatabase) GetDevice(ctx context.Context, deviceId string) (*DeviceDatabaseRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
@@ -652,28 +649,26 @@ func (db *MargoDatabase) DeleteDevice(ctx context.Context, deviceId string) erro
 
 // Add this debug method to your MargoDatabase
 func (db *MargoDatabase) DebugListAllDevices(ctx context.Context) {
-    entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
-        Metadata: db.deviceMetadata,
-    })
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "DEBUG: Failed to list devices: %v", err)
-        return
-    }
-    
-    db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Found %d device entries in database", len(entries))
-    for i, entry := range entries {
-        var device DeviceDatabaseRow
-        jData, _ := json.Marshal(entry.Body)
-        if err := json.Unmarshal(jData, &device); err == nil {
-            db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Device %d - ID: %s, Status: %s, Created: %s", 
-                i, entry.ID, device.OnboardingStatus, device.CreatedAt.Format(time.RFC3339))
-        } else {
-            db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Device %d - ID: %s (unmarshal failed)", i, entry.ID)
-        }
-    }
+	entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
+		Metadata: db.deviceMetadata,
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "DEBUG: Failed to list devices: %v", err)
+		return
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Found %d device entries in database", len(entries))
+	for i, entry := range entries {
+		var device DeviceDatabaseRow
+		jData, _ := json.Marshal(entry.Body)
+		if err := json.Unmarshal(jData, &device); err == nil {
+			db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Device %d - ID: %s, Status: %s, Created: %s",
+				i, entry.ID, device.OnboardingStatus, device.CreatedAt.Format(time.RFC3339))
+		} else {
+			db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Device %d - ID: %s (unmarshal failed)", i, entry.ID)
+		}
+	}
 }
-
-
 
 func (db *MargoDatabase) ListDevices(ctx context.Context) ([]DeviceDatabaseRow, error) {
 	var devices []DeviceDatabaseRow
@@ -776,252 +771,246 @@ func (db *MargoDatabase) UpdateDeviceLastSync(ctx context.Context, deviceId stri
 	return nil
 }
 
-
 func (db *MargoDatabase) UpsertDeploymentBundle(ctx context.Context, bundleRow DeploymentBundleRow, publishEvent bool) error {
-    deviceClientId := bundleRow.DeviceClientId
-    bundleRow.UpdatedAt = time.Now().UTC()
-    
-    // Validate input
-    if deviceClientId == "" {
-        return fmt.Errorf("device client ID cannot be empty")
-    }
-    
-    manifestVersionInt := uint64(bundleRow.Manifest.ManifestVersion)
-    db.MgrContext.Logger.InfofCtx(ctx, 
-        "UpsertDeploymentBundle: Storing bundle for device %s with version %d, deployments: %d", 
-        deviceClientId, manifestVersionInt, len(bundleRow.Manifest.Deployments))
-    
-    if manifestVersionInt == 0 {
-        return fmt.Errorf("invalid manifest version: %v", bundleRow.Manifest.ManifestVersion)
-    }
-    
-    // Force delete with verification
-    db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Force deleting old bundle for device %s", deviceClientId)
-    
-    // Try to delete up to 3 times
-    deleteSuccess := false
-    for attempt := 1; attempt <= 3; attempt++ {
-        deleteErr := db.StateProvider.Delete(ctx, states.DeleteRequest{
-            Metadata: db.bundleMetadata,
-            ID:       deviceClientId,
-        })
-        
-        if deleteErr != nil {
-            if strings.Contains(deleteErr.Error(), "not found") || strings.Contains(deleteErr.Error(), "Not Found") {
-                db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: No old bundle to delete (attempt %d)", attempt)
-                deleteSuccess = true
-                break
-            } else {
-                db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: Delete attempt %d failed: %v", attempt, deleteErr)
-                time.Sleep(100 * time.Millisecond)
-                continue
-            }
-        } else {
-            db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Deleted old bundle successfully (attempt %d)", attempt)
-            deleteSuccess = true
-            break
-        }
-    }
-    
-    if !deleteSuccess {
-        db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: Failed to delete old bundle after 3 attempts, continuing anyway")
-    }
-    
-    //  Wait longer for MemoryStateProvider to complete delete
-    time.Sleep(500 * time.Millisecond)
-    
-    // : Check that old entry is actually gone
+	deviceClientId := bundleRow.DeviceClientId
+	bundleRow.UpdatedAt = time.Now().UTC()
+
+	// Validate input
+	if deviceClientId == "" {
+		return fmt.Errorf("device client ID cannot be empty")
+	}
+
+	manifestVersionInt := uint64(bundleRow.Manifest.ManifestVersion)
+	db.MgrContext.Logger.InfofCtx(ctx,
+		"UpsertDeploymentBundle: Storing bundle for device %s with version %d, deployments: %d",
+		deviceClientId, manifestVersionInt, len(bundleRow.Manifest.Deployments))
+
+	if manifestVersionInt == 0 {
+		return fmt.Errorf("invalid manifest version: %v", bundleRow.Manifest.ManifestVersion)
+	}
+
+	// Force delete with verification
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Force deleting old bundle for device %s", deviceClientId)
+
+	// Try to delete up to 3 times
+	deleteSuccess := false
+	for attempt := 1; attempt <= 3; attempt++ {
+		deleteErr := db.StateProvider.Delete(ctx, states.DeleteRequest{
+			Metadata: db.bundleMetadata,
+			ID:       deviceClientId,
+		})
+
+		if deleteErr != nil {
+			if strings.Contains(deleteErr.Error(), "not found") || strings.Contains(deleteErr.Error(), "Not Found") {
+				db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: No old bundle to delete (attempt %d)", attempt)
+				deleteSuccess = true
+				break
+			} else {
+				db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: Delete attempt %d failed: %v", attempt, deleteErr)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+		} else {
+			db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Deleted old bundle successfully (attempt %d)", attempt)
+			deleteSuccess = true
+			break
+		}
+	}
+
+	if !deleteSuccess {
+		db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: Failed to delete old bundle after 3 attempts, continuing anyway")
+	}
+
+	//  Wait longer for MemoryStateProvider to complete delete
+	time.Sleep(500 * time.Millisecond)
+
+	// : Check that old entry is actually gone
 	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying old bundle is deleted for device %s", deviceClientId)
 	_, verifyErr := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.bundleMetadata,
 		ID:       deviceClientId,
 	})
-	
-	if verifyErr == nil {  // Entry still exists if no error
+
+	if verifyErr == nil { // Entry still exists if no error
 		db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: WARNING - Old bundle still exists after delete! Forcing another delete...")
-		
+
 		// Force delete again
 		db.StateProvider.Delete(ctx, states.DeleteRequest{
 			Metadata: db.bundleMetadata,
 			ID:       deviceClientId,
 		})
-		
+
 		time.Sleep(500 * time.Millisecond)
 	} else {
 		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verified - old bundle is deleted")
 	}
-    
-    // Now insert the new bundle
-    db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Inserting new bundle for device %s", deviceClientId)
-    
-    _, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
-        Options:  states.UpsertOption{},
-        Metadata: db.bundleMetadata,
-        Value: states.StateEntry{
-            ID:   bundleRow.DeviceClientId,
-            Body: bundleRow,
-        },
-    })
-    
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, 
-            "UpsertDeploymentBundle: Failed to store bundle: %v", err)
-        return fmt.Errorf("failed to upsert deployment bundle '%s': %w", deviceClientId, err)
-    }
-    
-    //  Verify the bundle was stored correctly
-    db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying bundle storage for device %s", deviceClientId)
-    
-    verifyBundle, verifyErr := db.GetDeploymentBundle(ctx, deviceClientId)
-    if verifyErr != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, 
-            "UpsertDeploymentBundle: CRITICAL - Bundle not found after storage: %v", verifyErr)
-        return fmt.Errorf("bundle verification failed: %w", verifyErr)
-    }
-    
-    // Verify version
-    verifyVersionInt := uint64(verifyBundle.Manifest.ManifestVersion)
-    if verifyVersionInt != manifestVersionInt {
-        db.MgrContext.Logger.ErrorfCtx(ctx, 
-            "UpsertDeploymentBundle: CRITICAL - Version mismatch: expected %d, got %d", 
-            manifestVersionInt, verifyVersionInt)
-        return fmt.Errorf("bundle version mismatch after storage")
-    }
-    
-    // Verify deployment count
-    if len(verifyBundle.Manifest.Deployments) != len(bundleRow.Manifest.Deployments) {
-        db.MgrContext.Logger.ErrorfCtx(ctx, 
-            "UpsertDeploymentBundle: CRITICAL - Deployment count mismatch: expected %d, got %d", 
-            len(bundleRow.Manifest.Deployments), len(verifyBundle.Manifest.Deployments))
-        return fmt.Errorf("bundle deployment count mismatch")
-    }
-    
-    //  Verify timestamp is recent (not stale)
-    timeSinceUpdate := time.Since(verifyBundle.UpdatedAt)
-    if timeSinceUpdate > 10*time.Second {
-        db.MgrContext.Logger.ErrorfCtx(ctx, 
-            "UpsertDeploymentBundle: CRITICAL - Bundle timestamp is STALE: %v old (expected < 10s)", 
-            timeSinceUpdate)
-        return fmt.Errorf("bundle timestamp is stale: %v old", timeSinceUpdate)
-    }
-    
-    db.MgrContext.Logger.InfofCtx(ctx, 
-        "UpsertDeploymentBundle:  VERIFIED - Bundle correct: %d deployments, version %d, age %v", 
-        len(verifyBundle.Manifest.Deployments), verifyVersionInt, timeSinceUpdate)
-    
-    if publishEvent {
-        db.MgrContext.Publish(string(upsertDeploymentBundleFeed), v1alpha2.Event{
-            Metadata: map[string]string{
-                "producerName": db.PubSubGroupName,
-            },
-            Body: bundleRow,
-        })
-    }
-    
-    db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Bundle '%s' stored successfully", deviceClientId)
-    return nil
+
+	// Now insert the new bundle
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Inserting new bundle for device %s", deviceClientId)
+
+	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: db.bundleMetadata,
+		Value: states.StateEntry{
+			ID:   bundleRow.DeviceClientId,
+			Body: bundleRow,
+		},
+	})
+
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx,
+			"UpsertDeploymentBundle: Failed to store bundle: %v", err)
+		return fmt.Errorf("failed to upsert deployment bundle '%s': %w", deviceClientId, err)
+	}
+
+	//  Verify the bundle was stored correctly
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying bundle storage for device %s", deviceClientId)
+
+	verifyBundle, verifyErr := db.GetDeploymentBundle(ctx, deviceClientId)
+	if verifyErr != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx,
+			"UpsertDeploymentBundle: CRITICAL - Bundle not found after storage: %v", verifyErr)
+		return fmt.Errorf("bundle verification failed: %w", verifyErr)
+	}
+
+	// Verify version
+	verifyVersionInt := uint64(verifyBundle.Manifest.ManifestVersion)
+	if verifyVersionInt != manifestVersionInt {
+		db.MgrContext.Logger.ErrorfCtx(ctx,
+			"UpsertDeploymentBundle: CRITICAL - Version mismatch: expected %d, got %d",
+			manifestVersionInt, verifyVersionInt)
+		return fmt.Errorf("bundle version mismatch after storage")
+	}
+
+	// Verify deployment count
+	if len(verifyBundle.Manifest.Deployments) != len(bundleRow.Manifest.Deployments) {
+		db.MgrContext.Logger.ErrorfCtx(ctx,
+			"UpsertDeploymentBundle: CRITICAL - Deployment count mismatch: expected %d, got %d",
+			len(bundleRow.Manifest.Deployments), len(verifyBundle.Manifest.Deployments))
+		return fmt.Errorf("bundle deployment count mismatch")
+	}
+
+	//  Verify timestamp is recent (not stale)
+	timeSinceUpdate := time.Since(verifyBundle.UpdatedAt)
+	if timeSinceUpdate > 10*time.Second {
+		db.MgrContext.Logger.ErrorfCtx(ctx,
+			"UpsertDeploymentBundle: CRITICAL - Bundle timestamp is STALE: %v old (expected < 10s)",
+			timeSinceUpdate)
+		return fmt.Errorf("bundle timestamp is stale: %v old", timeSinceUpdate)
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx,
+		"UpsertDeploymentBundle:  VERIFIED - Bundle correct: %d deployments, version %d, age %v",
+		len(verifyBundle.Manifest.Deployments), verifyVersionInt, timeSinceUpdate)
+
+	if publishEvent {
+		db.MgrContext.Publish(string(upsertDeploymentBundleFeed), v1alpha2.Event{
+			Metadata: map[string]string{
+				"producerName": db.PubSubGroupName,
+			},
+			Body: bundleRow,
+		})
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Bundle '%s' stored successfully", deviceClientId)
+	return nil
 }
-
-
 
 // Debug method to MargoDatabase
 func (db *MargoDatabase) DebugListAllBundles(ctx context.Context) {
-    entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
-        Metadata: db.bundleMetadata,
-    })
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "DEBUG: Failed to list bundles: %v", err)
-        return
-    }
-    
-    db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Found %d bundle entries", len(entries))
-    for i, entry := range entries {
-        var bundle DeploymentBundleRow
-        jData, _ := json.Marshal(entry.Body)
-        if err := json.Unmarshal(jData, &bundle); err == nil {
-            bundleVersionInt := uint64(bundle.Manifest.ManifestVersion)
-            db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Bundle %d - DeviceID: %s, Version: %d, Deployments: %d, Bundle nil: %t", 
-                i, entry.ID, bundleVersionInt, len(bundle.Manifest.Deployments), bundle.Manifest.Bundle == nil)
-        } else {
-            db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Bundle %d - DeviceID: %s (unmarshal failed)", i, entry.ID)
-        }
-    }
+	entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
+		Metadata: db.bundleMetadata,
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "DEBUG: Failed to list bundles: %v", err)
+		return
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Found %d bundle entries", len(entries))
+	for i, entry := range entries {
+		var bundle DeploymentBundleRow
+		jData, _ := json.Marshal(entry.Body)
+		if err := json.Unmarshal(jData, &bundle); err == nil {
+			bundleVersionInt := uint64(bundle.Manifest.ManifestVersion)
+			db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Bundle %d - DeviceID: %s, Version: %d, Deployments: %d, Bundle nil: %t",
+				i, entry.ID, bundleVersionInt, len(bundle.Manifest.Deployments), bundle.Manifest.Bundle == nil)
+		} else {
+			db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Bundle %d - DeviceID: %s (unmarshal failed)", i, entry.ID)
+		}
+	}
 }
 
 func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId string) (*DeploymentBundleRow, error) {
-    entry, err := db.StateProvider.Get(ctx, states.GetRequest{
-        Metadata: db.bundleMetadata,
-        ID:       deviceClientId,
-    })
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle '%s': %v", deviceClientId, err)
-        return nil, fmt.Errorf("failed to get deployment bundle '%s': %w", deviceClientId, err)
-    }
+	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.bundleMetadata,
+		ID:       deviceClientId,
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle '%s': %v", deviceClientId, err)
+		return nil, fmt.Errorf("failed to get deployment bundle '%s': %w", deviceClientId, err)
+	}
 
-    var bundle DeploymentBundleRow
-    jData, _ := json.Marshal(entry.Body)
-    err = json.Unmarshal(jData, &bundle)
-    if err != nil {
-        db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal deployment bundle '%s': %v", deviceClientId, err)
-        return nil, fmt.Errorf("failed to unmarshal deployment bundle '%s': %w", deviceClientId, err)
-    }
+	var bundle DeploymentBundleRow
+	jData, _ := json.Marshal(entry.Body)
+	err = json.Unmarshal(jData, &bundle)
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal deployment bundle '%s': %v", deviceClientId, err)
+		return nil, fmt.Errorf("failed to unmarshal deployment bundle '%s': %w", deviceClientId, err)
+	}
 
-    db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle '%s' retrieved successfully", deviceClientId)
-    return &bundle, nil
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle '%s' retrieved successfully", deviceClientId)
+	return &bundle, nil
 }
-
-
 
 func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClientId string, publishEvent bool) error {
-    // Get existing bundle for cleanup
-    existingBundle, err := db.GetDeploymentBundle(ctx, deviceClientId)
-    if err != nil {
-        // Return nil if bundle doesn't exist (not an error)
-        if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Not Found") {
-            db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: No bundle to delete for device '%s'", deviceClientId)
-            return nil  
-        }
-        db.MgrContext.Logger.WarnfCtx(ctx, "DeleteDeploymentBundle: Failed to get bundle for device '%s': %v", deviceClientId, err)
-        return err
-    }
+	// Get existing bundle for cleanup
+	existingBundle, err := db.GetDeploymentBundle(ctx, deviceClientId)
+	if err != nil {
+		// Return nil if bundle doesn't exist (not an error)
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Not Found") {
+			db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: No bundle to delete for device '%s'", deviceClientId)
+			return nil
+		}
+		db.MgrContext.Logger.WarnfCtx(ctx, "DeleteDeploymentBundle: Failed to get bundle for device '%s': %v", deviceClientId, err)
+		return err
+	}
 
-    // Delete from database
-    err = db.StateProvider.Delete(ctx, states.DeleteRequest{
-        Metadata: db.bundleMetadata,
-        ID:       deviceClientId,
-    })
-    if err != nil {
-        //  Ignore "not found" errors on deletion
-        if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Not Found") {
-            db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Bundle already deleted for device '%s'", deviceClientId)
-            return nil  
-        }
-        db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteDeploymentBundle: Failed to delete bundle for device '%s': %v", deviceClientId, err)
-        return fmt.Errorf("failed to delete deployment bundle for device '%s': %w", deviceClientId, err)
-    }
+	// Delete from database
+	err = db.StateProvider.Delete(ctx, states.DeleteRequest{
+		Metadata: db.bundleMetadata,
+		ID:       deviceClientId,
+	})
+	if err != nil {
+		//  Ignore "not found" errors on deletion
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Not Found") {
+			db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Bundle already deleted for device '%s'", deviceClientId)
+			return nil
+		}
+		db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteDeploymentBundle: Failed to delete bundle for device '%s': %v", deviceClientId, err)
+		return fmt.Errorf("failed to delete deployment bundle for device '%s': %w", deviceClientId, err)
+	}
 
-    // Cleanup archive file if it exists
-    if existingBundle != nil && existingBundle.ArchivePath != "" {
-        if err := os.Remove(existingBundle.ArchivePath); err != nil && !os.IsNotExist(err) {
-            db.MgrContext.Logger.WarnfCtx(ctx, "DeleteDeploymentBundle: Failed to delete archive file '%s': %v", existingBundle.ArchivePath, err)
-															 
-        } else {
-            db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Deleted archive file '%s'", existingBundle.ArchivePath)
-        }
-    }
+	// Cleanup archive file if it exists
+	if existingBundle != nil && existingBundle.ArchivePath != "" {
+		if err := os.Remove(existingBundle.ArchivePath); err != nil && !os.IsNotExist(err) {
+			db.MgrContext.Logger.WarnfCtx(ctx, "DeleteDeploymentBundle: Failed to delete archive file '%s': %v", existingBundle.ArchivePath, err)
 
-    db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Bundle deleted successfully for device '%s'", deviceClientId)
+		} else {
+			db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Deleted archive file '%s'", existingBundle.ArchivePath)
+		}
+	}
 
-    // Publish event if requested
-    if publishEvent && existingBundle != nil {
-        db.MgrContext.Publish(string(deleteDeploymentBundleFeed), v1alpha2.Event{
-            Metadata: map[string]string{
-                "producerName": db.PubSubGroupName,
-            },
-            Body: *existingBundle,
-        })
-    }
+	db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Bundle deleted successfully for device '%s'", deviceClientId)
 
-    return nil
+	// Publish event if requested
+	if publishEvent && existingBundle != nil {
+		db.MgrContext.Publish(string(deleteDeploymentBundleFeed), v1alpha2.Event{
+			Metadata: map[string]string{
+				"producerName": db.PubSubGroupName,
+			},
+			Body: *existingBundle,
+		})
+	}
+
+	return nil
 }
-

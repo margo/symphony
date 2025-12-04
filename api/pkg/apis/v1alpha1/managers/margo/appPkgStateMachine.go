@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 )
 
 // Simplified AppPkgState based on actual usage

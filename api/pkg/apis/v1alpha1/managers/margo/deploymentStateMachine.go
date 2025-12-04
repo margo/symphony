@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	margoNonStdAPI "github.com/margo/dev-repo/non-standard/generatedCode/wfm/nbi"
-	"github.com/margo/dev-repo/standard/generatedCode/wfm/sbi"
+	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
 
 // Simplified DeploymentState based on actual usage
