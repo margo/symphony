@@ -155,8 +155,8 @@ RUN set -x \
     && oras version
 
 # Rest of Dockerfile stays the same...
-ADD https://github.com/golang/go/raw/master/lib/time/zoneinfo.zip /zoneinfo.zip
-ENV ZONEINFO=/zoneinfo.zip
+# ADD https://github.com/golang/go/raw/master/lib/time/zoneinfo.zip /zoneinfo.zip
+# ENV ZONEINFO=/zoneinfo.zip
 COPY --from=build /dist /
 COPY --from=build /extensions /extensions
 ADD ./api/symphony-api.json /
