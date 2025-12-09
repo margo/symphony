@@ -1,0 +1,20 @@
+# This is an input template allowing the WFM get OCI-based application packages and store in its DB required for further deployment.
+# This file is not MARGO specified.
+apiVersion: non-margo.org
+kind: ApplicationPackage
+metadata:
+  name: {{PACKAGE_ID}}
+  labels:
+    env: prod
+  annotations:
+    description: "{{DESCRIPTION}}"
+spec:
+  sourceType: OCI_REPO
+  source:
+    registryUrl: "{{REGISTRY_URL}}"
+    repository: "{{REPOSITORY}}"
+    tag: "{{TAG}}"
+    authentication:
+      type: "basic"
+      username: "{{REGISTRY_USER}}"
+      password: "{{REGISTRY_PASS}}"
