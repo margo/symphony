@@ -1,3 +1,5 @@
+# This is an input template allowing the WFM get OCI-based application packages and store in its DB required for further deployment.
+# This file is not MARGO specified.
 apiVersion: non-margo.org
 kind: ApplicationPackage
 metadata:
