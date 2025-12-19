@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"strings"
 	"time"
 
@@ -691,4 +692,14 @@ func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, clientId str
 	}
 
 	return device, nil
+}
+
+func (s *DeviceManager) GetServerCA(ctx context.Context) ([]byte, error) {
+	// review: this function is not suitable for DeviceManager, it should be kept separately as settings in the vendor itself
+	serverCAPath, exists := s.Config.Properties["serverCAPath"]
+	if !exists || serverCAPath == "" {
+		return nil, fmt.Errorf("serverCAPath property is empty in the config")
+	}
+
+	return os.ReadFile(serverCAPath)
 }
