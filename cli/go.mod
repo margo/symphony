@@ -53,7 +53,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/sandbox v0.0.0-20251204100039-62467928c285
+	github.com/margo/sandbox v0.0.0-20251212145734-ab49c3b381e7
 	github.com/princjef/mageutil v1.0.0
 )
 
