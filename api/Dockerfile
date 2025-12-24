@@ -124,11 +124,8 @@ RUN --mount=type=secret,id=github_username,required=false \
         CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
     fi
 
-
 FROM ${TARGET_BASE_IMAGE}
-
 ARG TARGETARCH
-
 RUN \
     set -x \
     && apt-get update \
