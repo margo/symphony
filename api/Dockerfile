@@ -98,14 +98,21 @@ RUN apt-get update && apt-get install -y git
 
 
 #combining the git configuration, go env setup, and build into one RUN command with secrets mounted
-RUN --mount=type=secret,id=github_username \
-    --mount=type=secret,id=github_token \
+# secrets are optional - build will work with or without them
+RUN --mount=type=secret,id=github_username,required=false \
+    --mount=type=secret,id=github_token,required=false \
     set -e && \
-    GITHUB_USERNAME=$(cat /run/secrets/github_username) && \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
-    git config --global url."https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
+    # Check if secrets exist and are non-empty
+    if [ -f /run/secrets/github_username ] && [ -s /run/secrets/github_username ] && \
+       [ -f /run/secrets/github_token ] && [ -s /run/secrets/github_token ]; then \
+        echo "Building with GitHub credentials..." && \
+        GITHUB_USERNAME=$(cat /run/secrets/github_username) && \
+        GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
+        git config --global url."https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    else \
+        echo "Building without GitHub credentials (using public access)..." \
+    fi && \
     go env -w GOPRIVATE=github.com/margo/* && \
-    echo "Building Symphony API with GitHub credentials..." && \
     if [ "$TARGETARCH" = "arm" ]; then \
         CC=arm-linux-gnueabihf-gcc \
         RUSTFLAGS="-C linker=arm-linux-gnueabihf-gcc" \
@@ -116,6 +123,7 @@ RUN --mount=type=secret,id=github_username \
     else \
         CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GODEBUG=netdns=cgo go build -tags "$BUILDFLAG" -o /dist/symphony-api; \
     fi
+
 
 FROM ${TARGET_BASE_IMAGE}
 
