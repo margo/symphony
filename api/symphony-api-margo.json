@@ -741,7 +741,8 @@
             "type": "managers.margo.device",
             "properties": {
               "providers.persistentstate": "redis-state",
-              "singleton": "true"              
+              "singleton": "true",
+              "serverCAPath": "./certificates/ca-cert.pem"             
             },
            "providers": {
               "redis-state": {

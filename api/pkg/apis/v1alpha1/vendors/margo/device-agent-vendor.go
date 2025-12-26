@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -147,6 +148,13 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 			Version:    self.Version,
 			Handler:    self.onDeploymentStatusUpdate,
 			Parameters: []string{"clientId?", "deploymentId?"},
+		},
+		{
+			Methods:    []string{fasthttp.MethodGet},
+			Route:      route + "/onboarding/certificate",
+			Version:    self.Version,
+			Handler:    self.downloadServerCA,
+			Parameters: []string{},
 		},
 	}
 }
@@ -903,6 +911,28 @@ func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clien
 
 	deviceVendorLogger.DebugfCtx(ctx, "verifyRequestSignature: Successfully verified signature for device %s", clientId)
 	return true, nil
+}
+
+func (self *DeviceAgentVendor) downloadServerCA(request v1alpha2.COARequest) v1alpha2.COAResponse {
+	pCtx, span := observability.StartSpan("Margo Device Vendor",
+		request.Context,
+		&map[string]string{
+			"method": "downloadServerCA",
+			"route":  request.Route,
+			"verb":   request.Method,
+		})
+	defer span.End()
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): downloadServerCA, method: %s", request.Method)
+
+	ca, err := self.DeviceManager.GetServerCA(pCtx)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Unable to find Server CA"), "Server CA download failed", v1alpha2.InternalError)
+	}
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        []byte(`{"certificate": "` + base64.RawURLEncoding.EncodeToString(ca) + `"}`),
+		ContentType: "application/json",
+	}
 }
 
 // Create a utility function for consistent header parsing
