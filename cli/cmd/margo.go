@@ -558,7 +558,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Set headers
 	t.AppendHeader(table.Row{
-		"ID", "Signature", "Capabilities", "State", "CreatedAt",
+		"ID", "Signature", "Capabilities", "Roles", "State", "CreatedAt",
 	})
 
 	// Add data rows
@@ -567,11 +567,25 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 			continue
 		}
 
+		var roles interface{}
+		roles = []string{}
+		capMap, exists := device.Spec.Capabilities.(map[string]interface{})
+		if exists {
+			properties, exists := capMap["properties"].(map[string]interface{})
+			if exists {
+				roles, exists = properties["roles"]
+				if !exists {
+					roles = []string{}
+				}
+			}
+		}
+
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
 			truncateString(*device.Metadata.Id, 40),
 			truncateString(device.Spec.Signature, 28),
 			truncateString(string(cap), 28),
+			roles,
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
 		}
@@ -590,8 +604,9 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 		{Number: 1, WidthMax: 40}, // ID
 		{Number: 2, WidthMax: 28}, // Signature
 		{Number: 3, WidthMax: 28}, // Capabilities
-		{Number: 4, WidthMax: 12}, // State
-		{Number: 5, WidthMax: 16}, // CreatedAt
+		{Number: 4, WidthMax: 28}, // Device Role
+		{Number: 5, WidthMax: 12}, // State
+		{Number: 6, WidthMax: 16}, // CreatedAt
 	})
 
 	t.Render()
