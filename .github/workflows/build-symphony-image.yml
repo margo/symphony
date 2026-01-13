@@ -1,0 +1,37 @@
+name: Build & Push Symphony API Image
+on:
+ push:
+   branches:
+     - prebuilt-images-ghcr
+permissions:
+ contents: read
+ packages: write
+
+jobs:
+ build:
+   runs-on: ubuntu-latest
+   steps:
+     - name: Checkout repository
+       uses: actions/checkout@v4
+     - name: Set up Docker Buildx
+       uses: docker/setup-buildx-action@v3
+     - name: Verify Docker installation
+       run: docker --version
+    #  - name: Log in to GitHub Container Registry
+    #    uses: docker/login-action@v3
+    #    with:
+    #      registry: ghcr.io
+    #      username: ${{ github.repository_owner }}
+    #      password: ${{ secrets.GITHUB_TOKEN }}
+     - name: Export env vars for build script
+       run: |
+         echo "USER_GITHUB=${{ github.repository_owner }}" >> $GITHUB_ENV
+         echo "TOKEN_GITHUB=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+     - name: Build & Push Symphony API image
+       env:
+          GITHUB_ORG: margo
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+       run: |
+         chmod +x scripts/build-symphony-api.sh
+         scripts/build-symphony-api.sh
