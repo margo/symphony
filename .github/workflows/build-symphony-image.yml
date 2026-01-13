@@ -26,11 +26,11 @@ jobs:
      - name: Export env vars for build script
        run: |
          echo "USER_GITHUB=${{ github.repository_owner }}" >> $GITHUB_ENV
-         echo "TOKEN_GITHUB=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+         echo "TOKEN_GITHUB=${{ secrets.TOKEN_GITHUB }}" >> $GITHUB_ENV
      - name: Build & Push Symphony API image
        env:
           GITHUB_ORG: margo
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
           GITHUB_ACTOR: ${{ github.actor }}
        run: |
          chmod +x scripts/build-symphony-api.sh
