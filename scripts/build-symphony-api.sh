@@ -67,21 +67,5 @@ docker buildx build \
   "$REPO_ROOT"
 
 ok "Image pushed"
-
-# --------------------------------------------------
-# Make image PUBLIC (critical step)
-# --------------------------------------------------
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-  info "Setting GHCR image visibility to PUBLIC"
-
-  gh api \
-    -X PATCH \
-    /orgs/$OWNER/packages/container/$IMAGE/visibility \
-    -f visibility=public
-
-  ok "Image is now PUBLIC"
-fi
-
-echo "🎉 Done!"
-echo "Public image:"
-echo "  docker pull $IMAGE_BASE:latest"
+echo "Done....!"
+echo "docker pull $IMAGE_BASE:latest"
