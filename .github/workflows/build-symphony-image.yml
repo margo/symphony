@@ -1,5 +1,7 @@
 name: Build & Push Symphony API Image
 on:
+ workflow_dispatch:
+  
  push:
    branches:
      - prebuilt-images-ghcr
