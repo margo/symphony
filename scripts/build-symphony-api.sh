@@ -10,28 +10,29 @@ cd "$REPO_ROOT"
 # Image configuration
 # --------------------------------------------------
 REGISTRY="ghcr.io"
-OWNER="margo"                      # user or org
-IMAGE="margo-symphony-api-v2"
-IMAGE_BASE="$REGISTRY/$OWNER/$IMAGE"
-DOCKERFILE="$REPO_ROOT/api/Dockerfile"
+OWNER="margo"                         # GitHub org or user
+IMAGE="margo-symphony-api-v3"
+IMAGE_BASE="${REGISTRY}/${OWNER}/${IMAGE}"
+DOCKERFILE="${REPO_ROOT}/api/Dockerfile"
 TAG="V1"
 info() { echo "ℹ️  $1"; }
 ok()   { echo "✅ $1"; }
 warn() { echo "⚠️  $1"; }
-info "Image      : $IMAGE_BASE:$TAG"
-info "Dockerfile : $DOCKERFILE"
+info "Image      : ${IMAGE_BASE}:${TAG}"
+info "Dockerfile : ${DOCKERFILE}"
 # --------------------------------------------------
 # Authenticate ONLY in GitHub Actions
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
  info "GitHub Actions detected"
- if ! docker system info | grep -q ghcr.io; then
-   info "Logging into GHCR using GITHUB_TOKEN"
-   echo "$GITHUB_TOKEN" | docker login ghcr.io \
-     -u "$GITHUB_ACTOR" \
-     --password-stdin
-   ok "Authenticated to GHCR"
+ if [[ -z "${TOKEN_GITHUB:-}" || -z "${ACTOR_GITHUB:-}" ]]; then
+   echo "❌ TOKEN_GITHUB or ACTOR_GITHUB is not set"
+   exit 1
  fi
+ echo "${TOKEN_GITHUB}" | docker login ghcr.io \
+   -u "${ACTOR_GITHUB}" \
+   --password-stdin
+ ok "Authenticated to GHCR"
 else
  info "Local run detected – skipping login"
 fi
@@ -53,34 +54,32 @@ docker buildx build \
  --push \
  --cache-from type=gha \
  --cache-to type=gha,mode=max \
- --tag "$IMAGE_BASE:$TAG" \
- -f "$DOCKERFILE" \
- "$REPO_ROOT"
+ --tag "${IMAGE_BASE}:${TAG}" \
+ -f "${DOCKERFILE}" \
+ "${REPO_ROOT}"
 ok "Image pushed"
 # --------------------------------------------------
-# Make GHCR image public (GitHub Actions only)
+# Make GHCR image PUBLIC (GitHub Actions only)
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
  info "Setting GHCR image visibility to PUBLIC"
- API_URL="https://api.github.com"
- # Use org API if OWNER is an org, otherwise user API
- if curl -s -o /dev/null -w "%{http_code}" \
-     -H "Authorization: Bearer $GITHUB_TOKEN" \
-     "$API_URL/orgs/$OWNER" | grep -q "200"; then
-   PKG_API="$API_URL/orgs/$OWNER/packages/container/$IMAGE"
- else
-   PKG_API="$API_URL/user/packages/container/$IMAGE"
- fi
- curl -fsSL -X PATCH \
-   -H "Authorization: Bearer $GITHUB_TOKEN" \
+ PKG_API="https://api.github.com/orgs/${OWNER}/packages/container/${IMAGE}"
+ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+   -X PATCH \
+   -H "Authorization: Bearer ${TOKEN_GITHUB}" \
    -H "Accept: application/vnd.github+json" \
-   "$PKG_API" \
-   -d '{"visibility":"public"}' && \
-   ok "Image is now PUBLIC" || \
-   warn "Failed to update visibility (may already be public)"
+   "${PKG_API}" \
+   -d '{"visibility":"public"}')
+ if [[ "${HTTP_CODE}" == "200" ]]; then
+   ok "Image visibility set to PUBLIC"
+ elif [[ "${HTTP_CODE}" == "422" ]]; then
+   ok "Image already PUBLIC"
+ else
+   warn "Failed to update visibility (HTTP ${HTTP_CODE})"
+ fi
 else
  info "Skipping visibility update (not in GitHub Actions)"
 fi
 echo "--------------------------------------------------"
 ok "Done!"
-echo "docker pull $IMAGE_BASE:$TAG"
+echo "docker pull ${IMAGE_BASE}:${TAG}"
