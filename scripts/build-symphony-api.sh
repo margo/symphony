@@ -11,7 +11,7 @@ cd "$REPO_ROOT"
 # --------------------------------------------------
 REGISTRY="ghcr.io"
 OWNER="margo"                      # user or org
-IMAGE="margo-symphony-api"
+IMAGE="margo-symphony-api-v2"
 IMAGE_BASE="$REGISTRY/$OWNER/$IMAGE"
 DOCKERFILE="$REPO_ROOT/api/Dockerfile"
 TAG="V1"
