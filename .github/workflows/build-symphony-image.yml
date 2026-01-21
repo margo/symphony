@@ -1,7 +1,7 @@
 name: Build & Push Symphony API Image
 on:
  workflow_dispatch:
-  
+
  push:
    branches:
      - prebuilt-images-ghcr
@@ -32,8 +32,9 @@ jobs:
      - name: Build & Push Symphony API image
        env:
           GITHUB_ORG: margo
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
-          GITHUB_ACTOR: ${{ github.actor }}
+          TOKEN_GITHUB: ${{ secrets.TOKEN_GITHUB }}
+          ACTOR_GITHUB: ${{ github.actor }}
+
        run: |
          chmod +x scripts/build-symphony-api.sh
          scripts/build-symphony-api.sh
