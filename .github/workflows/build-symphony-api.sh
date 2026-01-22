@@ -2,9 +2,10 @@
 set -Eeuo pipefail
 # --------------------------------------------------
 # Resolve repo root safely
+# (.github/workflows → repo root)
 # --------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 # --------------------------------------------------
 # Image configuration
@@ -24,8 +25,16 @@ ACTOR_GITHUB="${ACTOR_GITHUB:-}"
 info() { echo "ℹ️  $1"; }
 ok()   { echo "✅ $1"; }
 warn() { echo "⚠️  $1"; }
+info "Repo root  : ${REPO_ROOT}"
 info "Image      : ${IMAGE_BASE}:${TAG}"
 info "Dockerfile : ${DOCKERFILE}"
+# --------------------------------------------------
+# Validate Dockerfile path (fail fast)
+# --------------------------------------------------
+if [[ ! -f "$DOCKERFILE" ]]; then
+ echo "❌ Dockerfile not found at $DOCKERFILE"
+ exit 1
+fi
 # --------------------------------------------------
 # Authenticate to GHCR (GitHub Actions only)
 # --------------------------------------------------
@@ -61,6 +70,6 @@ docker buildx build \
  --cache-to type=gha,mode=max \
  --tag "${IMAGE_BASE}:${TAG}" \
  -f "${DOCKERFILE}" \
- "${REPO_ROOT}"
+ .
 ok "Image pushed"
 ok "Done"
