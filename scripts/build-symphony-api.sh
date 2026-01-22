@@ -64,7 +64,7 @@ docker buildx build \
  "${REPO_ROOT}"
 ok "Image pushed"
 # --------------------------------------------------
-# Best-effort GHCR visibility (CI-safe)
+# GHCR visibility (CI-safe)
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
  info "Ensuring GHCR image is public (best-effort)"
