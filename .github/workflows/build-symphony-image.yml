@@ -2,7 +2,7 @@ name: Build & Push Symphony API Docker Image to Margo GHCR
 on:
  push:
    branches:
-     - build-ghcr-script
+     - main
 permissions:
  contents: read
  packages: write
