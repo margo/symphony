@@ -12,7 +12,7 @@ cd "$REPO_ROOT"
 REGISTRY="ghcr.io"
 OWNER="margo"
 REPO="symphony"
-IMAGE="margo-symphony-api"
+IMAGE="margo-symphony-api-v1"
 IMAGE_BASE="${REGISTRY}/${OWNER}/${IMAGE}"
 DOCKERFILE="${REPO_ROOT}/api/Dockerfile"
 TAG="latest"
@@ -63,25 +63,4 @@ docker buildx build \
  -f "${DOCKERFILE}" \
  "${REPO_ROOT}"
 ok "Image pushed"
-# --------------------------------------------------
-# GHCR visibility (CI-safe)
-# --------------------------------------------------
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
- info "Ensuring GHCR image is public (best-effort)"
- PKG_API="https://api.github.com/repos/${OWNER}/${REPO}/packages/container/${IMAGE}"
- HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-   -X PATCH \
-   -H "Authorization: Bearer ${TOKEN_GITHUB}" \
-   -H "Accept: application/vnd.github+json" \
-   "${PKG_API}" \
-   -d '{"visibility":"public"}')
- if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "422" ]]; then
-   ok "Image is PUBLIC"
- else
-   warn "Visibility API not supported for repo-scoped GHCR (HTTP $HTTP_CODE)"
-   warn "If first push → set visibility ONCE via GitHub UI"
- fi
-fi
-echo "--------------------------------------------------"
-ok "Done!"
-echo "docker pull ${IMAGE_BASE}:${TAG}"
+ok "Done"
