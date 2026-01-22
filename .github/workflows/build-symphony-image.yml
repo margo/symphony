@@ -1,4 +1,4 @@
-name: Build & Push Symphony API Image
+name: Build & Push Symphony API Docker Image to Margo GHCR
 on:
  push:
    branches:
@@ -26,5 +26,5 @@ jobs:
           ACTOR_GITHUB: ${{ github.actor }}
 
        run: |
-         chmod +x ./build-symphony-api.sh
-         ./build-symphony-api.sh
+         chmod +x build-symphony-api.sh
+         build-symphony-api.sh
