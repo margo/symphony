@@ -10,27 +10,33 @@ cd "$REPO_ROOT"
 # Image configuration
 # --------------------------------------------------
 REGISTRY="ghcr.io"
-OWNER="margo"                         # GitHub org or user
+OWNER="margo"
+REPO="symphony"                       # 🔴 REQUIRED for repo-scoped GHCR
 IMAGE="margo-symphony-api-v3"
 IMAGE_BASE="${REGISTRY}/${OWNER}/${IMAGE}"
 DOCKERFILE="${REPO_ROOT}/api/Dockerfile"
 TAG="V1"
+# --------------------------------------------------
+# GitHub auth (custom names)
+# --------------------------------------------------
+TOKEN_GITHUB="${TOKEN_GITHUB:-}"
+ACTOR_GITHUB="${ACTOR_GITHUB:-}"
 info() { echo "ℹ️  $1"; }
 ok()   { echo "✅ $1"; }
 warn() { echo "⚠️  $1"; }
 info "Image      : ${IMAGE_BASE}:${TAG}"
 info "Dockerfile : ${DOCKERFILE}"
 # --------------------------------------------------
-# Authenticate ONLY in GitHub Actions
+# Authenticate (GitHub Actions only)
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
  info "GitHub Actions detected"
- if [[ -z "${TOKEN_GITHUB:-}" || -z "${ACTOR_GITHUB:-}" ]]; then
-   echo "❌ TOKEN_GITHUB or ACTOR_GITHUB is not set"
+ if [[ -z "$TOKEN_GITHUB" || -z "$ACTOR_GITHUB" ]]; then
+   echo "❌ TOKEN_GITHUB or ACTOR_GITHUB not set"
    exit 1
  fi
- echo "${TOKEN_GITHUB}" | docker login ghcr.io \
-   -u "${ACTOR_GITHUB}" \
+ echo "$TOKEN_GITHUB" | docker login ghcr.io \
+   -u "$ACTOR_GITHUB" \
    --password-stdin
  ok "Authenticated to GHCR"
 else
@@ -40,7 +46,6 @@ fi
 # Ensure buildx builder exists
 # --------------------------------------------------
 if ! docker buildx inspect symphony-builder >/dev/null 2>&1; then
- info "Creating buildx builder"
  docker buildx create --name symphony-builder --use
 else
  docker buildx use symphony-builder
@@ -59,23 +64,23 @@ docker buildx build \
  "${REPO_ROOT}"
 ok "Image pushed"
 # --------------------------------------------------
-# Make GHCR image PUBLIC (GitHub Actions only)
+# 🔥 MAKE IMAGE PUBLIC (REPO-SCOPED – CORRECT API)
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
  info "Setting GHCR image visibility to PUBLIC"
- PKG_API="https://api.github.com/orgs/${OWNER}/packages/container/${IMAGE}"
+ PKG_API="https://api.github.com/repos/${OWNER}/${REPO}/packages/container/${IMAGE}"
  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
    -X PATCH \
    -H "Authorization: Bearer ${TOKEN_GITHUB}" \
    -H "Accept: application/vnd.github+json" \
    "${PKG_API}" \
    -d '{"visibility":"public"}')
- if [[ "${HTTP_CODE}" == "200" ]]; then
+ if [[ "$HTTP_CODE" == "200" ]]; then
    ok "Image visibility set to PUBLIC"
- elif [[ "${HTTP_CODE}" == "422" ]]; then
+ elif [[ "$HTTP_CODE" == "422" ]]; then
    ok "Image already PUBLIC"
  else
-   warn "Failed to update visibility (HTTP ${HTTP_CODE})"
+   warn "Failed to update visibility (HTTP $HTTP_CODE)"
  fi
 else
  info "Skipping visibility update (not in GitHub Actions)"
