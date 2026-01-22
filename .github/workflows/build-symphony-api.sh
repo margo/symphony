@@ -17,7 +17,7 @@ IMAGE_BASE="${REGISTRY}/${OWNER}/${IMAGE}"
 DOCKERFILE="${REPO_ROOT}/api/Dockerfile"
 TAG="latest"
 # --------------------------------------------------
-# GitHub auth (custom env names)
+# GitHub auth variables
 # --------------------------------------------------
 TOKEN_GITHUB="${TOKEN_GITHUB:-}"
 ACTOR_GITHUB="${ACTOR_GITHUB:-}"

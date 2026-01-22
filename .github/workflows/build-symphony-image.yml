@@ -2,7 +2,7 @@ name: Build & Push Symphony API Image
 on:
  push:
    branches:
-     - main
+     - build-ghcr-script
 permissions:
  contents: read
  packages: write
