@@ -26,5 +26,5 @@ jobs:
           ACTOR_GITHUB: ${{ github.actor }}
 
        run: |
-         chmod +x build-symphony-api.sh
+         chmod +x ./build-symphony-api.sh
           ./build-symphony-api.sh
