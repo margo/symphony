@@ -11,13 +11,13 @@ cd "$REPO_ROOT"
 # --------------------------------------------------
 REGISTRY="ghcr.io"
 OWNER="margo"
-REPO="symphony"                       # 🔴 REQUIRED for repo-scoped GHCR
-IMAGE="margo-symphony-api-v3"
+REPO="symphony"
+IMAGE="margo-symphony-api-v4"
 IMAGE_BASE="${REGISTRY}/${OWNER}/${IMAGE}"
 DOCKERFILE="${REPO_ROOT}/api/Dockerfile"
 TAG="V1"
 # --------------------------------------------------
-# GitHub auth (custom names)
+# GitHub auth (custom env names)
 # --------------------------------------------------
 TOKEN_GITHUB="${TOKEN_GITHUB:-}"
 ACTOR_GITHUB="${ACTOR_GITHUB:-}"
@@ -27,12 +27,12 @@ warn() { echo "⚠️  $1"; }
 info "Image      : ${IMAGE_BASE}:${TAG}"
 info "Dockerfile : ${DOCKERFILE}"
 # --------------------------------------------------
-# Authenticate (GitHub Actions only)
+# Authenticate to GHCR (GitHub Actions only)
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
  info "GitHub Actions detected"
  if [[ -z "$TOKEN_GITHUB" || -z "$ACTOR_GITHUB" ]]; then
-   echo "❌ TOKEN_GITHUB or ACTOR_GITHUB not set"
+   echo "❌ TOKEN_GITHUB or ACTOR_GITHUB is not set"
    exit 1
  fi
  echo "$TOKEN_GITHUB" | docker login ghcr.io \
@@ -64,10 +64,10 @@ docker buildx build \
  "${REPO_ROOT}"
 ok "Image pushed"
 # --------------------------------------------------
-# 🔥 MAKE IMAGE PUBLIC (REPO-SCOPED – CORRECT API)
+# Best-effort GHCR visibility (CI-safe)
 # --------------------------------------------------
 if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
- info "Setting GHCR image visibility to PUBLIC"
+ info "Ensuring GHCR image is public (best-effort)"
  PKG_API="https://api.github.com/repos/${OWNER}/${REPO}/packages/container/${IMAGE}"
  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
    -X PATCH \
@@ -75,15 +75,12 @@ if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
    -H "Accept: application/vnd.github+json" \
    "${PKG_API}" \
    -d '{"visibility":"public"}')
- if [[ "$HTTP_CODE" == "200" ]]; then
-   ok "Image visibility set to PUBLIC"
- elif [[ "$HTTP_CODE" == "422" ]]; then
-   ok "Image already PUBLIC"
+ if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "422" ]]; then
+   ok "Image is PUBLIC"
  else
-   warn "Failed to update visibility (HTTP $HTTP_CODE)"
+   warn "Visibility API not supported for repo-scoped GHCR (HTTP $HTTP_CODE)"
+   warn "If first push → set visibility ONCE via GitHub UI"
  fi
-else
- info "Skipping visibility update (not in GitHub Actions)"
 fi
 echo "--------------------------------------------------"
 ok "Done!"
