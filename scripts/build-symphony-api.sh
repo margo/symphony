@@ -12,10 +12,10 @@ cd "$REPO_ROOT"
 REGISTRY="ghcr.io"
 OWNER="margo"
 REPO="symphony"
-IMAGE="margo-symphony-api-v4"
+IMAGE="margo-symphony-api"
 IMAGE_BASE="${REGISTRY}/${OWNER}/${IMAGE}"
 DOCKERFILE="${REPO_ROOT}/api/Dockerfile"
-TAG="V1"
+TAG="latest"
 # --------------------------------------------------
 # GitHub auth (custom env names)
 # --------------------------------------------------
