@@ -3,7 +3,6 @@ on:
  push:
    branches:
      - main
-     - ghcr-image-manifest-build-updates
 permissions:
  contents: read
  packages: write
