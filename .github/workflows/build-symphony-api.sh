@@ -65,7 +65,6 @@ fi
 info "Building and pushing image..."
 docker buildx build \
  --platform linux/amd64,linux/arm64 \
- --provenance=false \
  --push \
  --cache-from type=gha \
  --cache-to type=gha,mode=max \
