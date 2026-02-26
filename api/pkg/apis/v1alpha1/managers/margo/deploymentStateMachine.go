@@ -179,9 +179,9 @@ func (sm *DeploymentStateMachine) updateDeploymentState(
 	case DeploymentStateInstalled:
 		state = margoNonStdAPI.ApplicationDeploymentStatusStateINSTALLED
 		desiredState = sbi.DeploymentStatusManifestStatusStateInstalled
-	case DeploymentStateUpdating:
-		state = margoNonStdAPI.ApplicationDeploymentStatusStateUPDATING
-		desiredState = sbi.DeploymentStatusManifestStatusStateUpdating
+	// case DeploymentStateUpdating:
+	// 	state = margoNonStdAPI.ApplicationDeploymentStatusStateUPDATING
+	// 	desiredState = sbi.DeploymentStatusManifestStatusStateUpdating
 	case DeploymentStateRemoving:
 		state = margoNonStdAPI.ApplicationDeploymentStatusStateREMOVING
 		desiredState = sbi.DeploymentStatusManifestStatusStateRemoving
