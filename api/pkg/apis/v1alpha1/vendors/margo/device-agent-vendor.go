@@ -37,7 +37,7 @@ type DeviceAgentVendor struct {
 // struct for the onboarding response
 type DeviceOnboardingResponse struct {
 	// ClientId The uuid assigned to the device client.
-	ClientId string `json:"client_id"`
+	ClientId string `json:"clientId"`
 
 	// EndpointList The endpoints
 	EndpointList *[]string `json:"endpoint_list,omitempty"`
@@ -143,7 +143,7 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 		},
 		{
 			Methods:    []string{fasthttp.MethodPost},
-			Route:      route + "/clients/{clientId}/deployment/{deploymentId}/status",
+			Route:      route + "/clients/{clientId}/deployments/{deploymentId}/status",
 			Version:    self.Version,
 			Handler:    self.onDeploymentStatusUpdate,
 			Parameters: []string{"clientId?", "deploymentId?"},
@@ -190,6 +190,20 @@ func (self *DeviceAgentVendor) saveDeviceCapabilities(request v1alpha2.COAReques
 	}
 
 	// Validate required fields
+	if capabilities.ApiVersion != "device.margo.org/v1alpha1" {
+		msg := fmt.Sprintf("invalid API version: %s", capabilities.ApiVersion)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
+			msg, v1alpha2.BadRequest)
+	}
+
+	if capabilities.Kind != margoStdSbiAPI.DeviceCapabilitiesManifestKindDeviceCapabilitiesManifest {
+		msg := fmt.Sprintf("invalid kind: %s", capabilities.Kind)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
+			msg, v1alpha2.BadRequest)
+	}
+
 	if capabilities.Properties.Id == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
@@ -254,6 +268,20 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	// Validate required fields
+	if capabilities.ApiVersion != "device.margo.org/v1alpha1" {
+		msg := fmt.Sprintf("invalid API version: %s", capabilities.ApiVersion)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
+			msg, v1alpha2.BadRequest)
+	}
+
+	if capabilities.Kind != margoStdSbiAPI.DeviceCapabilitiesManifestKindDeviceCapabilitiesManifest {
+		msg := fmt.Sprintf("invalid kind: %s", capabilities.Kind)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
+			msg, v1alpha2.BadRequest)
+	}
+
 	if capabilities.Properties.Id == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
@@ -337,31 +365,27 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onboardDevice, method: %s", request.Method)
 
 	// Parse request body using the correct DeviceCapabilities type
-	onboardingRequest := map[string]any{}
-	if err := json.Unmarshal(request.Body, &onboardingRequest); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device onboarding request", v1alpha2.BadRequest)
+	var onboardingReq margoStdSbiAPI.PostApiV1OnboardingJSONRequestBody
+	if err := json.Unmarshal(request.Body, &onboardingReq); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
 	}
 
-	devicePubCert, exists := onboardingRequest["public_certificate"]
-	if !exists {
-		err := fmt.Errorf("device pub cert must be passed in the request and should be non-empty value")
+	if err := self.validateOnboardingRequest(onboardingReq); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
 	}
-	if len(devicePubCert.(string)) == 0 {
-		err := fmt.Errorf("device pub cert must be non-empty value")
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
-	}
+	devicePubCert := onboardingReq.Certificate
 
-	device, deviceSignatureExists, err := self.DeviceManager.Database.DevicePubCertExists(pCtx, devicePubCert.(string))
+	device, deviceSignatureExists, err := self.DeviceManager.Database.DevicePubCertExists(pCtx, devicePubCert)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to check if device pub cert already onboarded", v1alpha2.InternalError)
 	}
 
+	// note: we are allowing failed devices to retry onboarding, hence excluded them here
 	if deviceSignatureExists && (device.OnboardingStatus == nbi.ONBOARDED || device.OnboardingStatus == nbi.INPROGRESS) {
 		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Device signature already exists"), "Device onboarding denied", v1alpha2.Conflict)
 	}
 
-	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, devicePubCert.(string))
+	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, devicePubCert)
 
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
@@ -380,8 +404,8 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 
 	// Create response
 	response := DeviceOnboardingResponse{
-		ClientId:     onboardingResult.ClientId,
-		EndpointList: &[]string{},
+		ClientId: onboardingResult.ClientId,
+		// EndpointList: &[]string{}, // this has been removed from the spec, need to reconfirm it once the spec is resynced
 		// ClientSecret:     onboardingResult.ClientSecret,
 		// TokenEndpointUrl: onboardingResult.TokenEndpointUrl,
 	}
@@ -426,6 +450,10 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 	var statusReq margoStdSbiAPI.DeploymentStatusManifest
 	if err := json.Unmarshal(request.Body, &statusReq); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
+	}
+
+	if err := self.validateStatusUpdateRequest(statusReq); err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update deployment status", v1alpha2.BadRequest)
 	}
 
 	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State)); err != nil {
@@ -903,6 +931,52 @@ func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clien
 
 	deviceVendorLogger.DebugfCtx(ctx, "verifyRequestSignature: Successfully verified signature for device %s", clientId)
 	return true, nil
+}
+
+func (self *DeviceAgentVendor) validateOnboardingRequest(req margoStdSbiAPI.PostApiV1OnboardingJSONRequestBody) error {
+	if req.ApiVersion != "onboarding.margo.org/v1alpha1" {
+		return fmt.Errorf("invalid API version: %s", req.ApiVersion)
+	}
+
+	if len(req.Certificate) == 0 {
+		return fmt.Errorf("certificate is required")
+	}
+
+	if req.Kind != margoStdSbiAPI.OnboardingRequest {
+		return fmt.Errorf("invalid kind: %s", req.Kind)
+	}
+	return nil
+}
+
+func (self *DeviceAgentVendor) validateStatusUpdateRequest(req margoStdSbiAPI.DeploymentStatusManifest) error {
+	// validate the request fields
+	if req.ApiVersion != "deployment.margo.org/v1alpha1" {
+		return fmt.Errorf("invalid API version: %s", req.ApiVersion)
+	}
+
+	if req.Kind != margoStdSbiAPI.DeploymentStatusManifestKindDeploymentStatusManifest {
+		return fmt.Errorf("invalid kind: %s", req.Kind)
+	}
+
+	if req.Kind != margoStdSbiAPI.DeploymentStatusManifestKindDeploymentStatusManifest {
+		return fmt.Errorf("invalid kind: %s", req.Kind)
+	}
+
+	if req.DeploymentId == "" {
+		return fmt.Errorf("invalid deployment id: %s", req.DeploymentId)
+	}
+
+	if req.Status.State == "" ||
+		(req.Status.State != margoStdSbiAPI.DeploymentStatusManifestStatusStateFailed &&
+			req.Status.State != margoStdSbiAPI.DeploymentStatusManifestStatusStateInstalled &&
+			req.Status.State != margoStdSbiAPI.DeploymentStatusManifestStatusStateInstalling &&
+			req.Status.State != margoStdSbiAPI.DeploymentStatusManifestStatusStatePending &&
+			req.Status.State != margoStdSbiAPI.DeploymentStatusManifestStatusStateRemoved &&
+			req.Status.State != margoStdSbiAPI.DeploymentStatusManifestStatusStateRemoving) {
+		// TODO: it is better if these validations are generated by the openapi tool
+		return fmt.Errorf("invalid state: %s", req.Status.State)
+	}
+	return nil
 }
 
 // Create a utility function for consistent header parsing
