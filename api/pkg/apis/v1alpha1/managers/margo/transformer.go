@@ -559,7 +559,11 @@ func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDe
 		}
 	}
 
-	if err := t.mergeParameters(req.Spec.Parameters, *appPkg.Description.Parameters); err != nil {
+	appPkgParams := margoNonStdAPI.AppDescriptionParametersMap{}
+	if appPkg.Description.Parameters != nil {
+		appPkgParams = *appPkg.Description.Parameters
+	}
+	if err := t.mergeParameters(req.Spec.Parameters, appPkgParams); err != nil {
 		deploymentLogger.Warn("Failed to merge parameters", "error", err)
 		return err
 	}
