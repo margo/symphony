@@ -381,7 +381,16 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 	if err := self.validateOnboardingRequest(onboardingReq); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
 	}
+
 	devicePubCert := onboardingReq.Certificate
+	isTrusted, err := self.DeviceManager.IsDeviceInTrustStore(pCtx, []byte(devicePubCert))
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to check if device is trusted", v1alpha2.InternalError)
+	}
+
+	if !isTrusted {
+		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Device is not trusted"), "Device onboarding denied", v1alpha2.Unauthorized)
+	}
 
 	device, deviceSignatureExists, err := self.DeviceManager.Database.DevicePubCertExists(pCtx, devicePubCert)
 	if err != nil {
