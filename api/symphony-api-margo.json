@@ -742,7 +742,8 @@
             "properties": {
               "providers.persistentstate": "redis-state",
               "singleton": "true",
-              "serverCAPath": "./certificates/ca-cert.pem"             
+              "serverCAPath": "./certificates/ca-cert.pem",
+              "trustedDevicesDir": "./trusted-devices"
             },
            "providers": {
               "redis-state": {

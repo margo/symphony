@@ -52,6 +52,7 @@ type DeviceManager struct {
 	StateProvider    states.IStateProvider
 	KeycloakProvider *keycloak.KeycloakProvider
 	MargoValidator   validation.MargoValidator
+	TrustStore       *DeviceTrustStore
 	needValidate     bool
 }
 
@@ -78,6 +79,28 @@ func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.Manag
 	if s.needValidate {
 		// Turn off validation of differnt types: https://github.com/eclipse-symphony/symphony/issues/445
 		s.MargoValidator = validation.NewMargoValidator()
+	}
+
+	// Initialize trust store if configured
+	trustedDevicesDir, exists := s.Config.Properties["trustedDevicesDir"]
+	if exists && trustedDevicesDir != "" {
+		s.TrustStore = NewDeviceTrustStore(trustedDevicesDir)
+		if s.TrustStore != nil {
+			go func() {
+				// TODO: pick the interval from configuration
+				ticker := time.NewTicker(15 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					// TODO: check if we can rely on this
+					case <-pCtx.EvaluationContext.Context.Done():
+						return
+					case <-ticker.C:
+						s.RefreshTrustStore(context.Background())
+					}
+				}
+			}()
+		}
 	}
 
 	// subscribe to events
@@ -702,4 +725,20 @@ func (s *DeviceManager) GetServerCA(ctx context.Context) ([]byte, error) {
 	}
 
 	return os.ReadFile(serverCAPath)
+}
+
+func (s *DeviceManager) IsDeviceInTrustStore(ctx context.Context, deviceKeyToSearch []byte) (bool, error) {
+	if s.TrustStore == nil {
+		// Fallback: no trust store configured, so no devices trusted
+		return false, nil
+	}
+	return s.TrustStore.IsDeviceInTrustStore(ctx, deviceKeyToSearch)
+}
+
+// RefreshTrustStore reloads the trusted keys from the source directory.
+// Call this periodically or on demand to update the trust store.
+func (s *DeviceManager) RefreshTrustStore(ctx context.Context) {
+	if s.TrustStore != nil {
+		s.TrustStore.refresh(ctx)
+	}
 }
