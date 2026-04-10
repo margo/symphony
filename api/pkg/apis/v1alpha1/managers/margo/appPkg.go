@@ -22,7 +22,6 @@ import (
 	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/sandbox/non-standard/pkg/packageManager"
 	margoUtils "github.com/margo/sandbox/non-standard/pkg/utils"
-	margoGitHelper "github.com/margo/sandbox/shared-lib/git"
 )
 
 var appPkgLogger = logger.NewLogger("coa.runtime")
@@ -42,7 +41,11 @@ type AppPkgManager struct {
 	MargoValidator validation.MargoValidator
 }
 
-func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
+func (s *AppPkgManager) Init(
+	context *contexts.VendorContext,
+	config managers.ManagerConfig,
+	providers map[string]providers.IProvider,
+) error {
 	appPkgLogger.Debug("Initializing AppPkgManager")
 
 	err := s.Manager.Init(context, config, providers)
@@ -53,11 +56,19 @@ func (s *AppPkgManager) Init(context *contexts.VendorContext, config managers.Ma
 
 	stateprovider, err := managers.GetPersistentStateProvider(config, providers)
 	if err != nil {
-		appPkgLogger.Error("Failed to get persistent state provider", "error", err)
+		appPkgLogger.Error(
+			"Failed to get persistent state provider",
+			"error",
+			err,
+		)
 		return err
 	}
 
-	s.Database = NewMargoDatabase(s.Context, packageManagerPublisherGroup, stateprovider)
+	s.Database = NewMargoDatabase(
+		s.Context,
+		packageManagerPublisherGroup,
+		stateprovider,
+	)
 	appPkgLogger.Debug("MargoDatabase initialized successfully")
 
 	s.StateMachine = NewAppPkgStateMachine(s.Database, appPkgLogger)
@@ -134,7 +145,9 @@ func (s *AppPkgManager) OnboardAppPkg(
 	appPkg.Package.RecentOperation.Status = operationState
 	appPkg.Package.Metadata.CreationTimestamp = &now
 	appPkg.Package.Status = &margoNonStdAPI.ApplicationPackageStatus{
-		State:          (*margoNonStdAPI.ApplicationPackageStatusState)(&appPkgStatus),
+		State: (*margoNonStdAPI.ApplicationPackageStatusState)(
+			&appPkgStatus,
+		),
 		LastUpdateTime: &now,
 	}
 
@@ -164,7 +177,13 @@ func (s *AppPkgManager) OnboardAppPkg(
 		"packageName", appPkg.Package.Metadata.Name)
 	go func() {
 		time.Sleep(time.Second * 8)
-		s.processPackageAsync(ctx, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
+		s.processPackageAsync(
+			ctx,
+			appPkg,
+			solutionsManager,
+			solutionContainerManager,
+			catalogsManager,
+		)
 	}()
 
 	onboardingDuration := time.Since(startTime)
@@ -193,7 +212,13 @@ func (s *AppPkgManager) processPackageAsync(
 		"processStart", processStart)
 
 	// Start processing state transition
-	if err := s.StateMachine.ProcessEvent(ctx, packageId, EventStartProcessing, "Starting async processing", nil); err != nil {
+	if err := s.StateMachine.ProcessEvent(
+		ctx,
+		packageId,
+		EventStartProcessing,
+		"Starting async processing",
+		nil,
+	); err != nil {
 		appPkgLogger.Error("Failed to transition to processing state",
 			"packageId", packageId,
 			"error", err)
@@ -214,7 +239,13 @@ func (s *AppPkgManager) processPackageAsync(
 				"processDuration", processDuration)
 
 			// Transition to failed state
-			if stateErr := s.StateMachine.ProcessEvent(ctx, packageId, EventProcessingFailed, contextualInfo, processingError); stateErr != nil {
+			if stateErr := s.StateMachine.ProcessEvent(
+				ctx,
+				packageId,
+				EventProcessingFailed,
+				contextualInfo,
+				processingError,
+			); stateErr != nil {
 				appPkgLogger.Error("Failed to transition to failed state",
 					"packageId", packageId,
 					"stateError", stateErr)
@@ -227,7 +258,13 @@ func (s *AppPkgManager) processPackageAsync(
 			"processDuration", processDuration)
 
 		// Transition to completed state
-		if stateErr := s.StateMachine.ProcessEvent(ctx, packageId, EventProcessingComplete, "Package onboarded successfully", nil); stateErr != nil {
+		if stateErr := s.StateMachine.ProcessEvent(
+			ctx,
+			packageId,
+			EventProcessingComplete,
+			"Package onboarded successfully",
+			nil,
+		); stateErr != nil {
 			appPkgLogger.Error("Failed to transition to completed state",
 				"packageId", packageId,
 				"stateError", stateErr)
@@ -235,8 +272,14 @@ func (s *AppPkgManager) processPackageAsync(
 	}()
 
 	// Initialize package manager
-	appPkgLogger.Debug("Initializing package manager for processing", "packageId", packageId)
-	pkgMgr := packageManager.NewPackageManager()
+	appPkgLogger.Debug(
+		"Initializing package manager for processing",
+		"packageId",
+		packageId,
+	)
+	pkgMgr := packageManager.NewPackageManager(&packageManager.Config{
+		EnableValidation: true,
+	})
 
 	// Process based on source type
 	appPkgLogger.Info("Processing package source",
@@ -244,24 +287,21 @@ func (s *AppPkgManager) processPackageAsync(
 		"sourceType", appPkg.Package.Spec.SourceType)
 
 	switch appPkg.Package.Spec.SourceType {
-	case margoNonStdAPI.GITREPO:
-		processedPkg, err := s.processGitRepositoryWithStateTracking(ctx, pkgMgr, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
-		if err != nil {
-			processingError = err
-			contextualInfo = fmt.Sprintf("Git repository processing failed: %s", err.Error())
-			return
-		}
-
-		// Update the package with processed data
-		appPkg.Description = processedPkg.Description
-		appPkg.Resources = processedPkg.Resources
-		contextualInfo = "Package processed and Symphony objects created successfully"
-
 	case margoNonStdAPI.OCIREPO:
-		processedPkg, err := s.processOciRepositoryWithStateTracking(ctx, pkgMgr, appPkg, solutionsManager, solutionContainerManager, catalogsManager)
+		processedPkg, err := s.processOciRepositoryWithStateTracking(
+			ctx,
+			pkgMgr,
+			appPkg,
+			solutionsManager,
+			solutionContainerManager,
+			catalogsManager,
+		)
 		if err != nil {
 			processingError = err
-			contextualInfo = fmt.Sprintf("Git repository processing failed: %s", err.Error())
+			contextualInfo = fmt.Sprintf(
+				"Git repository processing failed: %s",
+				err.Error(),
+			)
 			return
 		}
 
@@ -271,8 +311,14 @@ func (s *AppPkgManager) processPackageAsync(
 		contextualInfo = "Package processed and Symphony objects created successfully"
 
 	default:
-		processingError = fmt.Errorf("unsupported source type: %s", appPkg.Package.Spec.SourceType)
-		contextualInfo = fmt.Sprintf("Unsupported source type: %s", appPkg.Package.Spec.SourceType)
+		processingError = fmt.Errorf(
+			"unsupported source type: %s",
+			appPkg.Package.Spec.SourceType,
+		)
+		contextualInfo = fmt.Sprintf(
+			"Unsupported source type: %s",
+			appPkg.Package.Spec.SourceType,
+		)
 		appPkgLogger.Error("Unsupported source type",
 			"packageId", packageId,
 			"sourceType", appPkg.Package.Spec.SourceType)
@@ -280,7 +326,11 @@ func (s *AppPkgManager) processPackageAsync(
 	}
 
 	// Final update of the package in database with all processed data
-	appPkgLogger.Debug("Updating final package data in database", "packageId", packageId)
+	appPkgLogger.Debug(
+		"Updating final package data in database",
+		"packageId",
+		packageId,
+	)
 	finalDbRow := AppPackageDatabaseRow{
 		PackageRequest: appPkg.Package,
 		AppDescription: appPkg.Description,
@@ -288,200 +338,19 @@ func (s *AppPkgManager) processPackageAsync(
 	}
 
 	if err := s.Database.UpsertAppPackage(ctx, finalDbRow); err != nil {
-		processingError = fmt.Errorf("failed to update final package data: %w", err)
+		processingError = fmt.Errorf(
+			"failed to update final package data: %w",
+			err,
+		)
 		contextualInfo = "Failed to store final package data"
 		return
 	}
 
-	appPkgLogger.Info("Package processing pipeline completed successfully", "packageId", packageId)
-}
-
-// processGitRepositoryWithStateTracking handles Git repository processing with detailed state tracking
-func (s *AppPkgManager) processGitRepositoryWithStateTracking(
-	ctx context.Context,
-	pkgMgr *packageManager.PackageManager,
-	pkg ApplicationPackage,
-	solutionsManager *solutions.SolutionsManager,
-	solutionContainerManager *solutioncontainers.SolutionContainersManager,
-	catalogsManager *catalogs.CatalogsManager) (*ApplicationPackage, error) {
-
-	gitProcessStart := time.Now()
-	packageId := *pkg.Package.Metadata.Id
-
-	appPkgLogger.Info("Starting Git repository processing with state tracking",
-		"packageId", packageId,
-		"gitProcessStart", gitProcessStart)
-
-	// Phase 1: Parse and validate Git repository configuration
-	appPkgLogger.Debug("Phase 1: Parsing Git repository configuration", "packageId", packageId)
-	gitRepo, err := pkg.Package.Spec.Source.AsGitRepo()
-	if err != nil {
-		appPkgLogger.Error("Failed to parse Git repository configuration",
-			"packageId", packageId,
-			"error", err)
-		return nil, fmt.Errorf("failed to parse Git repository spec: %w", err)
-	}
-
-	appPkgLogger.Info("Git repository configuration parsed successfully",
-		"packageId", packageId,
-		"gitUrl", gitRepo.Url,
-		"hasAuth", gitRepo.AccessToken != nil && gitRepo.Username != nil)
-
-	// Phase 2: Set up authentication
-	appPkgLogger.Debug("Phase 2: Setting up Git authentication", "packageId", packageId)
-	var gitAuth *margoGitHelper.Auth
-	if gitRepo.AccessToken != nil && gitRepo.Username != nil {
-		gitAuth = &margoGitHelper.Auth{
-			Username: *gitRepo.Username,
-			Token:    *gitRepo.AccessToken,
-		}
-		appPkgLogger.Debug("Git authentication configured", "packageId", packageId, "username", *gitRepo.Username)
-	} else {
-		appPkgLogger.Debug("No Git authentication provided, using anonymous access", "packageId", packageId)
-	}
-
-	// Phase 3: Determine Git reference and subpath
-	branch := "main"
-	if gitRepo.Branch != nil {
-		branch = *gitRepo.Branch
-	}
-	subPath := ""
-	if gitRepo.SubPath != nil {
-		subPath = *gitRepo.SubPath
-	}
-
-	// Phase 4: Download package from Git repository
-	appPkgLogger.Info("Phase 4: Downloading package from Git repository",
-		"packageId", packageId,
-		"gitUrl", gitRepo.Url,
-		"branch", branch,
-		"subPath", subPath)
-
-	pkgPath, downloadedAppPkg, err := pkgMgr.LoadPackageFromGit(
-		gitRepo.Url,
-		branch,
-		subPath,
-		gitAuth,
+	appPkgLogger.Info(
+		"Package processing pipeline completed successfully",
+		"packageId",
+		packageId,
 	)
-	if err != nil {
-		appPkgLogger.Error("Failed to download package from Git repository",
-			"packageId", packageId,
-			"gitUrl", gitRepo.Url,
-			"error", err)
-		return nil, fmt.Errorf("failed to download package from Git: %w", err)
-	}
-
-	// Ensure cleanup of downloaded package
-	defer func() {
-		if cleanupErr := os.RemoveAll(pkgPath); cleanupErr != nil {
-			appPkgLogger.Warn("Failed to cleanup downloaded package",
-				"packageId", packageId,
-				"packagePath", pkgPath,
-				"error", cleanupErr)
-		} else {
-			appPkgLogger.Debug("Successfully cleaned up downloaded package",
-				"packageId", packageId,
-				"packagePath", pkgPath)
-		}
-	}()
-
-	downloadDuration := time.Since(gitProcessStart)
-	appPkgLogger.Info("Package downloaded successfully from Git",
-		"packageId", packageId,
-		"packagePath", pkgPath,
-		"resourceCount", len(downloadedAppPkg.Resources),
-		"downloadDuration", downloadDuration)
-
-	// Phase 5: Parse application description
-	appPkgLogger.Info("Phase 5: Parsing application description from downloaded package",
-		"packageId", packageId,
-		"packagePath", pkgPath)
-
-	appDesc, packageResources, err := s.parseApplicationDescription(pkgPath)
-	if err != nil {
-		appPkgLogger.Error("Failed to parse application description",
-			"packageId", packageId,
-			"packagePath", pkgPath,
-			"error", err)
-		return nil, fmt.Errorf("failed to parse application description: %w", err)
-	}
-
-	// Phase 6: Validate application description
-	appPkgLogger.Debug("Phase 6: Validating application description", "packageId", packageId)
-	if err := s.validateApplicationDescription(appDesc); err != nil {
-		appPkgLogger.Error("Application description validation failed",
-			"packageId", packageId,
-			"appId", appDesc.Metadata.Id,
-			"error", err)
-		return nil, fmt.Errorf("application description validation failed: %w", err)
-	}
-
-	// Phase 7: Merge resources from Git download and package parsing
-	appPkgLogger.Debug("Phase 7: Merging resources", "packageId", packageId)
-	allResources := make(map[string][]byte)
-	for k, v := range downloadedAppPkg.Resources {
-		allResources[k] = v
-	}
-	for k, v := range packageResources {
-		allResources[k] = v
-	}
-
-	appPkgLogger.Info("Application description parsed and validated successfully",
-		"packageId", packageId,
-		"appId", appDesc.Metadata.Id,
-		"appName", appDesc.Metadata.Name,
-		"appVersion", appDesc.Metadata.Version,
-		"totalResourceCount", len(allResources))
-
-	// Phase 8: Convert to Symphony objects
-	appPkgLogger.Info("Phase 8: Converting application to Symphony objects",
-		"packageId", packageId,
-		"appId", appDesc.Metadata.Id)
-
-	dbRow := AppPackageDatabaseRow{
-		PackageRequest: pkg.Package,
-		AppDescription: appDesc,
-		AppResources:   allResources,
-	}
-
-	catalog, solution, solutionContainer, err := s.Transformer.AppPackageToSymphonyObjects(ctx, dbRow, allResources)
-	if err != nil {
-		appPkgLogger.Error("Failed to convert to Symphony objects",
-			"packageId", packageId,
-			"appId", appDesc.Metadata.Id,
-			"error", err)
-		return nil, fmt.Errorf("failed to convert to Symphony objects: %w", err)
-	}
-
-	appPkgLogger.Info("Successfully converted to Symphony objects",
-		"packageId", packageId,
-		"catalogId", catalog.ObjectMeta.Name,
-		"solutionId", solution.ObjectMeta.Name,
-		"containerId", solutionContainer.ObjectMeta.Name)
-
-	// Phase 9: Store Symphony objects
-	appPkgLogger.Info("Phase 9: Storing Symphony objects in state provider",
-		"packageId", packageId)
-
-	if err := s.storeSymphonyObjects(ctx, catalog, solution, solutionContainer, solutionsManager, solutionContainerManager, catalogsManager); err != nil {
-		appPkgLogger.Error("Failed to store Symphony objects",
-			"packageId", packageId,
-			"error", err)
-		return nil, fmt.Errorf("failed to store Symphony objects: %w", err)
-	}
-
-	totalProcessDuration := time.Since(gitProcessStart)
-	appPkgLogger.Info("Git repository processing completed successfully",
-		"packageId", packageId,
-		"totalProcessDuration", totalProcessDuration,
-		"downloadDuration", downloadDuration)
-
-	// Prepare return package
-	resultPkg := pkg
-	resultPkg.Description = appDesc
-	resultPkg.Resources = allResources
-
-	return &resultPkg, nil
 }
 
 // processOciRepositoryWithStateTracking handles OCI repository processing with detailed state tracking
@@ -501,7 +370,11 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		"ociProcessStart", ociProcessStart)
 
 	// Phase 1: Parse and validate OCI repository configuration
-	appPkgLogger.Debug("Phase 1: Parsing OCI repository configuration", "packageId", packageId)
+	appPkgLogger.Debug(
+		"Phase 1: Parsing OCI repository configuration",
+		"packageId",
+		packageId,
+	)
 	ociRepo, err := pkg.Package.Spec.Source.AsOciRepo()
 	if err != nil {
 		appPkgLogger.Error("Failed to parse OCI repository configuration",
@@ -519,7 +392,11 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		"isDigestBasedFetch", ociRepo.Digest != nil)
 
 	// Phase 2: Set up authentication
-	appPkgLogger.Debug("Phase 2: Setting up OCI authentication", "packageId", packageId)
+	appPkgLogger.Debug(
+		"Phase 2: Setting up OCI authentication",
+		"packageId",
+		packageId,
+	)
 	var username, token string
 	if ociRepo.Authentication != nil {
 		if ociRepo.Authentication.Username != nil {
@@ -527,14 +404,30 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		}
 
 		if ociRepo.Authentication.Password != nil {
-			appPkgLogger.Debug("OCI authentication configured with basic password", "packageId", packageId, "username", username)
+			appPkgLogger.Debug(
+				"OCI authentication configured with basic password",
+				"packageId",
+				packageId,
+				"username",
+				username,
+			)
 		} else if ociRepo.Authentication.Token != nil {
 			token = *ociRepo.Authentication.Token
-			appPkgLogger.Debug("OCI authentication configured with token", "packageId", packageId, "username", username)
+			appPkgLogger.Debug(
+				"OCI authentication configured with token",
+				"packageId",
+				packageId,
+				"username",
+				username,
+			)
 		}
 	}
 	if username == "" {
-		appPkgLogger.Debug("No OCI authentication provided, using anonymous access", "packageId", packageId)
+		appPkgLogger.Debug(
+			"No OCI authentication provided, using anonymous access",
+			"packageId",
+			packageId,
+		)
 	}
 
 	// Phase 3: Determine OCI tag
@@ -549,14 +442,15 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		"ociUrl", ociRepo.RegistryUrl,
 		"tag", tag)
 
-	pkgPath, downloadedAppPkg, err := pkgMgr.LoadPackageFromOci(
+	pkgPath, downloadedAppPkg, err := pkgMgr.LoadFromOCI(
+		ctx,
 		ociRepo.RegistryUrl,
 		ociRepo.Repository,
 		tag,
 		username,
 		token,
 		false,
-		time.Second*60,
+		time.Second*30,
 	)
 	if err != nil {
 		appPkgLogger.Error("Failed to download package from OCI repository",
@@ -588,9 +482,13 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		"downloadDuration", downloadDuration)
 
 	// Phase 5: Parse application description
-	appPkgLogger.Info("Phase 5: Parsing application description from downloaded package",
-		"packageId", packageId,
-		"packagePath", pkgPath)
+	appPkgLogger.Info(
+		"Phase 5: Parsing application description from downloaded package",
+		"packageId",
+		packageId,
+		"packagePath",
+		pkgPath,
+	)
 
 	appDesc, packageResources, err := s.parseApplicationDescription(pkgPath)
 	if err != nil {
@@ -598,17 +496,27 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 			"packageId", packageId,
 			"packagePath", pkgPath,
 			"error", err)
-		return nil, fmt.Errorf("failed to parse application description: %w", err)
+		return nil, fmt.Errorf(
+			"failed to parse application description: %w",
+			err,
+		)
 	}
 
 	// Phase 6: Validate application description
-	appPkgLogger.Debug("Phase 6: Validating application description", "packageId", packageId)
+	appPkgLogger.Debug(
+		"Phase 6: Validating application description",
+		"packageId",
+		packageId,
+	)
 	if err := s.validateApplicationDescription(appDesc); err != nil {
 		appPkgLogger.Error("Application description validation failed",
 			"packageId", packageId,
 			"appId", appDesc.Metadata.Id,
 			"error", err)
-		return nil, fmt.Errorf("application description validation failed: %w", err)
+		return nil, fmt.Errorf(
+			"application description validation failed: %w",
+			err,
+		)
 	}
 
 	// Phase 7: Merge resources from OCI download and package parsing
@@ -621,12 +529,19 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		allResources[k] = v
 	}
 
-	appPkgLogger.Info("Application description parsed and validated successfully",
-		"packageId", packageId,
-		"appId", appDesc.Metadata.Id,
-		"appName", appDesc.Metadata.Name,
-		"appVersion", appDesc.Metadata.Version,
-		"totalResourceCount", len(allResources))
+	appPkgLogger.Info(
+		"Application description parsed and validated successfully",
+		"packageId",
+		packageId,
+		"appId",
+		appDesc.Metadata.Id,
+		"appName",
+		appDesc.Metadata.Name,
+		"appVersion",
+		appDesc.Metadata.Version,
+		"totalResourceCount",
+		len(allResources),
+	)
 
 	// Phase 8: Convert to Symphony objects
 	appPkgLogger.Info("Phase 8: Converting application to Symphony objects",
@@ -639,7 +554,11 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		AppResources:   allResources,
 	}
 
-	catalog, solution, solutionContainer, err := s.Transformer.AppPackageToSymphonyObjects(ctx, dbRow, allResources)
+	catalog, solution, solutionContainer, err := s.Transformer.AppPackageToSymphonyObjects(
+		ctx,
+		dbRow,
+		allResources,
+	)
 	if err != nil {
 		appPkgLogger.Error("Failed to convert to Symphony objects",
 			"packageId", packageId,
@@ -658,7 +577,15 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 	appPkgLogger.Info("Phase 9: Storing Symphony objects in state provider",
 		"packageId", packageId)
 
-	if err := s.storeSymphonyObjects(ctx, catalog, solution, solutionContainer, solutionsManager, solutionContainerManager, catalogsManager); err != nil {
+	if err := s.storeSymphonyObjects(
+		ctx,
+		catalog,
+		solution,
+		solutionContainer,
+		solutionsManager,
+		solutionContainerManager,
+		catalogsManager,
+	); err != nil {
 		appPkgLogger.Error("Failed to store Symphony objects",
 			"packageId", packageId,
 			"error", err)
@@ -680,7 +607,9 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 }
 
 // parseApplicationDescription parses the YAML application description and extracts resources
-func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonStdAPI.AppDescription, map[string][]byte, error) {
+func (s *AppPkgManager) parseApplicationDescription(
+	pkgPath string,
+) (*margoNonStdAPI.AppDescription, map[string][]byte, error) {
 	appPkgLogger.Debug("Parsing application description from package",
 		"packagePath", pkgPath)
 
@@ -693,7 +622,9 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonSt
 			appPkgLogger.Error("Application description file not found",
 				"packagePath", pkgPath,
 				"searchedFiles", "margo.yaml")
-			return nil, nil, fmt.Errorf("application description file not found in package")
+			return nil, nil, fmt.Errorf(
+				"application description file not found in package",
+			)
 		}
 	}
 
@@ -706,12 +637,18 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonSt
 		appPkgLogger.Error("Failed to read application description file",
 			"descriptionFile", descriptionFile,
 			"error", err)
-		return nil, nil, fmt.Errorf("failed to read application description: %w", err)
+		return nil, nil, fmt.Errorf(
+			"failed to read application description: %w",
+			err,
+		)
 	}
 
 	jsonData, err := powerfulYaml.YAMLToJSON(yamlData)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to convert application description yaml to json, %w", err)
+		return nil, nil, fmt.Errorf(
+			"failed to convert application description yaml to json, %w",
+			err,
+		)
 	}
 
 	var appDesc margoNonStdAPI.AppDescription
@@ -719,7 +656,10 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonSt
 		appPkgLogger.Error("Failed to parse application description YAML",
 			"descriptionFile", descriptionFile,
 			"error", err)
-		return nil, nil, fmt.Errorf("failed to parse application description YAML: %w", err)
+		return nil, nil, fmt.Errorf(
+			"failed to parse application description YAML: %w",
+			err,
+		)
 	}
 
 	appPkgLogger.Info("Successfully parsed application description",
@@ -731,9 +671,13 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonSt
 	// Extract resource files
 	resources, err := s.extractResourceFiles(pkgPath)
 	if err != nil {
-		appPkgLogger.Warn("Failed to extract resource files, continuing without resources",
-			"packagePath", pkgPath,
-			"error", err)
+		appPkgLogger.Warn(
+			"Failed to extract resource files, continuing without resources",
+			"packagePath",
+			pkgPath,
+			"error",
+			err,
+		)
 		resources = make(map[string][]byte)
 	}
 
@@ -745,39 +689,48 @@ func (s *AppPkgManager) parseApplicationDescription(pkgPath string) (*margoNonSt
 }
 
 // extractResourceFiles extracts all resource files from the package directory
-func (s *AppPkgManager) extractResourceFiles(pkgPath string) (map[string][]byte, error) {
+func (s *AppPkgManager) extractResourceFiles(
+	pkgPath string,
+) (map[string][]byte, error) {
 	resources := make(map[string][]byte)
 
-	appPkgLogger.Debug("Extracting resource files from package", "packagePath", pkgPath)
+	appPkgLogger.Debug(
+		"Extracting resource files from package",
+		"packagePath",
+		pkgPath,
+	)
 
-	err := filepath.Walk(pkgPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	err := filepath.Walk(
+		pkgPath,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
 
-		// Skip directories and hidden files
-		if info.IsDir() || strings.HasPrefix(info.Name(), ".") {
+			// Skip directories and hidden files
+			if info.IsDir() || strings.HasPrefix(info.Name(), ".") {
+				return nil
+			}
+
+			// Get relative path from package root
+			relPath, err := filepath.Rel(pkgPath, path)
+			if err != nil {
+				return err
+			}
+
+			// Read file content
+			content, err := os.ReadFile(path)
+			if err != nil {
+				appPkgLogger.Warn("Failed to read resource file, skipping",
+					"filePath", path,
+					"error", err)
+				return nil // Continue processing other files
+			}
+
+			resources[relPath] = content
 			return nil
-		}
-
-		// Get relative path from package root
-		relPath, err := filepath.Rel(pkgPath, path)
-		if err != nil {
-			return err
-		}
-
-		// Read file content
-		content, err := os.ReadFile(path)
-		if err != nil {
-			appPkgLogger.Warn("Failed to read resource file, skipping",
-				"filePath", path,
-				"error", err)
-			return nil // Continue processing other files
-		}
-
-		resources[relPath] = content
-		return nil
-	})
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk package directory: %w", err)
@@ -787,7 +740,9 @@ func (s *AppPkgManager) extractResourceFiles(pkgPath string) (map[string][]byte,
 }
 
 // getResourceFileNames returns a slice of resource file names for logging
-func (s *AppPkgManager) getResourceFileNames(resources map[string][]byte) []string {
+func (s *AppPkgManager) getResourceFileNames(
+	resources map[string][]byte,
+) []string {
 	names := make([]string, 0, len(resources))
 	for name := range resources {
 		names = append(names, name)
@@ -796,7 +751,9 @@ func (s *AppPkgManager) getResourceFileNames(resources map[string][]byte) []stri
 }
 
 // validateApplicationDescription validates the parsed application description
-func (s *AppPkgManager) validateApplicationDescription(appDesc *margoNonStdAPI.AppDescription) error {
+func (s *AppPkgManager) validateApplicationDescription(
+	appDesc *margoNonStdAPI.AppDescription,
+) error {
 	appPkgLogger.Debug("Validating application description",
 		"appId", appDesc.Metadata.Id,
 		"appName", appDesc.Metadata.Name)
@@ -821,14 +778,21 @@ func (s *AppPkgManager) validateApplicationDescription(appDesc *margoNonStdAPI.A
 			return fmt.Errorf("deployment profile %d: type is required", i)
 		}
 		if len(profile.Components) == 0 {
-			return fmt.Errorf("deployment profile %d: at least one component is required", i)
+			return fmt.Errorf(
+				"deployment profile %d: at least one component is required",
+				i,
+			)
 		}
 
 		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeHelmV3 {
 			for j, component := range profile.Components {
 				helmComp, _ := component.AsHelmApplicationDeploymentProfileComponent()
 				if helmComp.Name == "" {
-					return fmt.Errorf("deployment profile %d, component %d: name is required", i, j)
+					return fmt.Errorf(
+						"deployment profile %d, component %d: name is required",
+						i,
+						j,
+					)
 				}
 			}
 		}
@@ -836,7 +800,11 @@ func (s *AppPkgManager) validateApplicationDescription(appDesc *margoNonStdAPI.A
 			for j, component := range profile.Components {
 				composeComp, _ := component.AsComposeApplicationDeploymentProfileComponent()
 				if composeComp.Name == "" {
-					return fmt.Errorf("deployment profile %d, component %d: name is required", i, j)
+					return fmt.Errorf(
+						"deployment profile %d, component %d: name is required",
+						i,
+						j,
+					)
 				}
 			}
 		}
@@ -864,8 +832,16 @@ func (s *AppPkgManager) storeSymphonyObjects(
 		"containerId", container.ObjectMeta.Name)
 
 	// Store Catalog
-	appPkgLogger.Debug("Storing Catalog object", "catalogId", catalog.ObjectMeta.Name)
-	if err := catalogsManager.UpsertState(ctx, catalog.ObjectMeta.Name, *catalog); err != nil {
+	appPkgLogger.Debug(
+		"Storing Catalog object",
+		"catalogId",
+		catalog.ObjectMeta.Name,
+	)
+	if err := catalogsManager.UpsertState(
+		ctx,
+		catalog.ObjectMeta.Name,
+		*catalog,
+	); err != nil {
 		appPkgLogger.Error("Failed to store Catalog object",
 			"catalogId", catalog.ObjectMeta.Name,
 			"error", err)
@@ -873,8 +849,16 @@ func (s *AppPkgManager) storeSymphonyObjects(
 	}
 
 	// Store Solution
-	appPkgLogger.Debug("Storing Solution object", "solutionId", solution.ObjectMeta.Name)
-	if err := solutionsManager.UpsertState(ctx, solution.ObjectMeta.Name, *solution); err != nil {
+	appPkgLogger.Debug(
+		"Storing Solution object",
+		"solutionId",
+		solution.ObjectMeta.Name,
+	)
+	if err := solutionsManager.UpsertState(
+		ctx,
+		solution.ObjectMeta.Name,
+		*solution,
+	); err != nil {
 		appPkgLogger.Error("Failed to store Solution object",
 			"solutionId", solution.ObjectMeta.Name,
 			"error", err)
@@ -882,8 +866,16 @@ func (s *AppPkgManager) storeSymphonyObjects(
 	}
 
 	// Store SolutionContainer
-	appPkgLogger.Debug("Storing SolutionContainer object", "containerId", container.ObjectMeta.Name)
-	if err := solutionContainerManager.UpsertState(ctx, container.ObjectMeta.Name, *container); err != nil {
+	appPkgLogger.Debug(
+		"Storing SolutionContainer object",
+		"containerId",
+		container.ObjectMeta.Name,
+	)
+	if err := solutionContainerManager.UpsertState(
+		ctx,
+		container.ObjectMeta.Name,
+		*container,
+	); err != nil {
 		appPkgLogger.Error("Failed to store SolutionContainer object",
 			"containerId", container.ObjectMeta.Name,
 			"error", err)
@@ -928,9 +920,13 @@ func (s *AppPkgManager) DeleteAppPkg(ctx context.Context, pkgId string) error {
 
 	// Delete associated Symphony objects if they exist
 	if err := s.deleteSymphonyObjects(ctx, pkgId); err != nil {
-		appPkgLogger.Warn("Failed to delete Symphony objects, continuing with package deletion",
-			"packageId", pkgId,
-			"error", err)
+		appPkgLogger.Warn(
+			"Failed to delete Symphony objects, continuing with package deletion",
+			"packageId",
+			pkgId,
+			"error",
+			err,
+		)
 	}
 
 	// Delete package from database
@@ -950,16 +946,30 @@ func (s *AppPkgManager) DeleteAppPkg(ctx context.Context, pkgId string) error {
 }
 
 // deleteSymphonyObjects deletes associated Symphony objects
-func (s *AppPkgManager) deleteSymphonyObjects(ctx context.Context, pkgId string) error {
-	appPkgLogger.Debug("Deleting associated Symphony objects", "packageId", pkgId)
+func (s *AppPkgManager) deleteSymphonyObjects(
+	ctx context.Context,
+	pkgId string,
+) error {
+	appPkgLogger.Debug(
+		"Deleting associated Symphony objects",
+		"packageId",
+		pkgId,
+	)
 	// TODO: pending
 
-	appPkgLogger.Debug("Symphony objects deletion completed", "packageId", pkgId)
+	appPkgLogger.Debug(
+		"Symphony objects deletion completed",
+		"packageId",
+		pkgId,
+	)
 	return nil
 }
 
 // GetAppPkg retrieves an application package by ID
-func (s *AppPkgManager) GetAppPkg(ctx context.Context, pkgId string) (*ApplicationPackage, error) {
+func (s *AppPkgManager) GetAppPkg(
+	ctx context.Context,
+	pkgId string,
+) (*ApplicationPackage, error) {
 	appPkgLogger.Debug("Retrieving application package", "packageId", pkgId)
 
 	if pkgId == "" {
@@ -990,13 +1000,19 @@ func (s *AppPkgManager) GetAppPkg(ctx context.Context, pkgId string) (*Applicati
 }
 
 // ListAppPkgs lists all application packages
-func (s *AppPkgManager) ListAppPkgs(ctx context.Context) (*margoNonStdAPI.ApplicationPackageListResp, error) {
+func (s *AppPkgManager) ListAppPkgs(
+	ctx context.Context,
+) (*margoNonStdAPI.ApplicationPackageListResp, error) {
 	appPkgLogger.Debug("Listing all application packages")
 
 	// Get all packages from database
 	dbRows, err := s.Database.ListAppPackages(ctx)
 	if err != nil {
-		appPkgLogger.Error("Failed to list packages from database", "error", err)
+		appPkgLogger.Error(
+			"Failed to list packages from database",
+			"error",
+			err,
+		)
 		return nil, fmt.Errorf("failed to list packages: %w", err)
 	}
 
