@@ -26,7 +26,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/sandbox v0.0.0-20260420061807-7148a3c32a59
+	github.com/margo/sandbox v0.0.0-20260420071722-e0cd672606ed
 	github.com/princjef/mageutil v1.0.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	gopkg.in/yaml.v2 v2.4.0
