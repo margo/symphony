@@ -60,6 +60,8 @@ github.com/lestrrat-go/option v1.0.1 h1:oAzP2fvZGQKWkvHa1/SAcFolBEca1oN+mQ7eooNB
 github.com/lestrrat-go/option v1.0.1/go.mod h1:5ZHFbivi4xwXxhxY9XHDe2FHo6/Z7WWmtT7T5nBBp3I=
 github.com/lestrrat-go/sfv v1.0.0 h1:+/VOs7lhUWAwNIklow4kPYlit0fPBC6HsF+GHKXrhGM=
 github.com/lestrrat-go/sfv v1.0.0/go.mod h1:wawOORrbzB4Vh0QT7WtbWEbMuTbjS8OPxum1wZAYCiQ=
+github.com/margo/sandbox v0.0.1 h1:Yw01x+ZrGOIoZ91jERW5jBtFnKF0x90HbRnzwh+0G7w=
+github.com/margo/sandbox v0.0.1/go.mod h1:GaaOzZOMEiYV1KykeabKsBoBey7MIFbzDJLruqd0RYk=
 github.com/margo/sandbox v0.0.2-0.20260424125929-30ac8b328577 h1:kV6aRrygeQUrHRkzf/1iEhIyWTi3yoObTVxjaSayjDI=
 github.com/margo/sandbox v0.0.2-0.20260424125929-30ac8b328577/go.mod h1:GaaOzZOMEiYV1KykeabKsBoBey7MIFbzDJLruqd0RYk=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=

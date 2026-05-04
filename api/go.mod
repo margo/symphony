@@ -66,7 +66,7 @@ require (
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/lestrrat-go/sfv v1.0.0 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
-	github.com/margo/sandbox v0.0.2-0.20260424125929-30ac8b328577 // indirect
+	github.com/margo/sandbox v0.0.1 // indirect
 	github.com/microsoft/ApplicationInsights-Go v0.4.4 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
