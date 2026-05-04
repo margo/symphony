@@ -24,6 +24,7 @@ require (
 	github.com/lestrrat-go/htmsig v1.0.0 // indirect
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/lestrrat-go/sfv v1.0.0 // indirect
+	github.com/margo/sandbox v0.0.2-0.20260424125929-30ac8b328577 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -53,7 +54,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/sandbox v0.0.2-0.20260430144358-ee56cd3bec14
 	github.com/princjef/mageutil v1.0.0
 )
 
