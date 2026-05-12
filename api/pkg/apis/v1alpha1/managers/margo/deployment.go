@@ -131,9 +131,9 @@ func (s *DeploymentManager) deleteObjectFromCache(topic string, event v1alpha2.E
 	var err error
 	switch event.Body.(type) {
 	case AppPackageDatabaseRow:
-		err = s.database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Metadata.Id)
+		err = s.database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Id)
 	case DeploymentDatabaseRow:
-		err = s.database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Metadata.Id, false)
+		err = s.database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
 	case DeviceDatabaseRow:
 		err = s.database.DeleteDevice(context.Background(), event.Body.(DeviceDatabaseRow).Capabilities.Properties.Id)
 	default:
@@ -167,7 +167,7 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 	}
 
 	// Store in database (single call)
-	if err := s.storeDeployment(ctx, *deployment, *deployment.Metadata.Id, appPkg.Description.Metadata.Id, appPkg.Description.Metadata.Version); err != nil {
+	if err := s.storeDeployment(ctx, *deployment, *deployment.Id, *appPkg.Description.Id, appPkg.Description.Metadata.Version); err != nil {
 		return nil, fmt.Errorf("failed to store deployment: %w", err)
 	}
 
@@ -194,7 +194,7 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 		deploymentLogger.WarnfCtx(ctx, "CreateDeployment: No device reference found in deployment request")
 	}
 
-	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully created deployment '%s'", *deployment.Metadata.Id)
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Successfully created deployment '%s'", *deployment.Id)
 	return deployment, nil
 }
 
@@ -209,11 +209,11 @@ func (s *DeploymentManager) buildInitialDeployment(req margoNonStdAPI.Applicatio
 		ApiVersion: req.ApiVersion,
 		Kind:       "ApplicationDeploymentManifest",
 		Metadata: margoNonStdAPI.Metadata{
-			Id:                &deploymentId,
 			Name:              req.Metadata.Name,
 			Namespace:         req.Metadata.Namespace,
 			CreationTimestamp: &now,
 		},
+		Id:                &deploymentId,
 		Spec: req.Spec,
 		Status: &margoNonStdAPI.ApplicationDeploymentStatus{
 			State:          &state,
@@ -341,18 +341,25 @@ func (s *DeploymentManager) storeDesiredState(ctx context.Context, deployment ma
 
 // buildDesiredState creates the desired state structure cleanly
 func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.ApplicationDeploymentManifestResp, appId, appVersion string) (AppDeploymentState, error) {
+	namespace := ""
+	if deployment.Metadata.Namespace != nil {
+		namespace = *deployment.Metadata.Namespace
+	}
+
 	desiredState := AppDeploymentState{
 		AppDeploymentManifest: sbi.AppDeploymentManifest{
 			ApiVersion: deployment.ApiVersion,
 			Kind:       deployment.Kind,
 			Metadata: sbi.AppDeploymentMetadata{
 				Name:        deployment.Metadata.Name,
-				Namespace:   deployment.Metadata.Namespace,
-				Id:          deployment.Metadata.Id,
-				Annotations: deployment.Metadata.Annotations,
+				Namespace:   namespace,
+				// Annotations: deployment.Metadata.Annotations,
 				Labels:      deployment.Metadata.Labels,
+				DeviceId: *deployment.Spec.DeviceRef.Id,
 			},
+			Id:          deployment.Id,
 			Spec: sbi.AppDeploymentSpec{
+				ApplicationId: appId,
 				DeploymentProfile: s.tranformer.ConvertDeploymentProfile(deployment.Spec.DeploymentProfile),
 				Parameters:        &sbi.AppDeploymentParams{},
 			},
@@ -360,11 +367,12 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 		Status: sbi.DeploymentStatusManifest{
 			ApiVersion:   "margo.org",
 			Kind:         "DeploymentStatus",
-			DeploymentId: *deployment.Metadata.Id,
+			DeploymentId: *deployment.Id,
 			Status: struct {
 				Error *struct {
 					Code    *string "json:\"code,omitempty\""
 					Message *string "json:\"message,omitempty\""
+					Source  *string `json:"source,omitempty"`
 				} "json:\"error,omitempty\""
 				State sbi.DeploymentStatusManifestStatusState "json:\"state\""
 			}{

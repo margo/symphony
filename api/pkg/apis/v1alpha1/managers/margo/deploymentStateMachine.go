@@ -224,7 +224,7 @@ func (sm *DeploymentStateMachine) updateDeploymentState(
 	}
 
 	sm.log.InfofCtx(ctx, "DeploymentStateMachine: Updated deployment '%s' to state '%s'",
-		*deployment.DeploymentRequest.Metadata.Id, newState)
+		*deployment.DeploymentRequest.Id, newState)
 
 	return nil
 }

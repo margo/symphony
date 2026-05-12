@@ -171,7 +171,7 @@ func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGr
 }
 
 func (db *MargoDatabase) UpsertAppPackage(ctx context.Context, pkg AppPackageDatabaseRow) error {
-	packageId := *pkg.PackageRequest.Metadata.Id
+	packageId := *pkg.PackageRequest.Id
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: db.appPkgMetadata,
@@ -286,7 +286,7 @@ func (db *MargoDatabase) AppPackageExists(ctx context.Context, packageId string)
 }
 
 func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment DeploymentDatabaseRow, publishEvent bool) error {
-	deploymentId := *deployment.DeploymentRequest.Metadata.Id
+	deploymentId := *deployment.DeploymentRequest.Id
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: db.deploymentMetadata,
@@ -523,16 +523,16 @@ func (db *MargoDatabase) GetDeploymentsByDevice(ctx context.Context, deviceId st
 
 		if deployment.DeploymentRequest.Spec.DeviceRef != nil && deployment.DeploymentRequest.Spec.DeviceRef.Id != nil {
 			db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Found deployment %s assigned to device %s",
-				*deployment.DeploymentRequest.Metadata.Id, *deployment.DeploymentRequest.Spec.DeviceRef.Id)
+				*deployment.DeploymentRequest.Id, *deployment.DeploymentRequest.Spec.DeviceRef.Id)
 
 			if *deployment.DeploymentRequest.Spec.DeviceRef.Id == deviceId {
 				deviceDeployments = append(deviceDeployments, deployment)
 				db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: MATCH - Adding deployment %s to device %s",
-					*deployment.DeploymentRequest.Metadata.Id, deviceId)
+					*deployment.DeploymentRequest.Id, deviceId)
 			}
 		} else {
 			db.MgrContext.Logger.WarnfCtx(ctx, "GetDeploymentsByDevice: Deployment %s has no device reference",
-				*deployment.DeploymentRequest.Metadata.Id)
+				*deployment.DeploymentRequest.Id)
 		}
 	}
 

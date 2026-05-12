@@ -216,9 +216,9 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 	var err error
 	switch event.Body.(type) {
 	case AppPackageDatabaseRow:
-		err = s.Database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Metadata.Id)
+		err = s.Database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Id)
 	case DeploymentDatabaseRow:
-		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Metadata.Id, false)
+		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
 	case DeviceDatabaseRow:
 		err = s.Database.DeleteDevice(context.Background(), event.Body.(DeviceDatabaseRow).Capabilities.Properties.Id)
 	case DeploymentBundleRow:
@@ -443,9 +443,9 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			ApiVersion: "non.margo.org",
 			Kind:       "Device",
 			Metadata: margoNonStdAPI.Metadata{
-				Id:                &row.DeviceClientId,
 				CreationTimestamp: &row.CreatedAt,
 			},
+			Id:                &row.DeviceClientId,
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,
 				Signature:    row.DevicePubCert,

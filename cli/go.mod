@@ -54,7 +54,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/sandbox v0.0.2-0.20260526104855-352665c48d51
+	github.com/margo/sandbox v0.0.2-0.20260616082727-2bdc60b6f6d3
 	github.com/princjef/mageutil v1.0.0
 )
 
@@ -64,6 +64,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	sigs.k8s.io/yaml v1.6.0
 )
