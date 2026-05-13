@@ -15,6 +15,8 @@ This document explains:
 
 ---
 
+**NOTE:** All development tasks will be branched out from `development` only. The branches, `main` and `development` are protected and hence you can't make any contributions directly let alone a PR is allowed. We follow the same branching and git philosophy as mentioned [here in sandbox repo](https://github.com/margo/sandbox/blob/main/CONTRIBUTING.md) . 
+
 # Required Background Reading
 
 Before contributing, review the following repositories and documents.
@@ -24,7 +26,7 @@ Before contributing, review the following repositories and documents.
 | [Margo Specification](https://github.com/margo/specification)                                       | Defines the official Margo APIs and behavior                |
 | [Sandbox Repository](https://github.com/margo/sandbox)                                              | Shared specs, generated models, SDKs, integration workflows |
 | [Symphony Internals Discussion](https://github.com/margo/sandbox/issues/12#issuecomment-2969577828) | Explains Symphony internals and extension limitations       |
-| Extension Pattern                                                                                                          | Explains how Margo integrates into Symphony                 |
+| Extension Pattern                                                                                   | Explains how Margo integrates into Symphony                 |
 
 ---
 
