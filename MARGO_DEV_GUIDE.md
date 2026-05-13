@@ -1,6 +1,6 @@
 # Developer Guide — Margo Integration on Top of Symphony
 
-This repository is a fork of [Microsoft Symphony](https://github.com/microsoft/symphony) and has been adapted to support an end-to-end Proof of Concept (PoC) for the Margo ecosystem.
+This repository is a fork of [Symphony](https://github.com/eclipse-symphony/symphony) and has been adapted to support an end-to-end Proof of Concept (PoC) for the Margo ecosystem.
 
 The repository demonstrates how the [Margo Specification](https://github.com/margo/specification) can be implemented on top of Symphony while also introducing additional APIs and workflows needed for real-world orchestration and user interaction.
 
@@ -478,9 +478,44 @@ This design enables:
 
 ---
 
+# Build & Run
+
+To build symphony locally you can use the following commands:
+```bash
+# to build Rust provider binding
+cd api
+pushd .
+cd api/pkg/apis/v1alpha1/providers/target/rust
+cargo build --release
+popd #back to the api folder
+export LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release        
+CGO_ENABLED=1 GOARCH=amd64 GOOS=linux CC=gcc CGO_LDFLAGS="-L$LIBDIR" go build -o symphony-api
+# copy libsymphony.so to /usr/local/lib folder
+sudo cp $LIBDIR/libsymphony.so /usr/local/lib
+sudo ldconfig
+```
+
+# then run it:
+```bash
+./symphony-agent -c ./symphony-api-margo.json -l Debug
+```
+
+To build Maestro locally you can use the following commands:
+```bash
+cd cli
+go build -o maestro
+```
+
+# then run it:
+```bash
+./maestro wfm --help
+```
+
+---
+
 # Testing
 
-There is no internal unit tests extended for Margo, but integration tests are available and are managed from the Sandbox repository. You can use it to verify if your changes have broken anything. If you have written something new, then extend the sanity test case in the workflow [here](https://github.com/margo/sandbox/blob/main/.github/workflows/sandbox-sanity-test.yml) .
+There is no internal unit tests extended here, but integration tests are available and are managed from the Sandbox repository. You can use it to verify if your changes have broken anything. If you have written something new, then extend the sanity test case in the workflow [here](https://github.com/margo/sandbox/blob/main/.github/workflows/sandbox-sanity-test.yml) .
 
 The primary workflow is:
 
