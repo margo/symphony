@@ -154,7 +154,7 @@ pub unsafe extern "C" fn create_provider_instance(
     }
 
     let Ok(lib) = (unsafe {
-        Library::new(provider_path).inspect_err(|err| {
+        Library::new(provider_path).map_err(|err| {
             error!("Failed to load provider library [{}]: {err}", provider_path);
         })
     }) else {
