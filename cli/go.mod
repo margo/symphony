@@ -1,12 +1,12 @@
 module github.com/eclipse-symphony/symphony/cli
 
-go 1.24.4
+go 1.25.10
 
 replace github.com/eclipse-symphony/symphony/api => ../api
 
 replace github.com/eclipse-symphony/symphony/coa => ../coa
 
-require github.com/spf13/cobra v1.9.1
+require github.com/spf13/cobra v1.10.2
 
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
@@ -34,14 +34,15 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.50.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/net v0.41.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	helm.sh/helm/v3 v3.18.4 // indirect
-	k8s.io/apimachinery v0.33.2 // indirect
+	helm.sh/helm/v3 v3.18.5 // indirect
+	k8s.io/apimachinery v0.33.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
@@ -53,7 +54,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/sandbox v0.0.1
+	github.com/margo/sandbox v0.0.2-0.20260519051343-e1bd6748669b
 	github.com/princjef/mageutil v1.0.0
 )
 
@@ -62,7 +63,7 @@ require (
 	github.com/jedib0t/go-pretty/v6 v6.4.2
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/spf13/pflag v1.0.7 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	sigs.k8s.io/yaml v1.4.0
+	github.com/spf13/pflag v1.0.10 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	sigs.k8s.io/yaml v1.5.0
 )
