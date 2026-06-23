@@ -139,7 +139,7 @@ func (s *AppPkgManager) OnboardAppPkg(
 		"operation", operation,
 		"initialStatus", operationState)
 
-	appPkg.Package.Metadata.Id = &appPkgId
+	appPkg.Package.Id = &appPkgId
 	appPkg.Package.RecentOperation = &margoNonStdAPI.ApplicationPackageRecentOperation{}
 	appPkg.Package.RecentOperation.Op = operation
 	appPkg.Package.RecentOperation.Status = operationState
@@ -152,7 +152,7 @@ func (s *AppPkgManager) OnboardAppPkg(
 	}
 
 	appPkgLogger.Debug("Package object prepared with metadata",
-		"packageId", *appPkg.Package.Metadata.Id,
+		"packageId", *appPkg.Package.Id,
 		"packageName", appPkg.Package.Metadata.Name,
 		"operation", appPkg.Package.RecentOperation.Op,
 		"status", appPkg.Package.RecentOperation.Status)
@@ -166,14 +166,14 @@ func (s *AppPkgManager) OnboardAppPkg(
 	}
 	if err := s.Database.UpsertAppPackage(ctx, dbRow); err != nil {
 		appPkgLogger.Error("Failed to store package in database",
-			"packageId", *appPkg.Package.Metadata.Id,
+			"packageId", *appPkg.Package.Id,
 			"error", err)
 		return nil, fmt.Errorf("failed to store app pkg in database: %w", err)
 	}
 
 	// Start async processing
 	appPkgLogger.Info("Starting async processing for package",
-		"packageId", *appPkg.Package.Metadata.Id,
+		"packageId", *appPkg.Package.Id,
 		"packageName", appPkg.Package.Metadata.Name)
 	go func() {
 		time.Sleep(time.Second * 8)
@@ -188,7 +188,7 @@ func (s *AppPkgManager) OnboardAppPkg(
 
 	onboardingDuration := time.Since(startTime)
 	appPkgLogger.Info("Package onboarding initiated successfully",
-		"packageId", *appPkg.Package.Metadata.Id,
+		"packageId", *appPkg.Package.Id,
 		"packageName", appPkg.Package.Metadata.Name,
 		"onboardingDuration", onboardingDuration)
 
@@ -204,7 +204,7 @@ func (s *AppPkgManager) processPackageAsync(
 	catalogsManager *catalogs.CatalogsManager) {
 
 	processStart := time.Now()
-	packageId := *appPkg.Package.Metadata.Id
+	packageId := *appPkg.Package.Id
 
 	appPkgLogger.Info("Starting async package processing with state machine",
 		"packageId", packageId,
@@ -363,7 +363,7 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 	catalogsManager *catalogs.CatalogsManager) (*ApplicationPackage, error) {
 
 	ociProcessStart := time.Now()
-	packageId := *pkg.Package.Metadata.Id
+	packageId := *pkg.Package.Id
 
 	appPkgLogger.Info("Starting OCI repository processing with state tracking",
 		"packageId", packageId,
@@ -511,7 +511,7 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 	if err := s.validateApplicationDescription(appDesc); err != nil {
 		appPkgLogger.Error("Application description validation failed",
 			"packageId", packageId,
-			"appId", appDesc.Metadata.Id,
+			"appId", appDesc.Id,
 			"error", err)
 		return nil, fmt.Errorf(
 			"application description validation failed: %w",
@@ -534,7 +534,7 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		"packageId",
 		packageId,
 		"appId",
-		appDesc.Metadata.Id,
+		appDesc.Id,
 		"appName",
 		appDesc.Metadata.Name,
 		"appVersion",
@@ -546,7 +546,7 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 	// Phase 8: Convert to Symphony objects
 	appPkgLogger.Info("Phase 8: Converting application to Symphony objects",
 		"packageId", packageId,
-		"appId", appDesc.Metadata.Id)
+		"appId", appDesc.Id)
 
 	dbRow := AppPackageDatabaseRow{
 		PackageRequest: pkg.Package,
@@ -562,7 +562,7 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 	if err != nil {
 		appPkgLogger.Error("Failed to convert to Symphony objects",
 			"packageId", packageId,
-			"appId", appDesc.Metadata.Id,
+			"appId", appDesc.Id,
 			"error", err)
 		return nil, fmt.Errorf("failed to convert to Symphony objects: %w", err)
 	}
@@ -663,7 +663,7 @@ func (s *AppPkgManager) parseApplicationDescription(
 	}
 
 	appPkgLogger.Info("Successfully parsed application description",
-		"appId", appDesc.Metadata.Id,
+		"appId", appDesc.Id,
 		"appName", appDesc.Metadata.Name,
 		"appVersion", appDesc.Metadata.Version,
 		"deploymentProfilesCount", len(appDesc.DeploymentProfiles))
@@ -755,11 +755,11 @@ func (s *AppPkgManager) validateApplicationDescription(
 	appDesc *margoNonStdAPI.AppDescription,
 ) error {
 	appPkgLogger.Debug("Validating application description",
-		"appId", appDesc.Metadata.Id,
+		"appId", appDesc.Id,
 		"appName", appDesc.Metadata.Name)
 
 	// Validate required fields
-	if appDesc.Metadata.Id == "" {
+	if appDesc.Id == nil || *appDesc.Id == "" {
 		return fmt.Errorf("application ID is required")
 	}
 	if appDesc.Metadata.Name == "" {
@@ -811,7 +811,7 @@ func (s *AppPkgManager) validateApplicationDescription(
 	}
 
 	appPkgLogger.Debug("Application description validation passed",
-		"appId", appDesc.Metadata.Id,
+		"appId", appDesc.Id,
 		"deploymentProfilesCount", len(appDesc.DeploymentProfiles))
 
 	return nil
@@ -1036,7 +1036,7 @@ func (s *AppPkgManager) ListAppPkgs(
 // 	ctx context.Context,
 // 	appPkg ApplicationPackage,
 // 	err error) error {
-// 	rootResource := *appPkg.Package.Metadata.Id
+// 	rootResource := *appPkg.Package.Id
 // 	catalogName := rootResource + "-v-" + appPkg.Description.Metadata.Version
 // 	// Create minimal Symphony objects even on error
 // 	catalog := &model.CatalogState{

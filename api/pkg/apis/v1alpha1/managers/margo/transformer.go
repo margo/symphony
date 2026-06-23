@@ -36,15 +36,15 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	resources map[string][]byte) (*model.CatalogState, *model.SolutionState, *model.SolutionContainerState, error) {
 
 	transformerLogger.Info("Starting Symphony transformation",
-		"appId", dbRow.AppDescription.Metadata.Id,
+		"appId", dbRow.AppDescription.Id,
 		"appName", dbRow.AppDescription.Metadata.Name,
-		"packageId", *dbRow.PackageRequest.Metadata.Id)
+		"packageId", *dbRow.PackageRequest.Id)
 
 	// Validate required data
 	if dbRow.AppDescription == nil {
 		return nil, nil, nil, fmt.Errorf("app description is required for transformation")
 	}
-	if dbRow.PackageRequest.Metadata.Id == nil {
+	if dbRow.PackageRequest.Id == nil {
 		return nil, nil, nil, fmt.Errorf("package ID is required for transformation")
 	}
 
@@ -61,7 +61,7 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	catalog, err := t.convertToCatalog(appDesc, convCtx, resources)
 	if err != nil {
 		transformerLogger.Error("Failed to convert to catalog",
-			"appId", appDesc.Metadata.Id,
+			"appId", *appDesc.Id,
 			"error", err)
 		return nil, nil, nil, fmt.Errorf("failed to convert to catalog: %w", err)
 	}
@@ -70,7 +70,7 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	solution, err := t.convertToSolution(appDesc, catalog.ObjectMeta.Name)
 	if err != nil {
 		transformerLogger.Error("Failed to convert to solution",
-			"appId", appDesc.Metadata.Id,
+			"appId", *appDesc.Id,
 			"catalogId", catalog.ObjectMeta.Name,
 			"error", err)
 		return nil, nil, nil, fmt.Errorf("failed to convert to solution: %w", err)
@@ -80,14 +80,14 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	solutionContainer, err := t.convertToSolutionContainer(appDesc, solution.ObjectMeta.Name)
 	if err != nil {
 		transformerLogger.Error("Failed to convert to solution container",
-			"appId", appDesc.Metadata.Id,
+			"appId", *appDesc.Id,
 			"solutionId", solution.ObjectMeta.Name,
 			"error", err)
 		return nil, nil, nil, fmt.Errorf("failed to convert to solution container: %w", err)
 	}
 
 	transformerLogger.Info("Symphony transformation completed successfully",
-		"appId", appDesc.Metadata.Id,
+		"appId", *appDesc.Id,
 		"catalogId", catalog.ObjectMeta.Name,
 		"solutionId", solution.ObjectMeta.Name,
 		"containerId", solutionContainer.ObjectMeta.Name)
@@ -102,11 +102,11 @@ func (t *MargoTransformer) convertToCatalog(
 	resources map[string][]byte) (*model.CatalogState, error) {
 
 	transformerLogger.Debug("Converting to Catalog object",
-		"appId", appDesc.Metadata.Id,
+		"appId", *appDesc.Id,
 		"appName", appDesc.Metadata.Name)
 
 	// catalog name should be <rootresource>-v-<version> as per symphony convention
-	catalogId := appDesc.Metadata.Id + "-v-" + appDesc.Metadata.Version
+	catalogId := *appDesc.Id + "-v-" + appDesc.Metadata.Version
 
 	catalog := &model.CatalogState{
 		ObjectMeta: model.ObjectMeta{
@@ -115,7 +115,7 @@ func (t *MargoTransformer) convertToCatalog(
 		},
 		Spec: &model.CatalogSpec{
 			CatalogType:  "solution",
-			RootResource: appDesc.Metadata.Id,
+			RootResource: *appDesc.Id,
 			Version:      appDesc.Metadata.Version,
 			Properties: map[string]interface{}{
 				"spec": map[string]interface{}{
@@ -136,7 +136,7 @@ func (t *MargoTransformer) convertToCatalog(
 
 	transformerLogger.Debug("Catalog object created successfully",
 		"catalogId", catalogId,
-		"appId", appDesc.Metadata.Id)
+		"appId", *appDesc.Id)
 
 	return catalog, nil
 }
@@ -147,10 +147,10 @@ func (t *MargoTransformer) convertToSolution(
 	catalogId string) (*model.SolutionState, error) {
 
 	transformerLogger.Debug("Converting to Solution object",
-		"appId", appDesc.Metadata.Id,
+		"appId", *appDesc.Id,
 		"catalogId", catalogId)
 
-	solutionId := appDesc.Metadata.Id + "-v-" + appDesc.Metadata.Version
+	solutionId := *appDesc.Id + "-v-" + appDesc.Metadata.Version
 
 	// Convert deployment profiles to components
 	components, err := t.convertDeploymentProfilesToComponents(appDesc.DeploymentProfiles, appDesc.Configuration, appDesc.Parameters)
@@ -165,12 +165,12 @@ func (t *MargoTransformer) convertToSolution(
 		},
 		Spec: &model.SolutionSpec{
 			Version:      appDesc.Metadata.Version,
-			RootResource: appDesc.Metadata.Id,
+			RootResource: *appDesc.Id,
 			DisplayName:  appDesc.Metadata.Name,
 			Components:   components,
 			Metadata: map[string]string{
 				"description":   *appDesc.Metadata.Description,
-				"applicationId": appDesc.Metadata.Id,
+				"applicationId": *appDesc.Id,
 				"catalogRef":    catalogId,
 				"profileCount":  fmt.Sprintf("%d", len(appDesc.DeploymentProfiles)),
 			},
@@ -179,7 +179,7 @@ func (t *MargoTransformer) convertToSolution(
 
 	transformerLogger.Debug("Solution object created successfully",
 		"solutionId", solutionId,
-		"appId", appDesc.Metadata.Id,
+		"appId", *appDesc.Id,
 		"componentCount", len(components))
 
 	return solution, nil
@@ -191,10 +191,10 @@ func (t *MargoTransformer) convertToSolutionContainer(
 	solutionId string) (*model.SolutionContainerState, error) {
 
 	transformerLogger.Debug("Converting to SolutionContainer object",
-		"appId", appDesc.Metadata.Id,
+		"appId", appDesc.Id,
 		"solutionId", solutionId)
 
-	containerId := appDesc.Metadata.Id + "-v-" + appDesc.Metadata.Version
+	containerId := *appDesc.Id + "-v-" + appDesc.Metadata.Version
 
 	solutionContainer := &model.SolutionContainerState{
 		ObjectMeta: model.ObjectMeta{
@@ -208,7 +208,7 @@ func (t *MargoTransformer) convertToSolutionContainer(
 
 	transformerLogger.Debug("SolutionContainer object created successfully",
 		"containerId", containerId,
-		"appId", appDesc.Metadata.Id,
+		"appId", *appDesc.Id,
 		"solutionId", solutionId)
 
 	return solutionContainer, nil

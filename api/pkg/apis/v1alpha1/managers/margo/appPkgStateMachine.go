@@ -144,7 +144,7 @@ func (sm *AppPkgStateMachine) updatePackageState(
 	}
 
 	sm.log.InfofCtx(ctx, "AppPkgStateMachine: Updated package '%s' to state '%s'",
-		*pkg.PackageRequest.Metadata.Id, newState)
+		*pkg.PackageRequest.Id, newState)
 
 	return nil
 }

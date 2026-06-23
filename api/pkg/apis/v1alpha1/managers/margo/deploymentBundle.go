@@ -115,7 +115,7 @@ func (s *DeploymentBundleManager) upsertObjectInCache(topic string, event v1alph
 			}
 		} else {
 			deploymentBundleLogger.WarnfCtx(context.Background(), "upsertObjectInCache: Deployment %s has no device reference",
-				*deployment.DeploymentRequest.Metadata.Id)
+				*deployment.DeploymentRequest.Id)
 		}
 	default:
 		deploymentBundleLogger.ErrorfCtx(context.Background(), "upsertObjectInCache: Invalid event body: known object is missing or not of the correct type")
@@ -138,7 +138,7 @@ func (s *DeploymentBundleManager) deleteObjectFromCache(topic string, event v1al
 	var err error
 	switch event.Body.(type) {
 	case DeploymentDatabaseRow:
-		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Metadata.Id, false)
+		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
 	default:
 		deploymentBundleLogger.ErrorfCtx(context.Background(), "deleteObjectFromCache: Invalid event body: known object is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -188,7 +188,7 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 			activeDeployments = append(activeDeployments, row)
 		} else {
 			deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Excluding deployment %s in state '%s' from bundle",
-				*row.DesiredState.Metadata.Id, state)
+				*row.DesiredState.Id, state)
 		}
 	}
 
@@ -208,7 +208,7 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 	if len(activeDeployments) > 0 {
 		// Sort deployments by ID for deterministic ordering
 		sort.Slice(activeDeployments, func(i, j int) bool {
-			return *activeDeployments[i].DesiredState.Metadata.Id < *activeDeployments[j].DesiredState.Metadata.Id
+			return *activeDeployments[i].DesiredState.Id < *activeDeployments[j].DesiredState.Id
 		})
 
 		deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Sorted %d active deployments for deterministic bundle creation", len(activeDeployments))
@@ -218,14 +218,14 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 
 		for _, row := range activeDeployments {
 			deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Adding deployment %s (state: %s) to bundle",
-				*row.DesiredState.Metadata.Id, row.DesiredState.Status.Status.State)
+				*row.DesiredState.Id, row.DesiredState.Status.Status.State)
 
 			// Use JSON-to-YAML conversion to preserve component data
 			// First marshal to JSON (which handles union types correctly via MarshalJSON())
 			jsonData, err := json.Marshal(row.DesiredState.AppDeploymentManifest)
 			if err != nil {
 				deploymentBundleLogger.ErrorfCtx(ctx, "rebuildTheBundleForDevice: Failed to marshal deployment to JSON %s: %v",
-					*row.DesiredState.Metadata.Id, err)
+					*row.DesiredState.Id, err)
 				return fmt.Errorf("failed to marshal deployment to JSON: %w", err)
 			}
 
@@ -233,18 +233,18 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 			var yamlInterface interface{}
 			if err := json.Unmarshal(jsonData, &yamlInterface); err != nil {
 				deploymentBundleLogger.ErrorfCtx(ctx, "rebuildTheBundleForDevice: Failed to unmarshal JSON %s: %v",
-					*row.DesiredState.Metadata.Id, err)
+					*row.DesiredState.Id, err)
 				return fmt.Errorf("failed to unmarshal JSON: %w", err)
 			}
 
 			data, err := yaml.Marshal(yamlInterface)
 			if err != nil {
 				deploymentBundleLogger.ErrorfCtx(ctx, "rebuildTheBundleForDevice: Failed to marshal to YAML %s: %v",
-					*row.DesiredState.Metadata.Id, err)
+					*row.DesiredState.Id, err)
 				return fmt.Errorf("failed to marshal to YAML: %w", err)
 			}
 
-			filename := fmt.Sprintf("%s.yaml", *row.DesiredState.Metadata.Id)
+			filename := fmt.Sprintf("%s.yaml", *row.DesiredState.Id)
 			_, _, err = archiver.AppendContent(data, filename)
 			if err != nil {
 				deploymentBundleLogger.ErrorfCtx(ctx, "rebuildTheBundleForDevice: Failed to add deployment content: %v", err)
@@ -259,10 +259,10 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 			}
 
 			newBundleManifest.Deployments = append(newBundleManifest.Deployments, margoStdAPI.DeploymentManifestRef{
-				DeploymentId: *row.DesiredState.Metadata.Id,
+				DeploymentId: *row.DesiredState.Id,
 				Digest:       yamlDigest,
 				SizeBytes:    pointers.Ptr(float32(len(data))),
-				Url:          fmt.Sprintf("/api/v1/clients/%s/deployments/%s/%s", deviceClientId, *row.DesiredState.Metadata.Id, yamlDigest),
+				Url:          fmt.Sprintf("/api/v1/clients/%s/deployments/%s/%s", deviceClientId, *row.DesiredState.Id, yamlDigest),
 			})
 		}
 

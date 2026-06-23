@@ -374,7 +374,7 @@ func createDeployment(deployment *nbi.ApplicationDeploymentManifestRequest) erro
 		return nil
 	}
 
-	fmt.Println("deploymentId", *resp.Metadata.Id, "deploymentName", resp.Metadata.Name)
+	fmt.Println("deploymentId", *resp.Id, "deploymentName", resp.Metadata.Name)
 	return nil
 }
 
@@ -563,7 +563,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Add data rows
 	for _, device := range resp.Items {
-		if device.ApiVersion == "" || device.Kind == "" || device.Metadata.Id == nil || *device.Metadata.Id == "" {
+		if device.ApiVersion == "" || device.Kind == "" || device.Id == nil || *device.Id == "" {
 			continue
 		}
 
@@ -582,7 +582,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
-			truncateString(*device.Metadata.Id, 40),
+			truncateString(*device.Id, 40),
 			truncateString(device.Spec.Signature, 28),
 			truncateString(string(cap), 28),
 			roles,
@@ -633,7 +633,7 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 		}
 		// fmt.Println("-----------------------pkg------------------", pretty.Sprint(pkg))
 		row := table.Row{
-			truncateString(*pkg.Metadata.Id, 40),
+			truncateString(*pkg.Id, 40),
 			truncateString(pkg.Metadata.Name, 20),
 			version,
 			string(pkg.RecentOperation.Op),
@@ -688,8 +688,8 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 		}
 
 		var deploymentId string
-		if dep.Metadata.Id != nil {
-			deploymentId = *dep.Metadata.Id
+		if dep.Id != nil {
+			deploymentId = *dep.Id
 		}
 		var state string
 		if dep.Status != nil && dep.Status.State != nil {
@@ -770,7 +770,7 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 		return
 	}
 
-	fmt.Printf("  ID: %s\n", *appPkg.Metadata.Id)
+	fmt.Printf("  ID: %s\n", *appPkg.Id)
 	fmt.Printf("  Name: %s\n", appPkg.Metadata.Name)
 	fmt.Printf("  API Version: %s\n", appPkg.ApiVersion)
 	fmt.Printf("  Kind: %s\n", appPkg.Kind)
@@ -803,7 +803,7 @@ func printDeploymentDetails(deployment *nbi.ApplicationDeploymentManifestResp) {
 		return
 	}
 
-	fmt.Printf("  ID: %s\n", *deployment.Metadata.Id)
+	fmt.Printf("  ID: %s\n", *deployment.Id)
 	fmt.Printf("  Name: %s\n", deployment.Metadata.Name)
 	fmt.Printf("  API Version: %s\n", deployment.ApiVersion)
 	fmt.Printf("  Kind: %s\n", deployment.Kind)
