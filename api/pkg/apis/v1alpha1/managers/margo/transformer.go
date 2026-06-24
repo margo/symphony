@@ -228,7 +228,7 @@ func (t *MargoTransformer) convertDeploymentProfilesToComponents(
 			var err error
 
 			switch profile.Type {
-			case margoNonStdAPI.AppDeploymentProfileTypeHelmV3:
+			case margoNonStdAPI.AppDeploymentProfileTypeHelm:
 				symphonyComponent, err = t.convertHelmComponent(component, profile, parameters)
 			case margoNonStdAPI.AppDeploymentProfileTypeCompose:
 				symphonyComponent, err = t.convertComposeComponent(component, profile, parameters)
@@ -623,7 +623,7 @@ func (t *MargoTransformer) buildComponentMap(profile margoNonStdAPI.AppDeploymen
 
 	for _, component := range profile.Components {
 		switch profile.Type {
-		case margoNonStdAPI.AppDeploymentProfileTypeHelmV3:
+		case margoNonStdAPI.AppDeploymentProfileTypeHelm:
 			if helmComp, err := component.AsHelmApplicationDeploymentProfileComponent(); err == nil {
 				components[helmComp.Name] = helmComp
 			}
@@ -638,7 +638,7 @@ func (t *MargoTransformer) buildComponentMap(profile margoNonStdAPI.AppDeploymen
 
 func (t *MargoTransformer) mergeComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}, profileType margoNonStdAPI.AppDeploymentProfileType) error {
 	switch profileType {
-	case margoNonStdAPI.AppDeploymentProfileTypeHelmV3:
+	case margoNonStdAPI.AppDeploymentProfileTypeHelm:
 		return t.mergeHelmComponent(reqComponent, appComponents)
 	case margoNonStdAPI.AppDeploymentProfileTypeCompose:
 		return t.mergeComposeComponent(reqComponent, appComponents)

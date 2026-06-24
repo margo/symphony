@@ -784,7 +784,7 @@ func (s *AppPkgManager) validateApplicationDescription(
 			)
 		}
 
-		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeHelmV3 {
+		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeHelm {
 			for j, component := range profile.Components {
 				helmComp, _ := component.AsHelmApplicationDeploymentProfileComponent()
 				if helmComp.Name == "" {

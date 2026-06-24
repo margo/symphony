@@ -10,7 +10,7 @@ spec:
   deviceRef:
     id: {{DEVICE_ID}}
   deploymentProfile:
-    type: helm.v3
+    type: helm
     components:
       - name: nginx
         properties:  
