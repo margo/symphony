@@ -169,11 +169,4 @@ ENV GOFAIL_HTTP="127.0.0.1:22381"
 							   
 # CMD sh -c 'if [ -f /etc/pki/ca-trust/source/anchors/proxy-cert.crt ]; then update-ca-trust; fi && exec /symphony-api -c $CONFIG -l $LOG_LEVEL'
 
-CMD sh -ec '
-if [ -f /certificates/harbor-ca.crt ]; then
-	echo "Installing Harbor CA"
-	cp /certificates/harbor-ca.crt /usr/local/share/ca-certificates/harbor.crt
-	update-ca-certificates
-fi
-exec /symphony-api -c "$CONFIG" -l "$LOG_LEVEL"
-'
+CMD ["sh", "-ec", "if [ -f /certificates/harbor-ca.crt ]; then echo 'Installing Harbor CA' && cp /certificates/harbor-ca.crt /usr/local/share/ca-certificates/harbor.crt && update-ca-certificates; fi && exec /symphony-api -c \"$CONFIG\" -l \"$LOG_LEVEL\""]
