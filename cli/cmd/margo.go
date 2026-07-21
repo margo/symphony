@@ -558,7 +558,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Set headers
 	t.AppendHeader(table.Row{
-		"ID", "Signature", "Capabilities", "Roles", "State", "CreatedAt",
+		"ID", "Signature", "Capabilities", "Deployment Type", "State", "CreatedAt",
 	})
 
 	// Add data rows
@@ -570,10 +570,11 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 		var roles interface{}
 		roles = []string{}
 		capMap, exists := device.Spec.Capabilities.(map[string]interface{})
+		// fmt.Println(capMap, exists)
 		if exists {
 			properties, exists := capMap["properties"].(map[string]interface{})
 			if exists {
-				roles, exists = properties["roles"]
+				roles, exists = properties["supportedDeploymentTypes"]
 				if !exists {
 					roles = []string{}
 				}
