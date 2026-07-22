@@ -17,6 +17,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/managers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
+	"github.com/kr/pretty"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
@@ -437,6 +438,7 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 	if err != nil {
 		return devices, err
 	}
+	fmt.Println(pretty.Sprint(rows))
 
 	for _, row := range rows {
 		devices.Items = append(devices.Items, margoNonStdAPI.DeviceManifestResp{
