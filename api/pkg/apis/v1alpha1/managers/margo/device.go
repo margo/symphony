@@ -438,7 +438,6 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 	if err != nil {
 		return devices, err
 	}
-	fmt.Println(pretty.Sprint(rows))
 
 	for _, row := range rows {
 		devices.Items = append(devices.Items, margoNonStdAPI.DeviceManifestResp{
