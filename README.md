@@ -36,7 +36,7 @@ There are several ways to get started with Symphony, including using the CLI too
 
 ### Using Symphony CLI
 
-> **NOTE**: The following GitHub URL is a temporary parking location and is sugject to change.
+> **NOTE**: The following GitHub URL is a temporary parking location and is subject to change.
 
 The easiest way to get started with Symphony is by using Symphony's CLI tool, called maestro. The CLI tool can be installed on **Linux**, **WSL**, and **Mac** using the following command:
 
@@ -76,7 +76,7 @@ export SYMPHONY_API_URL=http://localhost:8082/v1alpha2/
 ./symphony-api -c ./symphony-api-no-k8s.json -l Debug
 ```
 ## Provider Conformance Test Results
-Symphony is an extensible system with the concept of providers. For each provider types, we define one or multiple conformance test suites that ensure provider implementations behaves consistently and predictably.
+Symphony is an extensible system with the concept of providers. For each provider types, we define one or multiple conformance test suites that ensure provider implementations behave consistently and predictably.
 
 ### Target Providers
 
