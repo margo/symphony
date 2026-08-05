@@ -26,7 +26,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/sandbox v1.0.0-rc.2.0.20260717072648-226903403d67
+	github.com/margo/sandbox v1.0.0-rc.2.0.20260805091359-f81482d8e3c4
 	github.com/princjef/mageutil v1.0.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
@@ -82,7 +82,7 @@ require (
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/microsoft/ApplicationInsights-Go v0.4.4 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/oapi-codegen/runtime v1.1.1 // indirect
+	github.com/oapi-codegen/runtime v1.6.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.4.3 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
@@ -194,7 +194,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.9.0
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1 // indirect
-	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fasthttp/router v1.4.20 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
