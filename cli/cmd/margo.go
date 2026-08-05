@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"strings"
+
 	"github.com/eclipse-symphony/symphony/cli/utils"
 	"github.com/ghodss/yaml"
 	"github.com/jedib0t/go-pretty/v6/table"
@@ -558,7 +560,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Set headers
 	t.AppendHeader(table.Row{
-		"ID", "Signature", "Capabilities", "Roles", "State", "CreatedAt",
+		"ID", "Signature", "Capabilities", "Deployment Type", "State", "CreatedAt",
 	})
 
 	// Add data rows
@@ -567,25 +569,27 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 			continue
 		}
 
-		var roles interface{}
-		roles = []string{}
+		var deploymentTypes interface{}
+		deploymentTypes = []string{}
 		capMap, exists := device.Spec.Capabilities.(map[string]interface{})
 		if exists {
 			properties, exists := capMap["properties"].(map[string]interface{})
 			if exists {
-				roles, exists = properties["roles"]
+				deploymentTypes, exists = properties["supportedDeploymentTypes"]
 				if !exists {
-					roles = []string{}
+					deploymentTypes = []string{}
 				}
 			}
 		}
+
+		deploymentTypeStr := strings.Trim(fmt.Sprint(deploymentTypes), "[]")
 
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
 			truncateString(*device.Id, 40),
 			truncateString(device.Spec.Signature, 28),
 			truncateString(string(cap), 28),
-			roles,
+			deploymentTypeStr,
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
 		}
@@ -604,7 +608,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 		{Number: 1, WidthMax: 40}, // ID
 		{Number: 2, WidthMax: 28}, // Signature
 		{Number: 3, WidthMax: 28}, // Capabilities
-		{Number: 4, WidthMax: 28}, // Device Role
+		{Number: 4, WidthMax: 28}, // Deployment Type
 		{Number: 5, WidthMax: 12}, // State
 		{Number: 6, WidthMax: 16}, // CreatedAt
 	})
