@@ -14,7 +14,8 @@ spec:
     components:
       - name: nextcloud-stack
         properties:  
-          packageLocation: {{REPOSITORY}}
+          # packageLocation: {{REPOSITORY}}
+          repository: {{REPOSITORY}}
   parameters:
     nextcloudPort:
       value: 81
