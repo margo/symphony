@@ -2,6 +2,7 @@ package margo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -491,8 +492,9 @@ func (t *MargoTransformer) convertConfigurationSchema(
 // ConvertDeploymentProfile converts the deployment profile cleanly
 func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) sbi.AppDeploymentProfile {
 	return sbi.AppDeploymentProfile{
-		Type:       sbi.AppDeploymentProfileType(profile.Type),
-		Components: t.convertComponents(profile.Components),
+		Type:              sbi.AppDeploymentProfileType(profile.Type),
+		Components:        t.convertComponents(profile.Components),
+		DeviceConstraints: t.convertDeviceConstraints(profile.DeviceConstraints),
 	}
 }
 
@@ -503,6 +505,20 @@ func (t *MargoTransformer) convertComponents(components []margoNonStdAPI.Deploym
 		result[i] = t.convertComponent(comp)
 	}
 	return result
+}
+
+func (t *MargoTransformer) convertDeviceConstraints(dc *margoNonStdAPI.DeviceConstraints) *sbi.DeviceConstraints {
+
+	// device constraints are not a required parameter, if not present, omit it.
+	if dc == nil {
+		return nil
+	}
+
+	result := sbi.DeviceConstraints{}
+	// TODO: do not supress errors
+	rawDc, _ := json.Marshal(*dc)
+	json.Unmarshal(rawDc, &result)
+	return &result
 }
 
 // convertComponent converts a single component
