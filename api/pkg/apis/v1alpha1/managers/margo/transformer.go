@@ -550,6 +550,11 @@ func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDe
 		return nil // No matching profile found, continue without merging
 	}
 
+	// as device constraints are not a required field
+	if targetProfile.DeviceConstraints != nil {
+		req.Spec.DeploymentProfile.DeviceConstraints = targetProfile.DeviceConstraints
+	}
+
 	appComponents := t.buildComponentMap(*targetProfile)
 
 	for i := range req.Spec.DeploymentProfile.Components {
