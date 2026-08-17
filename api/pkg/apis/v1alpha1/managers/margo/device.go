@@ -19,6 +19,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	p "github.com/margo/sandbox/shared-lib/pointers"
 	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 	margoStdAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
@@ -445,11 +446,13 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			Metadata: margoNonStdAPI.Metadata{
 				CreationTimestamp: &row.CreatedAt,
 			},
-			Id:                &row.DeviceClientId,
+			Id: &row.DeviceClientId,
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,
 				Signature:    row.DevicePubCert,
 			},
+			// setting unknown eligibility here, as it is not checked while fetching. after fetching, it should be checked for eligibility
+			Eligible: p.Ptr(margoNonStdAPI.Unknown),
 			State: margoNonStdAPI.DeviceState{
 				Onboard: margoNonStdAPI.ONBOARDED,
 			},
