@@ -532,7 +532,7 @@ func init() {
 	MargoListCmd.AddCommand(MargoListDeploymentCmd)
 	// Command Flag for getting eligible devices, if application package id is provided.
 	// Id should be of an application package which is onboarded successfully, else it will fail.
-	MargoListDevicesCmd.Flags().StringVarP(&appPkgId, "appPkgId", "", "",
+	MargoListDevicesCmd.Flags().StringVarP(&appPkgId, "appPkgId", "p", "",
 		"Application package Id for getting eligible device(s)")
 	MargoListCmd.AddCommand(MargoListDevicesCmd)
 	MargoListCmd.AddCommand(MargoListAllCmd)
