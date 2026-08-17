@@ -72,11 +72,25 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 
 	deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): listDevices, method: %s", request.Method)
 
+	appPkgId := request.Parameters["appPackageId"]
 	// Call DeviceManager to list the devices
 	devices, err := self.DeviceManager.ListDevices(pCtx)
 	if err != nil {
 		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
 	}
 
+	if appPkgId == "" {
+		return createSuccessResponse(span, v1alpha2.OK, &devices)
+	}
+
+	deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): marking devices for appPkgId: %s", appPkgId)
+
+	// TODO: Complete this logic once device selector is implemented, mark devices with eligibility
+	// ds := dc.NewDeviceSelector(zap.S())
+
+	// for _, d := range devices.Items {
+
+	// }
 	return createSuccessResponse(span, v1alpha2.OK, &devices)
+
 }
