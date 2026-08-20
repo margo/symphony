@@ -15,6 +15,9 @@ spec:
       - name: nextcloud-stack
         properties:  
           repository: {{REPOSITORY}}
+          revision: 1.0.0
+          wait: true
+          timeout: 5m
   parameters:
     nextcloudPort:
       value: 81
