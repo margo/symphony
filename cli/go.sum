@@ -32,6 +32,8 @@ github.com/lestrrat-go/option v1.0.1/go.mod h1:5ZHFbivi4xwXxhxY9XHDe2FHo6/Z7WWmt
 github.com/lestrrat-go/sfv v1.0.0/go.mod h1:wawOORrbzB4Vh0QT7WtbWEbMuTbjS8OPxum1wZAYCiQ=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260820144516-17ef5c090cee h1:PlFJw6Kr+g82PxUZppyfY/ym3I0n7AQkeBoN7p+T04I=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260820144516-17ef5c090cee/go.mod h1:LZ8d7aKOwHes905Ogpo+76Bq7jJbYjJtvpendzaji0U=
+github.com/margo/sandbox v1.0.0-rc.2.0.20260821112643-a698f914a771 h1:YnHIZcPLQPmSwRBRG/vuiWiTEXAv7AEL29bIGN1rQ5Y=
+github.com/margo/sandbox v1.0.0-rc.2.0.20260821112643-a698f914a771/go.mod h1:LZ8d7aKOwHes905Ogpo+76Bq7jJbYjJtvpendzaji0U=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
 github.com/mattn/go-colorable v0.1.4/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
