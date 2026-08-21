@@ -330,7 +330,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string
 	authClientSecret := ""
 	authTokenUrl := ""
 
-	onboardStatus := margoNonStdAPI.INPROGRESS
+	onboardStatus := margoNonStdAPI.DeviceOnboardStatusINPROGRESS
 	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
 		DeviceClientId:    clientID,
 		OAuthClientSecret: authClientSecret,
@@ -347,9 +347,9 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string
 	}
 
 	defer func() {
-		onboardStatus = margoNonStdAPI.ONBOARDED
+		onboardStatus = margoNonStdAPI.DeviceOnboardStatusONBOARDED
 		if !success {
-			onboardStatus = margoNonStdAPI.FAILED
+			onboardStatus = margoNonStdAPI.DeviceOnboardStatusFAILED
 		}
 		_ = dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
 			DeviceClientId:    clientID,
@@ -451,7 +451,7 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 				Signature:    row.DevicePubCert,
 			},
 			State: margoNonStdAPI.DeviceState{
-				Onboard: margoNonStdAPI.ONBOARDED,
+				Onboard: margoNonStdAPI.DeviceOnboardStatusONBOARDED,
 			},
 		})
 	}
