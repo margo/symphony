@@ -389,7 +389,7 @@ func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alph
 	}
 
 	// note: we are allowing failed devices to retry onboarding, hence excluded them here
-	if deviceSignatureExists && (device.OnboardingStatus == nbi.ONBOARDED || device.OnboardingStatus == nbi.INPROGRESS) {
+	if deviceSignatureExists && (device.OnboardingStatus == nbi.DeviceOnboardStatusONBOARDED || device.OnboardingStatus == nbi.DeviceOnboardStatusINPROGRESS) {
 		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Device signature already exists"), "Device onboarding denied", v1alpha2.Conflict)
 	}
 
