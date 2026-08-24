@@ -34,6 +34,7 @@ require (
 	github.com/valyala/fasthttp v1.50.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
@@ -54,7 +55,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/sandbox v1.0.0-rc.2.0.20260821112643-a698f914a771
+	github.com/margo/sandbox v1.0.0-rc.2.0.20260824045224-46bd10c58eef
 	github.com/princjef/mageutil v1.0.0
 )
 
