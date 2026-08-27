@@ -28,6 +28,8 @@ var (
 	applyFromFile string
 	// Output format flag
 	outputFormat string
+	// application Package Id
+	appPkgId string
 )
 
 type outputSchema struct {
@@ -161,7 +163,7 @@ var MargoListAllCmd = &cobra.Command{
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
 		}
-		if err := listDevices(); err != nil {
+		if err := listDevices(nil); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
 		}
@@ -181,7 +183,7 @@ var MargoListDevicesCmd = &cobra.Command{
 			printServerInfo()
 		}
 
-		if err := listDevices(); err != nil {
+		if err := listDevices(&appPkgId); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
 		}
@@ -413,10 +415,10 @@ func printJson(data interface{}) {
 	fmt.Println(string(jsonData))
 }
 
-func listDevices() error {
+func listDevices(appPkgId *string) error {
 	northboundCli := createNorthboundClient()
 
-	devices, err := northboundCli.ListDevices()
+	devices, err := northboundCli.ListDevices(appPkgId)
 	if err != nil {
 		return fmt.Errorf("failed to list devices: %w", err)
 	}
@@ -427,7 +429,7 @@ func listDevices() error {
 		return nil
 	}
 
-	displayDevicesTable(*devices)
+	displayDevicesTable(*devices, (appPkgId != nil && *appPkgId != ""))
 	return nil
 }
 
@@ -528,6 +530,10 @@ func init() {
 
 	MargoListCmd.AddCommand(MargoListAppPkgCmd)
 	MargoListCmd.AddCommand(MargoListDeploymentCmd)
+	// Command Flag for getting eligible devices, if application package id is provided.
+	// Id should be of an application package which is onboarded successfully, else it will fail.
+	MargoListDevicesCmd.Flags().StringVarP(&appPkgId, "appPkgId", "p", "",
+		"Application package Id for getting eligible device(s)")
 	MargoListCmd.AddCommand(MargoListDevicesCmd)
 	MargoListCmd.AddCommand(MargoListAllCmd)
 
@@ -554,14 +560,20 @@ func printServerInfo() {
 	fmt.Printf("└─────────────────────────────────────────┘\n")
 }
 
-func displayDevicesTable(resp nbi.DeviceListResp) {
+func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 
-	// Set headers
-	t.AppendHeader(table.Row{
+	tr := table.Row{
 		"ID", "Signature", "Capabilities", "Deployment Type", "State", "CreatedAt",
-	})
+	}
+
+	if eligibilityMarker {
+		tr = append(tr, "Eligible")
+	}
+
+	// Set headers
+	t.AppendHeader(tr)
 
 	// Add data rows
 	for _, device := range resp.Items {
@@ -592,6 +604,9 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 			deploymentTypeStr,
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
+		}
+		if eligibilityMarker && device.Eligible != nil {
+			row = append(row, *device.Eligible)
 		}
 		t.AppendRow(row)
 	}
