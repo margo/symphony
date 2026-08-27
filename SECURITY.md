@@ -1,41 +1,80 @@
-<!-- BEGIN MICROSOFT SECURITY.MD V0.0.8 BLOCK -->
+# Margo Security Policy
 
-## Security
+The Margo project takes the security of its specifications, reference implementations, and network-facing tooling seriously. As a project hosted under the Joint Development Foundation (JDF) and the Linux Foundation (LF), Margo acts as an **Open-Source Software Steward** under the EU Cyber Resilience Act (CRA).
 
-Microsoft takes the security of our software products and services seriously, which includes all source code repositories managed through our GitHub organizations, which include [Microsoft](https://github.com/microsoft), [Azure](https://github.com/Azure), [DotNet](https://github.com/dotnet), [AspNet](https://github.com/aspnet), [Xamarin](https://github.com/xamarin), and [our GitHub organizations](https://opensource.microsoft.com/).
+This policy outlines how to report security vulnerabilities, our response SLAs, and our coordinated disclosure process.
 
-If you believe you have found a security vulnerability in any Microsoft-owned repository that meets [Microsoft's definition of a security vulnerability](https://aka.ms/opensource/security/definition), please report it to us as described below.
+---
 
-## Reporting Security Issues
+## Supported Versions
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+Margo is currently in active pre-GA development. Security updates are actively maintained on default branches for live deliverables.
 
-Instead, please report them to the Microsoft Security Response Center (MSRC) at [https://msrc.microsoft.com/create-report](https://aka.ms/opensource/security/create-report).
+| Deliverable / Component | Repository | Supported | Notes |
+| :--- | :--- | :---: | :--- |
+| Code First Sandbox | `margo/sandbox` | **Yes** | Active reference implementation |
+| Workload Fleet Manager Integration | `margo/symphony` | **Yes** | Active integration (Eclipse Symphony) |
+| Application Registry Protocol | `margo/specification` | **Yes**¹ | OCI-compliant network API spec |
+| Preview Release 2 (PR2) | — | **Yes** | Current preview release |
+| Preview Release 1 (PR1) | — | **Yes** | Supported during pre-GA overlap; members may still be integrating against either preview |
+| Deprecated / Archived Repositories | Any | **No** | Untracked / inactive branches |
 
-If you prefer to submit without logging in, send email to [secure@microsoft.com](mailto:secure@microsoft.com).  If possible, encrypt your message with our PGP key; please download it from the [Microsoft Security Response Center PGP Key page](https://aka.ms/opensource/security/pgpkey).
+¹ `margo/specification` is documentation, not executable code, and is not itself a Product with Digital Elements (PDE) under the CRA. It is included here voluntarily because it defines the security-relevant behavior (authentication flow, path-traversal and symlink constraints) that `margo/sandbox` and `margo/symphony` implement — a specification defect here can produce a vulnerability downstream. This row is monitored for design-level accuracy; the CRA vulnerability-reporting *obligation* applies to the reference implementation and integration repositories.
 
-You should receive a response within 24 hours. If for some reason you do not, please follow up via email to ensure we received your original message. Additional information can be found at [microsoft.com/msrc](https://aka.ms/opensource/security/msrc). 
+*Note: Both active Preview Releases are currently supported. The Technical Working Group should revisit this table — including when PR1 support ends — once versioning stabilizes at GA1. As new repositories reach "reference implementation" or "conformance testing" status, they will also be brought under the scope of this security policy.*
 
-Please include the requested information listed below (as much as you can provide) to help us better understand the nature and scope of the possible issue:
+---
 
-  * Type of issue (e.g. buffer overflow, SQL injection, cross-site scripting, etc.)
-  * Full paths of source file(s) related to the manifestation of the issue
-  * The location of the affected source code (tag/branch/commit or direct URL)
-  * Any special configuration required to reproduce the issue
-  * Step-by-step instructions to reproduce the issue
-  * Proof-of-concept or exploit code (if possible)
-  * Impact of the issue, including how an attacker might exploit the issue
+## Reporting a Vulnerability
 
-This information will help us triage your report more quickly.
+If you discover a security vulnerability or flaw in any Margo deliverable, **please do not open a public GitHub issue or discuss it in public channels.** Public disclosure before a fix is available puts downstream adopters at risk.
 
-If you are reporting for a bug bounty, more complete reports can contribute to a higher bounty award. Please visit our [Microsoft Bug Bounty Program](https://aka.ms/opensource/security/bounty) page for more details about our active programs.
+### How to Submit a Private Report
+Please report security vulnerabilities through one of the following channels:
 
-## Preferred Languages
+1. **GitHub Private Vulnerability Reporting (Preferred):**
+   Navigate to the **Security** tab of the affected Margo repository, click on **Advisories**, and select **Report a vulnerability**.
+2. **Encrypted / Private Email:**
+   Send your report to **security@project.margo.org**.
 
-We prefer all communications to be in English.
+### What to Include in Your Report
+To help us triage and resolve the issue quickly, please include:
+* The affected repository, component, and commit SHA/version.
+* A clear description of the vulnerability and its potential security impact.
+* Step-by-step instructions or a proof-of-concept (PoC) to reproduce the issue.
+* Any potential mitigations or remediations you have identified.
 
-## Policy
+---
 
-Microsoft follows the principle of [Coordinated Vulnerability Disclosure](https://aka.ms/opensource/security/cvd).
+## Vulnerability Handling & Response SLAs
 
-<!-- END MICROSOFT SECURITY.MD BLOCK -->
+Upon receiving a private security report, the Margo maintainers will adhere to the following response timeline:
+
+* **Acknowledgment:** Receipt of report acknowledged within **72 hours**.
+* **Triage & Assessment:** Initial validation, severity assessment (CVSS), and impact analysis completed within **7 business days**.
+* **Remediation & Advisory:** Fix developed, tested, and coordinated for release alongside a security advisory within a mutually agreed disclosure window (typically 30–90 days, depending on complexity).
+
+---
+
+## Coordinated Disclosure & CRA Compliance
+
+Margo follows Coordinated Vulnerability Disclosure (CVD) principles in accordance with OpenSSF and Linux Foundation guidance.
+
+### 1. EU CRA Steward Escalation Protocol
+In compliance with Article 24 and Article 14 of the EU Cyber Resilience Act (Regulation (EU) 2024/2847):
+* **Actively Exploited Zero-Days & Severe Incidents:** If a reported vulnerability is determined to be actively exploited in the wild, or if a severe cybersecurity incident affects Margo's development infrastructure, Margo will immediately escalate the issue to Linux Foundation Security (`security@linuxfoundation.org`).
+* **EU Authority Reporting Timeline:** LF Security will coordinate the required notifications to the European Union Agency for Cybersecurity (ENISA) via the Single Reporting Platform (SRP) and designated National CSIRTs, in accordance with the mandatory legal timeframes:
+  * **Early warning:** within **24 hours** of becoming aware of an actively exploited vulnerability or severe incident.
+  * **Vulnerability / incident notification:** within **72 hours**, providing general information on the vulnerability, its nature, and any mitigations taken.
+  * **Final report:** no later than **14 days** after a corrective or mitigating measure is available for an actively exploited vulnerability (**1 month** for a severe incident), including a description of the issue, severity, and remediation details.
+
+### 2. Downstream Security Advisories
+Once a fix is available, Margo will publish a machine-readable GitHub Security Advisory (GHSA) and request a CVE identifier where applicable. This provides full transparency to commercial manufacturers, industrial vendors, and downstream ecosystem participants integrating Margo deliverables.
+
+---
+
+## Contact
+
+* **Margo Security Team:** `security@project.margo.org`
+* **Linux Foundation Security Services:** `security@linuxfoundation.org`
+* **Documentation & Specifications:** [docs.margo.org](https://docs.margo.org)
