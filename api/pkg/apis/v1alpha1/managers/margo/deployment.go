@@ -206,8 +206,6 @@ func (s *DeploymentManager) buildInitialDeployment(req margoNonStdAPI.Applicatio
 	contextMsg := "stored on wfm, yet to be synced with the device"
 
 	return &margoNonStdAPI.ApplicationDeploymentManifestResp{
-		ApiVersion: req.ApiVersion,
-		Kind:       "ApplicationDeploymentManifest",
 		Metadata: margoNonStdAPI.Metadata{
 			Name:              req.Metadata.Name,
 			Namespace:         req.Metadata.Namespace,
@@ -348,8 +346,6 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 
 	desiredState := AppDeploymentState{
 		AppDeploymentManifest: sbi.AppDeploymentManifest{
-			ApiVersion: deployment.ApiVersion,
-			Kind:       deployment.Kind,
 			Metadata: sbi.AppDeploymentMetadata{
 				Name:        deployment.Metadata.Name,
 				Namespace:   namespace,
@@ -365,8 +361,6 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 			},
 		},
 		Status: sbi.DeploymentStatusManifest{
-			ApiVersion:   "margo.org",
-			Kind:         "DeploymentStatus",
 			DeploymentId: *deployment.Id,
 			Status: struct {
 				Error *struct {

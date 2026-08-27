@@ -257,7 +257,7 @@ func (t *MargoTransformer) convertHelmComponent(
 	profile margoNonStdAPI.AppDeploymentProfile,
 	parameters *margoNonStdAPI.AppDescriptionParametersMap) (model.ComponentSpec, error) {
 
-	helmComp, err := component.AsHelmApplicationDeploymentProfileComponent()
+	helmComp, err := component.AsApplicationDeploymentProfileComponent()
 	if err != nil {
 		return model.ComponentSpec{}, fmt.Errorf("failed to parse helm component: %w", err)
 	}
@@ -305,7 +305,7 @@ func (t *MargoTransformer) convertComposeComponent(
 	profile margoNonStdAPI.AppDeploymentProfile,
 	parameters *margoNonStdAPI.AppDescriptionParametersMap) (model.ComponentSpec, error) {
 
-	composeComp, err := component.AsComposeApplicationDeploymentProfileComponent()
+	composeComp, err := component.AsApplicationDeploymentProfileComponent()
 	if err != nil {
 		return model.ComponentSpec{}, fmt.Errorf("failed to parse compose component: %w", err)
 	}
@@ -620,11 +620,11 @@ func (t *MargoTransformer) buildComponentMap(profile margoNonStdAPI.AppDeploymen
     for _, component := range profile.Components {
         switch profile.Type {
         case margoNonStdAPI.AppDeploymentProfileTypeHelm:
-            if helmComp, err := component.AsHelmApplicationDeploymentProfileComponent(); err == nil {
+            if helmComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
                 components[helmComp.Name] = helmComp
             }
         case margoNonStdAPI.AppDeploymentProfileTypeCompose:
-            if composeComp, err := component.AsComposeApplicationDeploymentProfileComponent(); err == nil {
+            if composeComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
                 components[composeComp.Name] = composeComp
             }
         }
@@ -644,28 +644,28 @@ func (t *MargoTransformer) mergeComponent(reqComponent *margoNonStdAPI.Deploymen
 }
 
 func (t *MargoTransformer) mergeHelmComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}) error {
-    reqComp, err := reqComponent.AsHelmDeploymentProfileComponent()
+    reqComp, err := reqComponent.AsDeploymentProfileComponent()
     if err != nil {
         return err
     }
     if appCompInterface, exists := appComponents[reqComp.Name]; exists {
-        if appComp, ok := appCompInterface.(margoNonStdAPI.HelmApplicationDeploymentProfileComponent); ok {
+        if appComp, ok := appCompInterface.(margoNonStdAPI.ApplicationDeploymentProfileComponent); ok {
             merged := t.mergeHelmProperties(appComp, reqComp)
-            return reqComponent.FromHelmDeploymentProfileComponent(merged)
+            return reqComponent.FromDeploymentProfileComponent(merged)
         }
     }
     return nil
 }
 
 func (t *MargoTransformer) mergeComposeComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}) error {
-    reqComp, err := reqComponent.AsComposeDeploymentProfileComponent()
+    reqComp, err := reqComponent.AsDeploymentProfileComponent()
     if err != nil {
         return err
     }
     if appCompInterface, exists := appComponents[reqComp.Name]; exists {
-        if appComp, ok := appCompInterface.(margoNonStdAPI.ComposeApplicationDeploymentProfileComponent); ok {
+        if appComp, ok := appCompInterface.(margoNonStdAPI.ApplicationDeploymentProfileComponent); ok {
             merged := t.mergeComposeProperties(appComp, reqComp)
-            return reqComponent.FromComposeDeploymentProfileComponent(merged)
+            return reqComponent.FromDeploymentProfileComponent(merged)
         }
     }
     return nil
@@ -673,9 +673,9 @@ func (t *MargoTransformer) mergeComposeComponent(reqComponent *margoNonStdAPI.De
 
 // mergeHelmProperties merges helm component properties cleanly
 func (t *MargoTransformer) mergeHelmProperties(
-    appComp margoNonStdAPI.HelmApplicationDeploymentProfileComponent,
-    reqComp margoNonStdAPI.HelmDeploymentProfileComponent) margoNonStdAPI.HelmDeploymentProfileComponent {
-    return margoNonStdAPI.HelmDeploymentProfileComponent{
+    appComp margoNonStdAPI.ApplicationDeploymentProfileComponent,
+    reqComp margoNonStdAPI.DeploymentProfileComponent) margoNonStdAPI.DeploymentProfileComponent {
+    return margoNonStdAPI.DeploymentProfileComponent{
         Name: reqComp.Name,
         Properties: struct {
             Repository string  `json:"repository"`
@@ -698,8 +698,6 @@ func (t *MargoTransformer) DbRowToDeploymentList(data []DeploymentDatabaseRow) (
 	}
 
 	return margoNonStdAPI.ApplicationDeploymentListResp{
-		ApiVersion: "margo.org",
-		Kind:       "ApplicationDeploymentList",
 		Items:      deployments,
 		Metadata: margoNonStdAPI.PaginationMetadata{
 			Continue: &[]bool{false}[0],
@@ -774,9 +772,9 @@ func (t *MargoTransformer) extractParameterValues(params margoNonStdAPI.AppDescr
 
 // ADD THIS METHOD for Compose merging:
 func (t *MargoTransformer) mergeComposeProperties(
-    appComp margoNonStdAPI.ComposeApplicationDeploymentProfileComponent,
-    reqComp margoNonStdAPI.ComposeDeploymentProfileComponent) margoNonStdAPI.ComposeDeploymentProfileComponent {
-    return margoNonStdAPI.ComposeDeploymentProfileComponent{
+    appComp margoNonStdAPI.ApplicationDeploymentProfileComponent,
+    reqComp margoNonStdAPI.DeploymentProfileComponent) margoNonStdAPI.DeploymentProfileComponent {
+    return margoNonStdAPI.DeploymentProfileComponent{
         Name: reqComp.Name,
         Properties: struct {
             Repository string  `json:"repository"`

@@ -427,8 +427,6 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string
 
 func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.DeviceListResp, error) {
 	devices := margoNonStdAPI.DeviceListResp{
-		ApiVersion: "non.margo.org",
-		Kind:       "DeviceList",
 		Items:      []margoNonStdAPI.DeviceManifestResp{},
 		Metadata:   &margoNonStdAPI.PaginationMetadata{},
 	}
@@ -440,8 +438,6 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 
 	for _, row := range rows {
 		devices.Items = append(devices.Items, margoNonStdAPI.DeviceManifestResp{
-			ApiVersion: "non.margo.org",
-			Kind:       "Device",
 			Metadata: margoNonStdAPI.Metadata{
 				CreationTimestamp: &row.CreatedAt,
 			},
