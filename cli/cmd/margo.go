@@ -565,7 +565,7 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 	// Add data rows
 	for _, device := range resp.Items {
-		if device.ApiVersion == "" || device.Kind == "" || device.Id == nil || *device.Id == "" {
+		if  device.Id == nil || *device.Id == "" {
 			continue
 		}
 
@@ -629,10 +629,10 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	// Add data rows
 	for _, pkg := range resp.Items {
 		var version string
-		if pkg.Spec.SourceType == "GIT_REPO" {
-			gitRepo, err := pkg.Spec.Source.AsGitRepo()
+		if pkg.Spec.SourceType == "OCI_REPO" {
+			ociRepo, err := pkg.Spec.Source.AsOciRepo()
 			if err == nil {
-				version = gitRepo.Url
+				version = *ociRepo.Tag
 			}
 		}
 		// fmt.Println("-----------------------pkg------------------", pretty.Sprint(pkg))
@@ -760,9 +760,9 @@ func formatTime(t time.Time) string {
 }
 
 func extractSource(source nbi.ApplicationPackageSpec_Source) string {
-	gitRepo, err := source.AsGitRepo()
+	ociRepo, err := source.AsOciRepo()
 	if err == nil {
-		jsonData, _ := json.Marshal(gitRepo)
+		jsonData, _ := json.Marshal(ociRepo)
 		return string(jsonData)
 	}
 	return "N/A"
@@ -777,7 +777,7 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 	fmt.Printf("  ID: %s\n", *appPkg.Id)
 	fmt.Printf("  Name: %s\n", appPkg.Metadata.Name)
 	fmt.Printf("  API Version: %s\n", appPkg.ApiVersion)
-	fmt.Printf("  Kind: %s\n", appPkg.Kind)
+
 
 	fmt.Printf("  Metadata:\n")
 	fmt.Printf("    Creation Timestamp: %s\n", appPkg.Metadata.CreationTimestamp)
@@ -786,14 +786,12 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 	fmt.Printf("  Spec:\n")
 	fmt.Printf("    Source Type: %s\n", appPkg.Spec.SourceType)
 
-	gitRepo, err := appPkg.Spec.Source.AsGitRepo()
+	ociRepo, err := appPkg.Spec.Source.AsOciRepo()
 	if err == nil {
-		fmt.Printf("    Git Source:\n")
-		fmt.Printf("      URL: %s\n", gitRepo.Url)
-		fmt.Printf("      Branch: %s\n", *gitRepo.Branch)
-		fmt.Printf("      Tag: %s\n", *gitRepo.Tag)
-		fmt.Printf("      Username: %s\n", *gitRepo.Username)
-		fmt.Printf("      SubPath: %s\n", *gitRepo.SubPath)
+		fmt.Printf("    OCI Source:\n")
+		fmt.Printf("      URL: %s\n", ociRepo.RegistryUrl)
+		fmt.Printf("      Repository: %s\n", *&ociRepo.Repository)
+		fmt.Printf("      Revision: %s\n", *ociRepo.Tag)	
 	}
 
 	fmt.Printf("  Status:\n")
@@ -809,8 +807,8 @@ func printDeploymentDetails(deployment *nbi.ApplicationDeploymentManifestResp) {
 
 	fmt.Printf("  ID: %s\n", *deployment.Id)
 	fmt.Printf("  Name: %s\n", deployment.Metadata.Name)
-	fmt.Printf("  API Version: %s\n", deployment.ApiVersion)
-	fmt.Printf("  Kind: %s\n", deployment.Kind)
+
+
 
 	fmt.Printf("  Metadata:\n")
 	fmt.Printf("    Creation Timestamp: %s\n", deployment.Metadata.CreationTimestamp)
