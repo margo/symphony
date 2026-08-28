@@ -282,48 +282,47 @@ var MargoGetDeploymentCmd = &cobra.Command{
 
 // Implementation functions
 func applyAppConfig(filename string) error {
-	// Read the YAML file
-	yamlFile, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
-	}
+    yamlFile, err := os.ReadFile(filename)
+    if err != nil {
+        return fmt.Errorf("failed to read file: %w", err)
+    }
 
-	// Unmarshal the YAML into a generic map
-	var data map[string]interface{}
-	err = yaml.Unmarshal(yamlFile, &data)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal YAML: %w", err)
-	}
+    var data map[string]interface{}
+    if err := yaml.Unmarshal(yamlFile, &data); err != nil {
+        return fmt.Errorf("failed to unmarshal YAML: %w", err)
+    }
 
-	// Determine the type of resource and call the appropriate function
-	kind, ok := data["kind"].(string)
-	if !ok {
-		return fmt.Errorf("kind not found or not a string")
-	}
+    jsonFile, err := convertYamlToJson(yamlFile)
+    if err != nil {
+        return fmt.Errorf("failed to convert yaml to json: %w", err)
+    }
 
-	jsonFile, err := convertYamlToJson(yamlFile)
-	if err != nil {
-		return fmt.Errorf("failed to convert yaml to json: %w", err)
-	}
+    // Determine resource type by spec fields since kind is removed
+    spec, _ := data["spec"].(map[string]interface{})
+    if spec == nil {
+        return fmt.Errorf("spec not found in resource")
+    }
 
-	switch kind {
-	case "ApplicationPackage":
-		var appPkg nbi.ApplicationPackageManifestRequest
-		err = json.Unmarshal(jsonFile, &appPkg)
-		if err != nil {
-			return fmt.Errorf("failed to unmarshal ApplicationPackage: %w", err)
-		}
-		return onboardAppPkg(&appPkg)
-	case "ApplicationDeployment":
-		var deployment nbi.ApplicationDeploymentManifestRequest
-		err = json.Unmarshal(jsonFile, &deployment)
-		if err != nil {
-			return fmt.Errorf("failed to unmarshal ApplicationDeployment: %w", err)
-		}
-		return createDeployment(&deployment)
-	default:
-		return fmt.Errorf("unsupported kind: %s", kind)
-	}
+    switch {
+    case spec["sourceType"] != nil:
+        // ApplicationPackageManifestRequest has spec.sourceType
+        var appPkg nbi.ApplicationPackageManifestRequest
+        if err := json.Unmarshal(jsonFile, &appPkg); err != nil {
+            return fmt.Errorf("failed to unmarshal ApplicationPackage: %w", err)
+        }
+        return onboardAppPkg(&appPkg)
+
+    case spec["appPackageRef"] != nil:
+        // ApplicationDeploymentManifestRequest has spec.appPackageRef
+        var deployment nbi.ApplicationDeploymentManifestRequest
+        if err := json.Unmarshal(jsonFile, &deployment); err != nil {
+            return fmt.Errorf("failed to unmarshal ApplicationDeployment: %w", err)
+        }
+        return createDeployment(&deployment)
+
+    default:
+        return fmt.Errorf("cannot determine resource type: spec must contain 'sourceType' (ApplicationPackage) or 'appPackageRef' (ApplicationDeployment)")
+    }
 }
 
 // createNorthboundClient creates a configured northbound client
@@ -807,8 +806,6 @@ func printDeploymentDetails(deployment *nbi.ApplicationDeploymentManifestResp) {
 
 	fmt.Printf("  ID: %s\n", *deployment.Id)
 	fmt.Printf("  Name: %s\n", deployment.Metadata.Name)
-
-
 
 	fmt.Printf("  Metadata:\n")
 	fmt.Printf("    Creation Timestamp: %s\n", deployment.Metadata.CreationTimestamp)

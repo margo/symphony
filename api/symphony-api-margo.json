@@ -765,7 +765,7 @@
       "type": "bindings.http",
       "config": {
         "port": 8082,
-        "tls": false,
+        "tls": true,
         "certProvider": {
           "type": "certs.localfile",
           "config":{
