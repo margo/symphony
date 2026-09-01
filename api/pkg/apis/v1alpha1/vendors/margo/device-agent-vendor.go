@@ -25,7 +25,7 @@ import (
 	"github.com/margo/sandbox/shared-lib/crypto"
 	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 	"github.com/valyala/fasthttp"
-	"gopkg.in/yaml.v2"
+	yaml "sigs.k8s.io/yaml"
 )
 
 var deviceVendorLogger = logger.NewLogger("coa.runtime")
@@ -840,7 +840,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		)
 	}
 
-	// Marshal to YAML (this is the "exact bytes" that will be sent)
+	// Marshal to YAML using sigs.k8s.io/yaml (respects OpenAPI json tags and omitempty)
 	yamlContent, err := yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err,
@@ -855,7 +855,9 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	serverETag := fmt.Sprintf("\"%s\"", actualDigest)
 	clientETagClean := strings.Trim(clientETag, "\"")
 	serverETagClean := strings.Trim(serverETag, "\"")
-
+  
+    deviceVendorLogger.InfofCtx(pCtx, "downloadDeployment serialized bytes: %d, hash: %s", len(yamlContent), actualDigest)
+   
 	if clientETag != "" && clientETagClean == serverETagClean {
 		deviceVendorLogger.InfofCtx(pCtx,
 			"Deployment not modified (304) - deploymentId: %s, ETag: %s",
@@ -872,8 +874,8 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	// Verify digest matches the requested digest
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
-			"Digest mismatch for deployment %s: requested=%s, actual=%s",
-			deploymentId, requestedDigest, actualDigest)
+			"Digest mismatch for deployment %s: requested=%s, actual=%s\nYAML content being hashed:\n%s",
+			deploymentId, requestedDigest, actualDigest, string(yamlContent))
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
@@ -889,17 +891,19 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
 
-	// Return with proper headers
-	return createSuccessResponseWithHeaders(span,
-		"application/yaml",
-		map[string]string{
+
+	// Return raw YAML bytes directly in COAResponse
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        yamlContent, // Raw 503 []byte
+		ContentType: "application/yaml",
+		Metadata: map[string]string{
+			"Content-Type":  "application/yaml",
 			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+			"ETag":          fmt.Sprintf("\"%s\"", actualDigest),
 			"Vary":          "Accept-Encoding",
 		},
-		v1alpha2.OK,
-		&yamlContent,
-	)
+	}
 }
 
 func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
