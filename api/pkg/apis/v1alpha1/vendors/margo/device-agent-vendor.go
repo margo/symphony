@@ -834,18 +834,23 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 			"Deployment not found", v1alpha2.NotFound)
 	}
 	if deployment == nil {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Deployment not found", v1alpha2.NotFound),
-			"Deployment not found", v1alpha2.NotFound)
+		return createSuccessResponseWithHeaders(span,
+			"application/yaml",
+			nil,
+			v1alpha2.NotFound,
+			(*int)(nil),
+		)
 	}
 
-	//  Prioritize canonical RawYAML stored at write-time (from deploymentBundle.go)
 	var yamlContent []byte
 	if len(deployment.DesiredState.RawYAML) > 0 {
 		yamlContent = deployment.DesiredState.RawYAML
 	} else {
 		deviceVendorLogger.WarnfCtx(pCtx,
 			"RawYAML missing for deployment %s — falling back to dynamic marshal", deploymentId)
+
+		// Marshal to YAML (this is the "exact bytes" that will be sent)
+
 		yamlContent, err = yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
 		if err != nil {
 			return createErrorResponse2(deviceVendorLogger, span, err,
@@ -853,11 +858,11 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		}
 	}
 
-	//  Compute digest of the exact sequence of bytes to be sent
+	// Compute digest of the YAML content (Exact Bytes Rule)
 	hash := sha256.Sum256(yamlContent)
 	actualDigest := fmt.Sprintf("sha256:%x", hash)
 
-	//  Check If-None-Match ETag (304 Not Modified)
+	// Check If-None-Match before verifying digest match
 	serverETag := fmt.Sprintf("\"%s\"", actualDigest)
 	clientETagClean := strings.Trim(clientETag, "\"")
 	serverETagClean := strings.Trim(serverETag, "\"")
@@ -867,6 +872,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 			"Deployment not modified (304) - deploymentId: %s, ETag: %s",
 			deploymentId, serverETag)
 
+		// Return 304 Not Modified
 		return v1alpha2.COAResponse{
 			State:       v1alpha2.NotModified,
 			Body:        []byte{},
@@ -874,12 +880,14 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		}
 	}
 
-	//  Verify digest matches the requested digest (404 Not Found if mismatch)
+	// Verify digest matches the requested digest
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Digest mismatch for deployment %s: requested=%s, actual=%s",
 			deploymentId, requestedDigest, actualDigest)
 
+		// Per spec: "If the server cannot produce content whose digest matches this value
+		// it MUST return 404 Not Found"
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil,
 				fmt.Sprintf("Digest mismatch: requested %s, actual %s",
@@ -892,17 +900,17 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
 
-	return createSuccessResponseWithHeaders(
-		span,
+	// Return with proper headers
+	return createSuccessResponseWithHeaders(span,
 		"application/yaml",
 		map[string]string{
 			"Content-Type":  "application/yaml",
 			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest),
+			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
 			"Vary":          "Accept-Encoding",
 		},
 		v1alpha2.OK,
-		&yamlContent, // Passed as *[]byte — helper automatically detects raw bytes!
+		&yamlContent,
 	)
 }
 
