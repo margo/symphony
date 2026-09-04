@@ -837,7 +837,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 			"Deployment not found", v1alpha2.NotFound)
 	}
 
-	// 1. Prioritize canonical RawYAML stored at write-time (from deploymentBundle.go)
+	//  Prioritize canonical RawYAML stored at write-time (from deploymentBundle.go)
 	var yamlContent []byte
 	if len(deployment.DesiredState.RawYAML) > 0 {
 		yamlContent = deployment.DesiredState.RawYAML
@@ -851,11 +851,11 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		}
 	}
 
-	// 2. Compute digest of the exact sequence of bytes to be sent
+	//  Compute digest of the exact sequence of bytes to be sent
 	hash := sha256.Sum256(yamlContent)
 	actualDigest := fmt.Sprintf("sha256:%x", hash)
 
-	// 3. Check If-None-Match ETag (304 Not Modified)
+	//  Check If-None-Match ETag (304 Not Modified)
 	serverETag := fmt.Sprintf("\"%s\"", actualDigest)
 	clientETagClean := strings.Trim(clientETag, "\"")
 	serverETagClean := strings.Trim(serverETag, "\"")
@@ -872,7 +872,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		}
 	}
 
-	// 4. Verify digest matches the requested digest (404 Not Found if mismatch)
+	//  Verify digest matches the requested digest (404 Not Found if mismatch)
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Digest mismatch for deployment %s: requested=%s, actual=%s",
@@ -890,7 +890,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
 
-	// 5. Return raw YAML bytes directly with standard HTTP headers
+	//  Return raw YAML bytes directly with standard HTTP headers
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.OK,
 		Body:        yamlContent, // Raw bytes verbatim
