@@ -755,8 +755,10 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	return createSuccessResponseWithHeaders(span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
 		map[string]string{
+			"Content-Type":  "application/vnd.margo.bundle.v1+tar+gzip",
 			"Cache-Control": "public, max-age=31536000, immutable",
 			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+			"Vary":          "Accept-Encoding",
 		},
 		v1alpha2.OK,
 		&bundleData,
@@ -890,18 +892,18 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
 
-	//  Return raw YAML bytes directly with standard HTTP headers
-	return v1alpha2.COAResponse{
-		State:       v1alpha2.OK,
-		Body:        yamlContent, // Raw bytes verbatim
-		ContentType: "application/yaml",
-		Metadata: map[string]string{
+	return createSuccessResponseWithHeaders(
+		span,
+		"application/yaml",
+		map[string]string{
 			"Content-Type":  "application/yaml",
 			"Cache-Control": "public, max-age=31536000, immutable",
 			"ETag":          fmt.Sprintf("\"%s\"", actualDigest),
 			"Vary":          "Accept-Encoding",
 		},
-	}
+		v1alpha2.OK,
+		&yamlContent, // Passed as *[]byte — helper automatically detects raw bytes!
+	)
 }
 
 func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
