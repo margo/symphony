@@ -54,7 +54,8 @@ type AppPackageDatabaseRow struct {
 
 type AppDeploymentState struct {
 	sbi.AppDeploymentManifest
-	Status sbi.DeploymentStatusManifest
+	Status  sbi.DeploymentStatusManifest `json:"status,omitempty"`
+	RawYAML []byte                       `json:"rawYaml,omitempty"` // Exact bytes used to compute digest
 }
 
 // DeploymentDatabaseRow represents a complete deployment record in the database.

@@ -832,26 +832,30 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 			"Deployment not found", v1alpha2.NotFound)
 	}
 	if deployment == nil {
-		return createSuccessResponseWithHeaders(span,
-			"application/yaml",
-			nil,
-			v1alpha2.NotFound,
-			(*int)(nil),
-		)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Deployment not found", v1alpha2.NotFound),
+			"Deployment not found", v1alpha2.NotFound)
 	}
 
-	// Marshal to YAML (this is the "exact bytes" that will be sent)
-	yamlContent, err := yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Failed to marshal deployment", v1alpha2.InternalError)
+	// 1. Prioritize canonical RawYAML stored at write-time (from deploymentBundle.go)
+	var yamlContent []byte
+	if len(deployment.DesiredState.RawYAML) > 0 {
+		yamlContent = deployment.DesiredState.RawYAML
+	} else {
+		deviceVendorLogger.WarnfCtx(pCtx,
+			"RawYAML missing for deployment %s — falling back to dynamic marshal", deploymentId)
+		yamlContent, err = yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
+		if err != nil {
+			return createErrorResponse2(deviceVendorLogger, span, err,
+				"Failed to marshal deployment", v1alpha2.InternalError)
+		}
 	}
 
-	// Compute digest of the YAML content (Exact Bytes Rule)
+	// 2. Compute digest of the exact sequence of bytes to be sent
 	hash := sha256.Sum256(yamlContent)
 	actualDigest := fmt.Sprintf("sha256:%x", hash)
 
-	// Check If-None-Match before verifying digest match
+	// 3. Check If-None-Match ETag (304 Not Modified)
 	serverETag := fmt.Sprintf("\"%s\"", actualDigest)
 	clientETagClean := strings.Trim(clientETag, "\"")
 	serverETagClean := strings.Trim(serverETag, "\"")
@@ -861,7 +865,6 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 			"Deployment not modified (304) - deploymentId: %s, ETag: %s",
 			deploymentId, serverETag)
 
-		// Return 304 Not Modified
 		return v1alpha2.COAResponse{
 			State:       v1alpha2.NotModified,
 			Body:        []byte{},
@@ -869,14 +872,12 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		}
 	}
 
-	// Verify digest matches the requested digest
+	// 4. Verify digest matches the requested digest (404 Not Found if mismatch)
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Digest mismatch for deployment %s: requested=%s, actual=%s",
 			deploymentId, requestedDigest, actualDigest)
 
-		// Per spec: "If the server cannot produce content whose digest matches this value
-		// it MUST return 404 Not Found"
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil,
 				fmt.Sprintf("Digest mismatch: requested %s, actual %s",
@@ -889,17 +890,18 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
 
-	// Return with proper headers
-	return createSuccessResponseWithHeaders(span,
-		"application/yaml",
-		map[string]string{
+	// 5. Return raw YAML bytes directly with standard HTTP headers
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        yamlContent, // Raw bytes verbatim
+		ContentType: "application/yaml",
+		Metadata: map[string]string{
+			"Content-Type":  "application/yaml",
 			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+			"ETag":          fmt.Sprintf("\"%s\"", actualDigest),
 			"Vary":          "Accept-Encoding",
 		},
-		v1alpha2.OK,
-		&yamlContent,
-	)
+	}
 }
 
 func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
@@ -1033,70 +1035,70 @@ func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 // this preserves headers and the exact request URI. Otherwise builds a request using Route,
 // Parameters and Body. Some fields (RemoteAddr, TLS info, RequestURI internals) cannot be reconstructed.
 func COARequestToHTTPRequest(cr v1alpha2.COARequest) (*http.Request, error) {
- // prefer fasthttp.RequestCtx when available
- if fhCtx, ok := cr.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
-  scheme := "https"
-  host := string(fhCtx.Request.Host())
-  uri := string(fhCtx.RequestURI())
-  full := scheme + "://" + host + uri
+	// prefer fasthttp.RequestCtx when available
+	if fhCtx, ok := cr.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+		scheme := "https"
+		host := string(fhCtx.Request.Host())
+		uri := string(fhCtx.RequestURI())
+		full := scheme + "://" + host + uri
 
-  body := io.NopCloser(bytes.NewReader(cr.Body))
-  r, err := http.NewRequest(cr.Method, full, body)
-  if err != nil {
-   return nil, err
-  }
+		body := io.NopCloser(bytes.NewReader(cr.Body))
+		r, err := http.NewRequest(cr.Method, full, body)
+		if err != nil {
+			return nil, err
+		}
 
-  // copy headers
-  fhCtx.Request.Header.VisitAll(func(k, v []byte) {
-   r.Header.Add(string(k), string(v))
-  })
+		// copy headers
+		fhCtx.Request.Header.VisitAll(func(k, v []byte) {
+			r.Header.Add(string(k), string(v))
+		})
 
-  // best-effort: fill remote addr
-  if addr := fhCtx.RemoteAddr(); addr != nil {
-   r.RemoteAddr = addr.String()
-  }
-  return r, nil
- }
+		// best-effort: fill remote addr
+		if addr := fhCtx.RemoteAddr(); addr != nil {
+			r.RemoteAddr = addr.String()
+		}
+		return r, nil
+	}
 
- // fallback: build from Route + Parameters + headers via ParseRequestHeaders
- u := &url.URL{
-  Path:   cr.Route,
-  Scheme: "https",
- }
+	// fallback: build from Route + Parameters + headers via ParseRequestHeaders
+	u := &url.URL{
+		Path:   cr.Route,
+		Scheme: "https",
+	}
 
- headers, _ := ParseRequestHeaders(cr.Context)
- // checking if headers is not nil
- if headers != nil {
-  // if headers are extracted, check for Host header & attach it
-  if v, ok := headers["Host"]; ok {
-   u.Host = v
-  }
+	headers, _ := ParseRequestHeaders(cr.Context)
+	// checking if headers is not nil
+	if headers != nil {
+		// if headers are extracted, check for Host header & attach it
+		if v, ok := headers["Host"]; ok {
+			u.Host = v
+		}
 
- }
+	}
 
- q := u.Query()
- for k, v := range cr.Parameters {
-  if v != "" {
-   q.Set(k, v)
-  }
- }
- u.RawQuery = q.Encode()
+	q := u.Query()
+	for k, v := range cr.Parameters {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
 
- body := io.NopCloser(bytes.NewReader(cr.Body))
- r, err := http.NewRequest(cr.Method, u.String(), body)
- if err != nil {
-  return nil, err
- }
+	body := io.NopCloser(bytes.NewReader(cr.Body))
+	r, err := http.NewRequest(cr.Method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
 
- for k, v := range headers {
+	for k, v := range headers {
 
-  if k == "Host" {
-   r.Host = v
-  }
-  r.Header.Set(k, v)
- }
+		if k == "Host" {
+			r.Host = v
+		}
+		r.Header.Set(k, v)
+	}
 
- r.URL = u
+	r.URL = u
 
- return r, nil
+	return r, nil
 }
