@@ -691,12 +691,9 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 			"Bundle not found", v1alpha2.NotFound)
 	}
 	if path == "" || manifest == nil {
-		return createSuccessResponseWithHeaders(span,
-			"application/vnd.margo.bundle.v1+tar+gzip",
-			nil,
-			v1alpha2.NotFound,
-			(*int)(nil),
-		)
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, "Bundle not found", v1alpha2.NotFound),
+			"Bundle not found", v1alpha2.NotFound)
 	}
 
 	//  Check If-None-Match before reading file
@@ -717,6 +714,11 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 				State:       v1alpha2.NotModified,
 				Body:        []byte{},
 				ContentType: "application/vnd.margo.bundle.v1+tar+gzip",
+				Metadata: map[string]string{
+					"ETag":          serverETag,
+					"Cache-Control": "public, max-age=31536000, immutable",
+					"Vary":          "Accept-Encoding",
+				},
 			}
 		}
 	}
@@ -752,15 +754,17 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		deviceClientId, actualDigest, len(bundleData))
 
 	// Return with proper headers
-	return createSuccessResponseWithHeaders(span,
-		"application/vnd.margo.bundle.v1+tar+gzip",
-		map[string]string{
+	return v1alpha2.COAResponse{
+		State:       v1alpha2.OK,
+		Body:        bundleData, // Untouched raw .tar.gz bytes
+		ContentType: "application/vnd.margo.bundle.v1+tar+gzip",
+		Metadata: map[string]string{
+			"Content-Type":  "application/vnd.margo.bundle.v1+tar+gzip",
+			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Standard quoted ETag
 			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+			"Vary":          "Accept-Encoding",
 		},
-		v1alpha2.OK,
-		&bundleData,
-	)
+	}
 }
 
 func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v1alpha2.COAResponse {
