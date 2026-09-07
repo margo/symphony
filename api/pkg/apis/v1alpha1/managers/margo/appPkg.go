@@ -786,7 +786,7 @@ func (s *AppPkgManager) validateApplicationDescription(
 
 		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeHelm {
 			for j, component := range profile.Components {
-				helmComp, _ := component.AsHelmApplicationDeploymentProfileComponent()
+				helmComp, _ := component.AsApplicationDeploymentProfileComponent()
 				if helmComp.Name == "" {
 					return fmt.Errorf(
 						"deployment profile %d, component %d: name is required",
@@ -798,7 +798,7 @@ func (s *AppPkgManager) validateApplicationDescription(
 		}
 		if profile.Type == margoNonStdAPI.AppDeploymentProfileTypeCompose {
 			for j, component := range profile.Components {
-				composeComp, _ := component.AsComposeApplicationDeploymentProfileComponent()
+				composeComp, _ := component.AsApplicationDeploymentProfileComponent()
 				if composeComp.Name == "" {
 					return fmt.Errorf(
 						"deployment profile %d, component %d: name is required",
