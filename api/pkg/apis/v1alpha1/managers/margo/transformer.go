@@ -1,10 +1,10 @@
 package margo
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "strings"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
@@ -12,9 +12,7 @@ import (
 	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
 
-var (
-	transformerLogger = logger.NewLogger("coa.runtime")
-)
+var transformerLogger = logger.NewLogger("coa.runtime")
 
 // ConversionContext holds minimal data needed from appPkg for conversion
 type ConversionContext struct {
@@ -23,8 +21,7 @@ type ConversionContext struct {
 	SourceInfo        interface{}
 }
 
-type MargoTransformer struct {
-}
+type MargoTransformer struct{}
 
 func NewMargoTransformer() *MargoTransformer {
 	return &MargoTransformer{}
@@ -34,8 +31,8 @@ func NewMargoTransformer() *MargoTransformer {
 func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	ctx context.Context,
 	dbRow AppPackageDatabaseRow,
-	resources map[string][]byte) (*model.CatalogState, *model.SolutionState, *model.SolutionContainerState, error) {
-
+	resources map[string][]byte,
+) (*model.CatalogState, *model.SolutionState, *model.SolutionContainerState, error) {
 	transformerLogger.Info("Starting Symphony transformation",
 		"appId", dbRow.AppDescription.Id,
 		"appName", dbRow.AppDescription.Metadata.Name,
@@ -100,8 +97,8 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 func (t *MargoTransformer) convertToCatalog(
 	appDesc margoNonStdAPI.AppDescription,
 	convCtx ConversionContext,
-	resources map[string][]byte) (*model.CatalogState, error) {
-
+	resources map[string][]byte,
+) (*model.CatalogState, error) {
 	transformerLogger.Debug("Converting to Catalog object",
 		"appId", *appDesc.Id,
 		"appName", appDesc.Metadata.Name)
@@ -145,8 +142,8 @@ func (t *MargoTransformer) convertToCatalog(
 // convertToSolution converts application description to Solution object
 func (t *MargoTransformer) convertToSolution(
 	appDesc margoNonStdAPI.AppDescription,
-	catalogId string) (*model.SolutionState, error) {
-
+	catalogId string,
+) (*model.SolutionState, error) {
 	transformerLogger.Debug("Converting to Solution object",
 		"appId", *appDesc.Id,
 		"catalogId", catalogId)
@@ -189,8 +186,8 @@ func (t *MargoTransformer) convertToSolution(
 // convertToSolutionContainer converts application description to SolutionContainer object
 func (t *MargoTransformer) convertToSolutionContainer(
 	appDesc margoNonStdAPI.AppDescription,
-	solutionId string) (*model.SolutionContainerState, error) {
-
+	solutionId string,
+) (*model.SolutionContainerState, error) {
 	transformerLogger.Debug("Converting to SolutionContainer object",
 		"appId", appDesc.Id,
 		"solutionId", solutionId)
@@ -219,8 +216,8 @@ func (t *MargoTransformer) convertToSolutionContainer(
 func (t *MargoTransformer) convertDeploymentProfilesToComponents(
 	deploymentProfiles []margoNonStdAPI.AppDeploymentProfile,
 	config *margoNonStdAPI.AppConfigurationSchema,
-	parameters *margoNonStdAPI.AppDescriptionParametersMap) ([]model.ComponentSpec, error) {
-
+	parameters *margoNonStdAPI.AppDescriptionParametersMap,
+) ([]model.ComponentSpec, error) {
 	var components []model.ComponentSpec
 
 	for profileIdx, profile := range deploymentProfiles {
@@ -255,8 +252,8 @@ func (t *MargoTransformer) convertDeploymentProfilesToComponents(
 func (t *MargoTransformer) convertHelmComponent(
 	component margoNonStdAPI.AppDeploymentProfile_Components_Item,
 	profile margoNonStdAPI.AppDeploymentProfile,
-	parameters *margoNonStdAPI.AppDescriptionParametersMap) (model.ComponentSpec, error) {
-
+	parameters *margoNonStdAPI.AppDescriptionParametersMap,
+) (model.ComponentSpec, error) {
 	helmComp, err := component.AsHelmApplicationDeploymentProfileComponent()
 	if err != nil {
 		return model.ComponentSpec{}, fmt.Errorf("failed to parse helm component: %w", err)
@@ -272,8 +269,8 @@ func (t *MargoTransformer) convertHelmComponent(
 
 	// Add optional properties
 	if helmComp.Properties.Revision != "" {
-    properties["chart"].(map[string]interface{})["version"] = helmComp.Properties.Revision
-    }
+		properties["chart"].(map[string]interface{})["version"] = helmComp.Properties.Revision
+	}
 	if helmComp.Properties.Timeout != nil {
 		properties["timeout"] = *helmComp.Properties.Timeout
 	}
@@ -303,8 +300,8 @@ func (t *MargoTransformer) convertHelmComponent(
 func (t *MargoTransformer) convertComposeComponent(
 	component margoNonStdAPI.AppDeploymentProfile_Components_Item,
 	profile margoNonStdAPI.AppDeploymentProfile,
-	parameters *margoNonStdAPI.AppDescriptionParametersMap) (model.ComponentSpec, error) {
-
+	parameters *margoNonStdAPI.AppDescriptionParametersMap,
+) (model.ComponentSpec, error) {
 	composeComp, err := component.AsComposeApplicationDeploymentProfileComponent()
 	if err != nil {
 		return model.ComponentSpec{}, fmt.Errorf("failed to parse compose component: %w", err)
@@ -314,10 +311,9 @@ func (t *MargoTransformer) convertComposeComponent(
 	properties := map[string]interface{}{
 		"compose": map[string]interface{}{
 			"repository": composeComp.Properties.Repository,
-            "revision":   composeComp.Properties.Revision,
+			"revision":   composeComp.Properties.Revision,
 		},
 	}
-
 
 	if composeComp.Properties.Timeout != nil {
 		properties["timeout"] = *composeComp.Properties.Timeout
@@ -347,8 +343,8 @@ func (t *MargoTransformer) convertComposeComponent(
 // resolveComponentParameters resolves parameters for a specific component
 func (t *MargoTransformer) resolveComponentParameters(
 	componentName string,
-	parameters margoNonStdAPI.AppDescriptionParametersMap) (map[string]interface{}, error) {
-
+	parameters margoNonStdAPI.AppDescriptionParametersMap,
+) (map[string]interface{}, error) {
 	values := make(map[string]interface{})
 
 	for paramName, paramValue := range parameters {
@@ -433,8 +429,8 @@ func (t *MargoTransformer) parseParameterValue(value interface{}) interface{} {
 }
 
 func (t *MargoTransformer) convertConfigurationSchema(
-	config *margoNonStdAPI.AppConfigurationSchema) (map[string]interface{}, error) {
-
+	config *margoNonStdAPI.AppConfigurationSchema,
+) (map[string]interface{}, error) {
 	if config == nil {
 		return nil, nil
 	}
@@ -489,8 +485,9 @@ func (t *MargoTransformer) convertConfigurationSchema(
 // ConvertDeploymentProfile converts the deployment profile cleanly
 func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) sbi.AppDeploymentProfile {
 	return sbi.AppDeploymentProfile{
-		Type:       sbi.AppDeploymentProfileType(profile.Type),
-		Components: t.convertComponents(profile.Components),
+		Type:              sbi.AppDeploymentProfileType(profile.Type),
+		Components:        t.convertComponents(profile.Components),
+		DeviceConstraints: t.convertDeviceConstraints(profile.DeviceConstraints),
 	}
 }
 
@@ -503,12 +500,25 @@ func (t *MargoTransformer) convertComponents(components []margoNonStdAPI.Deploym
 	return result
 }
 
+func (t *MargoTransformer) convertDeviceConstraints(dc *margoNonStdAPI.DeviceConstraints) *sbi.DeviceConstraints {
+	// device constraints are not a required parameter, if not present, omit it.
+	if dc == nil {
+		return nil
+	}
+
+	result := sbi.DeviceConstraints{}
+	// TODO: do not supress errors
+	rawDc, _ := json.Marshal(*dc)
+	json.Unmarshal(rawDc, &result)
+	return &result
+}
+
 // convertComponent converts a single component
 func (t *MargoTransformer) convertComponent(comp margoNonStdAPI.DeploymentExecutionProfile_Components_Item) sbi.ApplicationDeploymentProfileComponent {
-    sbiComp := sbi.ApplicationDeploymentProfileComponent{}
-    data, _ := comp.MarshalJSON()
-    _ = json.Unmarshal(data, &sbiComp)
-    return sbiComp
+	sbiComp := sbi.ApplicationDeploymentProfileComponent{}
+	data, _ := comp.MarshalJSON()
+	_ = json.Unmarshal(data, &sbiComp)
+	return sbiComp
 }
 
 // Helper functions for clean property selection
@@ -545,6 +555,11 @@ func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDe
 	targetProfile := t.findMatchingProfileInApp(req.Spec.DeploymentProfile.Type, appPkg.Description.DeploymentProfiles)
 	if targetProfile == nil {
 		return nil // No matching profile found, continue without merging
+	}
+
+	// as device constraints are not a required field
+	if targetProfile.DeviceConstraints != nil {
+		req.Spec.DeploymentProfile.DeviceConstraints = targetProfile.DeviceConstraints
 	}
 
 	appComponents := t.buildComponentMap(*targetProfile)
@@ -616,20 +631,20 @@ func (t *MargoTransformer) findMatchingProfileInApp(reqType margoNonStdAPI.Deplo
 
 // buildComponentMap creates a lookup map for app description components
 func (t *MargoTransformer) buildComponentMap(profile margoNonStdAPI.AppDeploymentProfile) map[string]interface{} {
-    components := make(map[string]interface{})
-    for _, component := range profile.Components {
-        switch profile.Type {
-        case margoNonStdAPI.AppDeploymentProfileTypeHelm:
-            if helmComp, err := component.AsHelmApplicationDeploymentProfileComponent(); err == nil {
-                components[helmComp.Name] = helmComp
-            }
-        case margoNonStdAPI.AppDeploymentProfileTypeCompose:
-            if composeComp, err := component.AsComposeApplicationDeploymentProfileComponent(); err == nil {
-                components[composeComp.Name] = composeComp
-            }
-        }
-    }
-    return components
+	components := make(map[string]interface{})
+	for _, component := range profile.Components {
+		switch profile.Type {
+		case margoNonStdAPI.AppDeploymentProfileTypeHelm:
+			if helmComp, err := component.AsHelmApplicationDeploymentProfileComponent(); err == nil {
+				components[helmComp.Name] = helmComp
+			}
+		case margoNonStdAPI.AppDeploymentProfileTypeCompose:
+			if composeComp, err := component.AsComposeApplicationDeploymentProfileComponent(); err == nil {
+				components[composeComp.Name] = composeComp
+			}
+		}
+	}
+	return components
 }
 
 func (t *MargoTransformer) mergeComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}, profileType margoNonStdAPI.AppDeploymentProfileType) error {
@@ -644,51 +659,52 @@ func (t *MargoTransformer) mergeComponent(reqComponent *margoNonStdAPI.Deploymen
 }
 
 func (t *MargoTransformer) mergeHelmComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}) error {
-    reqComp, err := reqComponent.AsHelmDeploymentProfileComponent()
-    if err != nil {
-        return err
-    }
-    if appCompInterface, exists := appComponents[reqComp.Name]; exists {
-        if appComp, ok := appCompInterface.(margoNonStdAPI.HelmApplicationDeploymentProfileComponent); ok {
-            merged := t.mergeHelmProperties(appComp, reqComp)
-            return reqComponent.FromHelmDeploymentProfileComponent(merged)
-        }
-    }
-    return nil
+	reqComp, err := reqComponent.AsHelmDeploymentProfileComponent()
+	if err != nil {
+		return err
+	}
+	if appCompInterface, exists := appComponents[reqComp.Name]; exists {
+		if appComp, ok := appCompInterface.(margoNonStdAPI.HelmApplicationDeploymentProfileComponent); ok {
+			merged := t.mergeHelmProperties(appComp, reqComp)
+			return reqComponent.FromHelmDeploymentProfileComponent(merged)
+		}
+	}
+	return nil
 }
 
 func (t *MargoTransformer) mergeComposeComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}) error {
-    reqComp, err := reqComponent.AsComposeDeploymentProfileComponent()
-    if err != nil {
-        return err
-    }
-    if appCompInterface, exists := appComponents[reqComp.Name]; exists {
-        if appComp, ok := appCompInterface.(margoNonStdAPI.ComposeApplicationDeploymentProfileComponent); ok {
-            merged := t.mergeComposeProperties(appComp, reqComp)
-            return reqComponent.FromComposeDeploymentProfileComponent(merged)
-        }
-    }
-    return nil
+	reqComp, err := reqComponent.AsComposeDeploymentProfileComponent()
+	if err != nil {
+		return err
+	}
+	if appCompInterface, exists := appComponents[reqComp.Name]; exists {
+		if appComp, ok := appCompInterface.(margoNonStdAPI.ComposeApplicationDeploymentProfileComponent); ok {
+			merged := t.mergeComposeProperties(appComp, reqComp)
+			return reqComponent.FromComposeDeploymentProfileComponent(merged)
+		}
+	}
+	return nil
 }
 
 // mergeHelmProperties merges helm component properties cleanly
 func (t *MargoTransformer) mergeHelmProperties(
-    appComp margoNonStdAPI.HelmApplicationDeploymentProfileComponent,
-    reqComp margoNonStdAPI.HelmDeploymentProfileComponent) margoNonStdAPI.HelmDeploymentProfileComponent {
-    return margoNonStdAPI.HelmDeploymentProfileComponent{
-        Name: reqComp.Name,
-        Properties: struct {
-            Repository string  `json:"repository"`
-            Revision   string  `json:"revision"`
-            Timeout    *string `json:"timeout,omitempty"`
-            Wait       *bool   `json:"wait,omitempty"`
-        }{
-            Repository: t.selectString(reqComp.Properties.Repository, appComp.Properties.Repository),
-            Revision:   t.selectString(reqComp.Properties.Revision, appComp.Properties.Revision),
-            Timeout:    t.selectStringPtr(reqComp.Properties.Timeout, appComp.Properties.Timeout),
-            Wait:       t.selectBoolPtr(reqComp.Properties.Wait, appComp.Properties.Wait),
-        },
-    }
+	appComp margoNonStdAPI.HelmApplicationDeploymentProfileComponent,
+	reqComp margoNonStdAPI.HelmDeploymentProfileComponent,
+) margoNonStdAPI.HelmDeploymentProfileComponent {
+	return margoNonStdAPI.HelmDeploymentProfileComponent{
+		Name: reqComp.Name,
+		Properties: struct {
+			Repository string  `json:"repository"`
+			Revision   string  `json:"revision"`
+			Timeout    *string `json:"timeout,omitempty"`
+			Wait       *bool   `json:"wait,omitempty"`
+		}{
+			Repository: t.selectString(reqComp.Properties.Repository, appComp.Properties.Repository),
+			Revision:   t.selectString(reqComp.Properties.Revision, appComp.Properties.Revision),
+			Timeout:    t.selectStringPtr(reqComp.Properties.Timeout, appComp.Properties.Timeout),
+			Wait:       t.selectBoolPtr(reqComp.Properties.Wait, appComp.Properties.Wait),
+		},
+	}
 }
 
 func (t *MargoTransformer) DbRowToDeploymentList(data []DeploymentDatabaseRow) (margoNonStdAPI.ApplicationDeploymentListResp, error) {
@@ -711,8 +727,8 @@ func (t *MargoTransformer) DbRowToDeploymentList(data []DeploymentDatabaseRow) (
 func (t *MargoTransformer) MergeConfigurationWithAppPackage(
 	deploymentParams *margoNonStdAPI.AppConfigurationSchema,
 	appConfig *margoNonStdAPI.AppConfigurationSchema,
-	appParams *margoNonStdAPI.AppDescriptionParametersMap) (map[string]interface{}, error) {
-
+	appParams *margoNonStdAPI.AppDescriptionParametersMap,
+) (map[string]interface{}, error) {
 	// Start with app package configuration as base
 	baseConfig := appConfig
 	if baseConfig == nil {
@@ -774,20 +790,21 @@ func (t *MargoTransformer) extractParameterValues(params margoNonStdAPI.AppDescr
 
 // ADD THIS METHOD for Compose merging:
 func (t *MargoTransformer) mergeComposeProperties(
-    appComp margoNonStdAPI.ComposeApplicationDeploymentProfileComponent,
-    reqComp margoNonStdAPI.ComposeDeploymentProfileComponent) margoNonStdAPI.ComposeDeploymentProfileComponent {
-    return margoNonStdAPI.ComposeDeploymentProfileComponent{
-        Name: reqComp.Name,
-        Properties: struct {
-            Repository string  `json:"repository"`
-            Revision   string  `json:"revision"`
-            Timeout    *string `json:"timeout,omitempty"`
-            Wait       *bool   `json:"wait,omitempty"`
-        }{
-            Repository: t.selectString(reqComp.Properties.Repository, appComp.Properties.Repository),
-            Revision:   t.selectString(reqComp.Properties.Revision, appComp.Properties.Revision),
-            Timeout:    t.selectStringPtr(reqComp.Properties.Timeout, appComp.Properties.Timeout),
-            Wait:       t.selectBoolPtr(reqComp.Properties.Wait, appComp.Properties.Wait),
-        },
-    }
+	appComp margoNonStdAPI.ComposeApplicationDeploymentProfileComponent,
+	reqComp margoNonStdAPI.ComposeDeploymentProfileComponent,
+) margoNonStdAPI.ComposeDeploymentProfileComponent {
+	return margoNonStdAPI.ComposeDeploymentProfileComponent{
+		Name: reqComp.Name,
+		Properties: struct {
+			Repository string  `json:"repository"`
+			Revision   string  `json:"revision"`
+			Timeout    *string `json:"timeout,omitempty"`
+			Wait       *bool   `json:"wait,omitempty"`
+		}{
+			Repository: t.selectString(reqComp.Properties.Repository, appComp.Properties.Repository),
+			Revision:   t.selectString(reqComp.Properties.Revision, appComp.Properties.Revision),
+			Timeout:    t.selectStringPtr(reqComp.Properties.Timeout, appComp.Properties.Timeout),
+			Wait:       t.selectBoolPtr(reqComp.Properties.Wait, appComp.Properties.Wait),
+		},
+	}
 }
