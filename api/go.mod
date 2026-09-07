@@ -26,7 +26,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/sandbox v1.0.0-rc.2.0.20260824045224-46bd10c58eef
+	github.com/margo/sandbox v1.0.0-rc.2.0.20260824052734-069e442245ff
 	github.com/princjef/mageutil v1.0.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
@@ -208,7 +208,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
