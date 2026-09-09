@@ -258,6 +258,14 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 				return fmt.Errorf("failed to calculate digest of deployment content: %w", err)
 			}
 
+			//------------ Store exact raw bytes used for the digest -------------
+			row.DesiredState.RawYAML = data
+			if err := s.Database.UpsertDeploymentDesiredState(ctx, *row.DesiredState.Id, row.DesiredState, false); err != nil {
+				deploymentBundleLogger.WarnfCtx(ctx, "rebuildTheBundleForDevice: Failed to store RawYAML for deployment %s: %v",
+					*row.DesiredState.Id, err)
+			}
+			// -----------------------------------------------------------------------
+
 			newBundleManifest.Deployments = append(newBundleManifest.Deployments, margoStdAPI.DeploymentManifestRef{
 				DeploymentId: *row.DesiredState.Id,
 				Digest:       yamlDigest,

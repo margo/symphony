@@ -270,6 +270,13 @@ func createSuccessResponseWithHeaders[T any](
 		WithState(state)
 
 	if data != nil {
+		// If data is already raw bytes, do NOT let ResponseBuilder JSON-marshal it
+		if rawBytes, ok := any(*data).([]byte); ok {
+			resp, _ := builder.Build()
+			resp.Body = rawBytes // Assign raw bytes directly
+			return resp
+		}
+		// Otherwise, pass structured objects (structs/maps) to WithData for standard JSON serialization
 		builder = builder.WithData(*data)
 	}
 

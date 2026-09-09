@@ -755,8 +755,10 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	return createSuccessResponseWithHeaders(span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
 		map[string]string{
+			"Content-Type":  "application/vnd.margo.bundle.v1+tar+gzip",
 			"Cache-Control": "public, max-age=31536000, immutable",
 			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
+			"Vary":          "Accept-Encoding",
 		},
 		v1alpha2.OK,
 		&bundleData,
@@ -840,11 +842,20 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		)
 	}
 
-	// Marshal to YAML (this is the "exact bytes" that will be sent)
-	yamlContent, err := yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Failed to marshal deployment", v1alpha2.InternalError)
+	var yamlContent []byte
+	if len(deployment.DesiredState.RawYAML) > 0 {
+		yamlContent = deployment.DesiredState.RawYAML
+	} else {
+		deviceVendorLogger.WarnfCtx(pCtx,
+			"RawYAML missing for deployment %s — falling back to dynamic marshal", deploymentId)
+
+		// Marshal to YAML (this is the "exact bytes" that will be sent)
+
+		yamlContent, err = yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
+		if err != nil {
+			return createErrorResponse2(deviceVendorLogger, span, err,
+				"Failed to marshal deployment", v1alpha2.InternalError)
+		}
 	}
 
 	// Compute digest of the YAML content (Exact Bytes Rule)
@@ -893,6 +904,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	return createSuccessResponseWithHeaders(span,
 		"application/yaml",
 		map[string]string{
+			"Content-Type":  "application/yaml",
 			"Cache-Control": "public, max-age=31536000, immutable",
 			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
 			"Vary":          "Accept-Encoding",
@@ -1033,70 +1045,70 @@ func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 // this preserves headers and the exact request URI. Otherwise builds a request using Route,
 // Parameters and Body. Some fields (RemoteAddr, TLS info, RequestURI internals) cannot be reconstructed.
 func COARequestToHTTPRequest(cr v1alpha2.COARequest) (*http.Request, error) {
- // prefer fasthttp.RequestCtx when available
- if fhCtx, ok := cr.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
-  scheme := "https"
-  host := string(fhCtx.Request.Host())
-  uri := string(fhCtx.RequestURI())
-  full := scheme + "://" + host + uri
+	// prefer fasthttp.RequestCtx when available
+	if fhCtx, ok := cr.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+		scheme := "https"
+		host := string(fhCtx.Request.Host())
+		uri := string(fhCtx.RequestURI())
+		full := scheme + "://" + host + uri
 
-  body := io.NopCloser(bytes.NewReader(cr.Body))
-  r, err := http.NewRequest(cr.Method, full, body)
-  if err != nil {
-   return nil, err
-  }
+		body := io.NopCloser(bytes.NewReader(cr.Body))
+		r, err := http.NewRequest(cr.Method, full, body)
+		if err != nil {
+			return nil, err
+		}
 
-  // copy headers
-  fhCtx.Request.Header.VisitAll(func(k, v []byte) {
-   r.Header.Add(string(k), string(v))
-  })
+		// copy headers
+		fhCtx.Request.Header.VisitAll(func(k, v []byte) {
+			r.Header.Add(string(k), string(v))
+		})
 
-  // best-effort: fill remote addr
-  if addr := fhCtx.RemoteAddr(); addr != nil {
-   r.RemoteAddr = addr.String()
-  }
-  return r, nil
- }
+		// best-effort: fill remote addr
+		if addr := fhCtx.RemoteAddr(); addr != nil {
+			r.RemoteAddr = addr.String()
+		}
+		return r, nil
+	}
 
- // fallback: build from Route + Parameters + headers via ParseRequestHeaders
- u := &url.URL{
-  Path:   cr.Route,
-  Scheme: "https",
- }
+	// fallback: build from Route + Parameters + headers via ParseRequestHeaders
+	u := &url.URL{
+		Path:   cr.Route,
+		Scheme: "https",
+	}
 
- headers, _ := ParseRequestHeaders(cr.Context)
- // checking if headers is not nil
- if headers != nil {
-  // if headers are extracted, check for Host header & attach it
-  if v, ok := headers["Host"]; ok {
-   u.Host = v
-  }
+	headers, _ := ParseRequestHeaders(cr.Context)
+	// checking if headers is not nil
+	if headers != nil {
+		// if headers are extracted, check for Host header & attach it
+		if v, ok := headers["Host"]; ok {
+			u.Host = v
+		}
 
- }
+	}
 
- q := u.Query()
- for k, v := range cr.Parameters {
-  if v != "" {
-   q.Set(k, v)
-  }
- }
- u.RawQuery = q.Encode()
+	q := u.Query()
+	for k, v := range cr.Parameters {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
 
- body := io.NopCloser(bytes.NewReader(cr.Body))
- r, err := http.NewRequest(cr.Method, u.String(), body)
- if err != nil {
-  return nil, err
- }
+	body := io.NopCloser(bytes.NewReader(cr.Body))
+	r, err := http.NewRequest(cr.Method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
 
- for k, v := range headers {
+	for k, v := range headers {
 
-  if k == "Host" {
-   r.Host = v
-  }
-  r.Header.Set(k, v)
- }
+		if k == "Host" {
+			r.Host = v
+		}
+		r.Header.Set(k, v)
+	}
 
- r.URL = u
+	r.URL = u
 
- return r, nil
+	return r, nil
 }
