@@ -751,6 +751,19 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		"Serving bundle for device %s with verified digest %s (%d bytes)",
 		deviceClientId, actualDigest, len(bundleData))
 
+	// Set headers directly in fasthttp context
+	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+
+		fhCtx.Response.Header.Set("Content-Type", "application/vnd.margo.bundle.v1+tar+gzip")
+		fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+		fhCtx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", actualDigest)) // Quoted ETag
+		fhCtx.Response.Header.Set("Vary", "Accept-Encoding")
+
+		deviceVendorLogger.InfofCtx(pCtx, "Set response headers directly - ETag: %s", actualDigest)
+	} else {
+		deviceVendorLogger.WarnfCtx(pCtx, "Could not access fasthttp context to set headers")
+	}
+
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
@@ -899,6 +912,18 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	deviceVendorLogger.InfofCtx(pCtx,
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
+
+	// Set headers directly in fasthttp context
+	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+		fhCtx.Response.Header.Set("Content-Type", "application/yaml")
+		fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+		fhCtx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", actualDigest)) // Quoted ETag
+		fhCtx.Response.Header.Set("Vary", "Accept-Encoding")
+
+		deviceVendorLogger.InfofCtx(pCtx, "Set response headers directly - ETag: %s", actualDigest)
+	} else {
+		deviceVendorLogger.WarnfCtx(pCtx, "Could not access fasthttp context to set headers")
+	}
 
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,

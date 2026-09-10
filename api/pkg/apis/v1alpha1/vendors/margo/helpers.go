@@ -266,7 +266,7 @@ func createSuccessResponseWithHeaders[T any](
 
 	builder := NewResponseBuilder(span).
 		WithContentType(contentType).
-		WithMetadata(metadata).
+		// WithMetadata(metadata).
 		WithState(state)
 
 	if data != nil {
@@ -274,6 +274,8 @@ func createSuccessResponseWithHeaders[T any](
 		if rawBytes, ok := any(*data).([]byte); ok {
 			resp, _ := builder.Build()
 			resp.Body = rawBytes // Assign raw bytes directly
+			// Ensure Metadata is empty so COA doesn't emit Coa_meta_* headers
+			resp.Metadata = nil
 			return resp
 		}
 		// Otherwise, pass structured objects (structs/maps) to WithData for standard JSON serialization
@@ -281,6 +283,7 @@ func createSuccessResponseWithHeaders[T any](
 	}
 
 	resp, _ := builder.Build()
+	resp.Metadata = nil // Clear metadata
 	return resp
 }
 
