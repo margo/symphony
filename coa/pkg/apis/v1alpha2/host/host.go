@@ -29,6 +29,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	mcp "github.com/margo/sandbox/shared-lib/mis/parser"
+	"github.com/margo/sandbox/shared-lib/mis/validators"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -380,6 +381,15 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 		pmc, err := mcp.ParseMIAFConfig(httpConfig.MIAF.ToMIAFInput(), "")
 		if err != nil {
 			return nil, err
+		}
+
+		// Validate Authorized spiffe Ids here
+		for _, spid := range pmc.AuthorizedSPIFFEIDs {
+			// Authorization list for symphony will contain SPIFFE IDs of WFM-Clients, hence using principal WFMClient here.
+			err := validators.ValidateSpiffeID(spid, validators.PrincipalWFMClient)
+			if err != nil {
+				return nil, fmt.Errorf("failed to validate client spiffeId %s, err : %w", spid, err)
+			}
 		}
 
 		// Certificates are not attached here, they will be in next step
