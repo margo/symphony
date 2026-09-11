@@ -28,14 +28,20 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/utils"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	mcp "github.com/margo/sandbox/shared-lib/mis/parser"
+	"github.com/margo/sandbox/shared-lib/mis/validators"
 	"golang.org/x/sync/errgroup"
 )
 
-var log = logger.NewLogger("coa.runtime")
-var defaultShutdownGracePeriod = "30s"
+var (
+	log                        = logger.NewLogger("coa.runtime")
+	defaultShutdownGracePeriod = "30s"
+)
 
-var hostIsReadyFlag bool = false
-var rwLock sync.RWMutex
+var (
+	hostIsReadyFlag bool = false
+	rwLock          sync.RWMutex
+)
 
 func IsHostReady() bool {
 	rwLock.RLock()
@@ -107,7 +113,8 @@ func overrideWithEnvVariable(value string, env string) string {
 func (h *APIHost) Launch(config HostConfig,
 	vendorFactories []vendors.IVendorFactory,
 	managerFactories []mf.IManagerFactroy,
-	providerFactories []pf.IProviderFactory, wait bool) error {
+	providerFactories []pf.IProviderFactory, wait bool,
+) error {
 	h.Vendors = make([]VendorSpec, 0)
 	h.Bindings = make([]bindings.IBinding, 0)
 	log.Info("--- launching COA host ---")
@@ -147,7 +154,8 @@ func (h *APIHost) Launch(config HostConfig,
 						for _, providerFactory := range providerFactories {
 							mProvider, err := providerFactory.CreateProvider(
 								config.API.PubSub.Provider.Type,
-								config.API.PubSub.Provider.Config)
+								config.API.PubSub.Provider.Config,
+							)
 							if err != nil {
 								return err
 							}
@@ -168,7 +176,8 @@ func (h *APIHost) Launch(config HostConfig,
 						for _, providerFactory := range providerFactories {
 							mProvider, err := providerFactory.CreateProvider(
 								config.API.KeyLock.Provider.Type,
-								config.API.KeyLock.Provider.Config)
+								config.API.KeyLock.Provider.Config,
+							)
 							if err != nil {
 								return err
 							}
@@ -185,13 +194,13 @@ func (h *APIHost) Launch(config HostConfig,
 					if err != nil {
 						return err
 					}
-					for k, _ := range mProviders {
+					for k := range mProviders {
 						if _, ok := providers[k]; ok {
 							for ik, iv := range mProviders[k] {
 								if _, ok := providers[k][ik]; !ok {
 									providers[k][ik] = iv
 								} else {
-									//TODO: what to do if there are conflicts?
+									// TODO: what to do if there are conflicts?
 								}
 							}
 						} else {
@@ -270,7 +279,8 @@ func (h *APIHost) Launch(config HostConfig,
 					for _, providerFactory := range providerFactories {
 						mProvider, err := providerFactory.CreateProvider(
 							config.API.PubSub.Provider.Type,
-							config.API.PubSub.Provider.Config)
+							config.API.PubSub.Provider.Config,
+						)
 						if err != nil {
 							return err
 						}
@@ -348,6 +358,44 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 		return nil, err
 	}
 	binding := &http.HttpBinding{}
+
+	// MTLS is specifically for MARGO (MIAF Compliant)
+	if httpConfig.MTLS == true {
+		// Segregate endpoints here for margo SBI
+		margoSbiEndpoints := make([]v1alpha2.Endpoint, 0)
+		for _, e := range endpoints {
+			if e.Route == "margo/api/v1" { // this is Margo Management Interface Route
+				margoSbiEndpoints = append(margoSbiEndpoints, e)
+			}
+		}
+		// This will only contain MARGO SBI Endpoint in case of mTLS
+		endpoints = margoSbiEndpoints
+
+		// Validate MIAF Config here
+		err := http.ValidateMIAFConfig(httpConfig.MIAF)
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse MIAF Config here, almost everything except x509 SVID & key
+		pmc, err := mcp.ParseMIAFConfig(httpConfig.MIAF.ToMIAFInput(), "")
+		if err != nil {
+			return nil, err
+		}
+
+		// Validate Authorized spiffe Ids here
+		for _, spid := range pmc.AuthorizedSPIFFEIDs {
+			// Authorization list for symphony will contain SPIFFE IDs of WFM-Clients, hence using principal WFMClient here.
+			err := validators.ValidateSpiffeID(spid, validators.PrincipalWFMClient)
+			if err != nil {
+				return nil, fmt.Errorf("failed to validate client spiffeId %s, err : %w", spid, err)
+			}
+		}
+
+		// Certificates are not attached here, they will be in next step
+		binding.ParsedMIAFConfig = pmc
+	}
+
 	return binding, binding.Launch(httpConfig, endpoints, pubsubProvider)
 }
 
