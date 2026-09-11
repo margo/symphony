@@ -262,7 +262,6 @@ func (h *APIHost) Launch(config HostConfig,
 	}
 	if len(config.Bindings) > 0 {
 		endpoints := make([]v1alpha2.Endpoint, 0)
-		// TODO: We can segregate SBI from NBI Here.
 		for _, v := range h.Vendors {
 			endpoints = append(endpoints, v.Vendor.GetEndpoints()...)
 		}
@@ -359,7 +358,18 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 	}
 	binding := &http.HttpBinding{}
 
+	// MTLS is specifically for MARGO (MIAF Compliant)
 	if httpConfig.MTLS == true {
+		// Segregate endpoints here for margo SBI
+		margoSbiEndpoints := make([]v1alpha2.Endpoint, 0)
+		for _, e := range endpoints {
+			if e.Route == "margo/api/v1" { // this is Margo Management Interface Route
+				margoSbiEndpoints = append(margoSbiEndpoints, e)
+			}
+		}
+		// This will only contain MARGO SBI Endpoint in case of mTLS
+		endpoints = margoSbiEndpoints
+
 		// Validate MIAF Config here
 		err := http.ValidateMIAFConfig(httpConfig.MIAF)
 		if err != nil {
