@@ -757,7 +757,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
-		map[string]string{},
+		nil,
 		v1alpha2.OK,
 		&bundleData,
 	)
@@ -904,7 +904,7 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/yaml",
-		map[string]string{},
+		nil,
 		v1alpha2.OK,
 		&yamlContent,
 	)
