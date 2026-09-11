@@ -741,8 +741,7 @@
             "type": "managers.margo.device",
             "properties": {
               "providers.persistentstate": "redis-state",
-              "singleton": "true",
-              "serverCAPath": "./certificates/ca-cert.pem"             
+              "singleton": "true"            
             },
            "providers": {
               "redis-state": {
@@ -776,6 +775,45 @@
         },
         "pipeline": [
           
+          {
+            "type": "middleware.http.cors",
+            "properties": {
+              "Access-Control-Allow-Headers": "authorization,Content-Type",
+              "Access-Control-Allow-Credentials": "true",
+              "Access-Control-Allow-Methods": "HEAD,GET,POST,PUT,DELETE,OPTIONS",
+              "Access-Control-Allow-Origin": "*"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "bindings.http",
+      "config": {
+        "port": 8084,
+        "mtls": true,
+        "miaf": {
+          "mis": {
+            "endpoint": "https://mis.margo.org:9443",
+            "caPath": "./mis/https-ca.crt",
+            "cacheInterval": 60,
+            "trustDomain": "margo.org",
+            "trustBundle": {
+              "uri": "/.well-known/spiffe/bundle.json",
+              "path": "./mis/trust-bundle.json"
+            }
+          },
+          "authzPath": "./mis/authorized-clients.json"
+        },
+        "certProvider": {
+          "type": "certs.localfile",
+          "config": {
+            "name": "margo-sbi-svid-cert",
+            "cert": "./certificates/payload-cert.pem",
+            "key": "./certificates/payload-key.pem"
+          }
+        },
+        "pipeline": [
           {
             "type": "middleware.http.cors",
             "properties": {
