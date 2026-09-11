@@ -752,27 +752,12 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		deviceClientId, actualDigest, len(bundleData))
 
 	// Set headers directly in fasthttp context
-	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
-
-		fhCtx.Response.Header.Set("Content-Type", "application/vnd.margo.bundle.v1+tar+gzip")
-		fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
-		fhCtx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", actualDigest)) // Quoted ETag
-		fhCtx.Response.Header.Set("Vary", "Accept-Encoding")
-
-		deviceVendorLogger.InfofCtx(pCtx, "Set response headers directly - ETag: %s", actualDigest)
-	} else {
-		deviceVendorLogger.WarnfCtx(pCtx, "Could not access fasthttp context to set headers")
-	}
+	setFastHTTPResponseHeaders(request.Context, "application/vnd.margo.bundle.v1+tar+gzip", actualDigest)
 
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
-		map[string]string{
-			"Content-Type":  "application/vnd.margo.bundle.v1+tar+gzip",
-			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
-			"Vary":          "Accept-Encoding",
-		},
+		map[string]string{},
 		v1alpha2.OK,
 		&bundleData,
 	)
@@ -914,26 +899,12 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		deploymentId, actualDigest, len(yamlContent))
 
 	// Set headers directly in fasthttp context
-	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
-		fhCtx.Response.Header.Set("Content-Type", "application/yaml")
-		fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
-		fhCtx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", actualDigest)) // Quoted ETag
-		fhCtx.Response.Header.Set("Vary", "Accept-Encoding")
-
-		deviceVendorLogger.InfofCtx(pCtx, "Set response headers directly - ETag: %s", actualDigest)
-	} else {
-		deviceVendorLogger.WarnfCtx(pCtx, "Could not access fasthttp context to set headers")
-	}
+	setFastHTTPResponseHeaders(request.Context, "application/yaml", actualDigest)
 
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/yaml",
-		map[string]string{
-			"Content-Type":  "application/yaml",
-			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
-			"Vary":          "Accept-Encoding",
-		},
+		map[string]string{},
 		v1alpha2.OK,
 		&yamlContent,
 	)
