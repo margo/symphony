@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
-
 	"strings"
+	"time"
 
 	"github.com/eclipse-symphony/symphony/cli/utils"
 	"github.com/ghodss/yaml"
@@ -284,47 +283,47 @@ var MargoGetDeploymentCmd = &cobra.Command{
 
 // Implementation functions
 func applyAppConfig(filename string) error {
-    yamlFile, err := os.ReadFile(filename)
-    if err != nil {
-        return fmt.Errorf("failed to read file: %w", err)
-    }
+	yamlFile, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
 
-    var data map[string]interface{}
-    if err := yaml.Unmarshal(yamlFile, &data); err != nil {
-        return fmt.Errorf("failed to unmarshal YAML: %w", err)
-    }
+	var data map[string]interface{}
+	if err := yaml.Unmarshal(yamlFile, &data); err != nil {
+		return fmt.Errorf("failed to unmarshal YAML: %w", err)
+	}
 
-    jsonFile, err := convertYamlToJson(yamlFile)
-    if err != nil {
-        return fmt.Errorf("failed to convert yaml to json: %w", err)
-    }
+	jsonFile, err := convertYamlToJson(yamlFile)
+	if err != nil {
+		return fmt.Errorf("failed to convert yaml to json: %w", err)
+	}
 
-    // Determine resource type by spec fields since kind is removed
-    spec, _ := data["spec"].(map[string]interface{})
-    if spec == nil {
-        return fmt.Errorf("spec not found in resource")
-    }
+	// Determine resource type by spec fields since kind is removed
+	spec, _ := data["spec"].(map[string]interface{})
+	if spec == nil {
+		return fmt.Errorf("spec not found in resource")
+	}
 
-    switch {
-    case spec["sourceType"] != nil:
-        // ApplicationPackageManifestRequest has spec.sourceType
-        var appPkg nbi.ApplicationPackageManifestRequest
-        if err := json.Unmarshal(jsonFile, &appPkg); err != nil {
-            return fmt.Errorf("failed to unmarshal ApplicationPackage: %w", err)
-        }
-        return onboardAppPkg(&appPkg)
+	switch {
+	case spec["sourceType"] != nil:
+		// ApplicationPackageManifestRequest has spec.sourceType
+		var appPkg nbi.ApplicationPackageManifestRequest
+		if err := json.Unmarshal(jsonFile, &appPkg); err != nil {
+			return fmt.Errorf("failed to unmarshal ApplicationPackage: %w", err)
+		}
+		return onboardAppPkg(&appPkg)
 
-    case spec["appPackageRef"] != nil:
-        // ApplicationDeploymentManifestRequest has spec.appPackageRef
-        var deployment nbi.ApplicationDeploymentManifestRequest
-        if err := json.Unmarshal(jsonFile, &deployment); err != nil {
-            return fmt.Errorf("failed to unmarshal ApplicationDeployment: %w", err)
-        }
-        return createDeployment(&deployment)
+	case spec["appPackageRef"] != nil:
+		// ApplicationDeploymentManifestRequest has spec.appPackageRef
+		var deployment nbi.ApplicationDeploymentManifestRequest
+		if err := json.Unmarshal(jsonFile, &deployment); err != nil {
+			return fmt.Errorf("failed to unmarshal ApplicationDeployment: %w", err)
+		}
+		return createDeployment(&deployment)
 
-    default:
-        return fmt.Errorf("cannot determine resource type: spec must contain 'sourceType' (ApplicationPackage) or 'appPackageRef' (ApplicationDeployment)")
-    }
+	default:
+		return fmt.Errorf("cannot determine resource type: spec must contain 'sourceType' (ApplicationPackage) or 'appPackageRef' (ApplicationDeployment)")
+	}
 }
 
 // createNorthboundClient creates a configured northbound client
@@ -564,7 +563,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t.SetOutputMirror(os.Stdout)
 
 	tr := table.Row{
-		"ID", "Signature", "Capabilities", "Deployment Type", "State", "CreatedAt",
+		"ID", "Capabilities", "Deployment Type", "State", "CreatedAt",
 	}
 
 	if eligibilityMarker {
@@ -576,7 +575,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 
 	// Add data rows
 	for _, device := range resp.Items {
-		if  device.Id == nil || *device.Id == "" {
+		if device.Id == nil || *device.Id == "" {
 			continue
 		}
 
@@ -597,8 +596,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
-			truncateString(*device.Id, 40),
-			truncateString(device.Spec.Signature, 28),
+			*device.Id, // deliberately not truncating device Id
 			truncateString(string(cap), 28),
 			deploymentTypeStr,
 			string(device.State.Onboard),
@@ -614,13 +612,12 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t.AppendFooter(table.Row{
 		"", "", "",
 		fmt.Sprintf("Page %d/%d", 1, 1),
-		fmt.Sprintf("Total: %d", 1), //resp.Metadata.TotalItems),
+		fmt.Sprintf("Total: %d", 1), // resp.Metadata.TotalItems),
 	})
 
 	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 40}, // ID
-		{Number: 2, WidthMax: 28}, // Signature
+		{Number: 1, WidthMax: 60}, // ID
 		{Number: 3, WidthMax: 28}, // Capabilities
 		{Number: 4, WidthMax: 28}, // Deployment Type
 		{Number: 5, WidthMax: 12}, // State
@@ -668,8 +665,8 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	// Add footer with pagination
 	t.AppendFooter(table.Row{
 		"", "", "", "", "", "", "",
-		fmt.Sprintf("Page %d/%d", 1, 1), //resp.Metadata.Page, resp.Metadata.TotalPages),
-		fmt.Sprintf("Total: %d", 1),     //resp.Metadata.TotalItems),
+		fmt.Sprintf("Page %d/%d", 1, 1), // resp.Metadata.Page, resp.Metadata.TotalPages),
+		fmt.Sprintf("Total: %d", 1),     // resp.Metadata.TotalItems),
 	})
 
 	// Configure column settings
@@ -792,7 +789,6 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 	fmt.Printf("  Name: %s\n", appPkg.Metadata.Name)
 	fmt.Printf("  API Version: %s\n", appPkg.ApiVersion)
 
-
 	fmt.Printf("  Metadata:\n")
 	fmt.Printf("    Creation Timestamp: %s\n", appPkg.Metadata.CreationTimestamp)
 	fmt.Printf("    Namespace: %s\n", *appPkg.Metadata.Namespace)
@@ -805,7 +801,7 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 		fmt.Printf("    OCI Source:\n")
 		fmt.Printf("      URL: %s\n", ociRepo.RegistryUrl)
 		fmt.Printf("      Repository: %s\n", *&ociRepo.Repository)
-		fmt.Printf("      Revision: %s\n", *ociRepo.Tag)	
+		fmt.Printf("      Revision: %s\n", *ociRepo.Tag)
 	}
 
 	fmt.Printf("  Status:\n")
