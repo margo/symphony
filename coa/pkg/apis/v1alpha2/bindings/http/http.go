@@ -217,12 +217,17 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 
 		// Now setup ways to obtain trustbundle, and a cache which can be accessed here
 		ccfg := trustbundle.TrustMaterialCacherConfig{
-			MISEndpoint:     h.ParsedMIAFConfig.MIS.Endpoint,
-			MISCAPem:        h.ParsedMIAFConfig.MIS.CAPEM,
-			TrustBundleURI:  h.ParsedMIAFConfig.MIS.TrustBundle.URI,
-			TrustBundleJSON: h.ParsedMIAFConfig.MIS.TrustBundle.BundleJSON,
-			TrustDomain:     h.ParsedMIAFConfig.MIS.TrustDomain,
+			MISEndpoint: h.ParsedMIAFConfig.MIS.Endpoint,
+			MISCAPem:    h.ParsedMIAFConfig.MIS.CAPEM,
+			TrustDomain: h.ParsedMIAFConfig.MIS.TrustDomain,
+			Logger:      httpLogger,
 		}
+
+		if h.ParsedMIAFConfig.MIS.TrustBundle != nil {
+			ccfg.TrustBundleURI = h.ParsedMIAFConfig.MIS.TrustBundle.URI
+			ccfg.TrustBundleJSON = h.ParsedMIAFConfig.MIS.TrustBundle.BundleJSON
+		}
+
 		tbc := trustbundle.New(ccfg)
 		// this starts the trust bundle cacher
 		err = tbc.Start()
@@ -289,10 +294,10 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			// Stopping caching mechanism for trust bundle
 			h.trustBundleCacher.Stop()
 		}
-		httpLogger.ErrorCtx(context.Background(), "H (HttpBinding): Server error: %s", err.Error())
+		httpLogger.ErrorCtx(context.Background(), "H (HttpBinding): Server error:", err.Error())
 		return err
 	case <-time.After(10 * time.Second):
-		httpLogger.DebugCtx(context.Background(), "H (HttpBinding): Server started on port: %s", config.Port)
+		httpLogger.DebugCtx(context.Background(), "H (HttpBinding): Server started on port: ", config.Port)
 	}
 	return nil
 }

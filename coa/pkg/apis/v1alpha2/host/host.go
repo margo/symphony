@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -359,17 +360,16 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 	}
 	binding := &http.HttpBinding{}
 
+	nme, me := segregateMargoInterface(endpoints)
+	endpoints = nme // by default, all non margo endpoints
+
 	// MTLS is specifically for MARGO (MIAF Compliant)
 	if httpConfig.MTLS == true {
-		// Segregate endpoints here for margo SBI
-		margoSbiEndpoints := make([]v1alpha2.Endpoint, 0)
-		for _, e := range endpoints {
-			if e.Route == "margo/api/v1" { // this is Margo Management Interface Route
-				margoSbiEndpoints = append(margoSbiEndpoints, e)
-			}
-		}
 		// This will only contain MARGO SBI Endpoint in case of mTLS
-		endpoints = margoSbiEndpoints
+		if len(me) == 0 {
+			return nil, fmt.Errorf("margo management interface missing, cannot serve margo interface")
+		}
+		endpoints = me
 
 		// Validate MIAF Config here
 		err := http.ValidateMIAFConfig(httpConfig.MIAF)
@@ -397,6 +397,29 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 	}
 
 	return binding, binding.Launch(httpConfig, endpoints, pubsubProvider)
+}
+
+// separates out margo and non margo interface endpoints.
+// Returns Non Margo Endpoints & Margo Interface endpoints
+func segregateMargoInterface(eps []v1alpha2.Endpoint) (nme []v1alpha2.Endpoint, me []v1alpha2.Endpoint) {
+	for _, e := range eps {
+
+		// only nbi should be separate, rest of the routes must remain same
+		if strings.HasPrefix(e.Route, "margo/nbi/v1") {
+			nme = append(nme, e)
+			continue
+		}
+
+		if strings.HasPrefix(e.Route, "margo/api/v1") { // this is Margo Management Interface Route
+			me = append(me, e)
+			continue
+		}
+
+		nme = append(nme, e)
+		me = append(me, e)
+
+	}
+	return nme, me
 }
 
 func (h *APIHost) launchMQTT(config interface{}, endpoints []v1alpha2.Endpoint) (bindings.IBinding, error) {

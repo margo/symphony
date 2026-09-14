@@ -47,7 +47,7 @@ type TrustMaterialCacherConfig struct {
 	Interval int
 
 	// for logging
-	logger logger.Logger
+	Logger logger.Logger
 }
 
 // ── Interface ─────────────────────────────────────────────────────────────────
@@ -170,10 +170,11 @@ func New(cfg TrustMaterialCacherConfig) TrustMaterialCacherIfc {
 // Errors during the initial fetch are returned immediately; the background
 // goroutine is NOT started in that case.
 func (c *TrustMaterialCacher) Start() error {
-	c.cfg.logger.DebugCtx(
+	c.cfg.Logger.DebugCtx(
 		context.Background(),
-		"TrustMaterialCacher: starting; endpoint=%s interval=%s",
-		c.cfg.MISEndpoint, c.interval,
+		"TrustMaterialCacher: starting, ",
+		"endpoint: ", c.cfg.MISEndpoint,
+		" interval: ", c.interval,
 	)
 
 	// ── Build the trustbundle.Getter ─────────────────────────────────────────
@@ -200,33 +201,36 @@ func (c *TrustMaterialCacher) Start() error {
 	c.trustBundle.etag.Store(etag)
 	c.trustDomain.value.Store(trustDomain)
 
-	c.cfg.logger.DebugCtx(
+	c.cfg.Logger.DebugCtx(
 		context.Background(),
-		"TrustMaterialCacher: initial fetch succeeded; trustDomain=%s etag=%q bundleLen=%d",
-		trustDomain, etag, len(bundleBytes),
+		"TrustMaterialCacher: initial fetch succeeded, ",
+		"trustDomain: ", trustDomain,
+		" etag: ", etag,
+		" bundleLen: ", len(bundleBytes),
 	)
 
 	// ── Derive refresh interval from spiffe_refresh_hint ─────────────────────
-	if hint, ok := extractRefreshHint(bundleBytes, c.cfg.logger); ok {
+	if hint, ok := extractRefreshHint(bundleBytes, c.cfg.Logger); ok {
 		hintDuration := time.Duration(hint) * time.Second
-		c.cfg.logger.DebugCtx(
+		c.cfg.Logger.DebugCtx(
 			context.Background(),
-			"TrustMaterialCacher: using spiffe_refresh_hint=%d s from bundle (was %s)",
-			hint, c.interval,
+			"TrustMaterialCacher: using spiffe_refresh_hint from bundle. ",
+			"hint_seconds: ", hint,
+			" previous_interval: ", c.interval,
 		)
 		c.interval = hintDuration
 	} else {
-		c.cfg.logger.DebugCtx(
+		c.cfg.Logger.DebugCtx(
 			context.Background(),
-			"TrustMaterialCacher: no valid spiffe_refresh_hint in bundle; using configured interval=%s",
-			c.interval,
+			"TrustMaterialCacher: no valid spiffe_refresh_hint in bundle; using configured interval. ",
+			"interval: ", c.interval,
 		)
 	}
 
 	// ── Launch background refresh goroutine ───────────────────────────────────
 	go c.refreshLoop()
 
-	c.cfg.logger.DebugCtx(
+	c.cfg.Logger.DebugCtx(
 		context.Background(),
 		"TrustMaterialCacher: background refresh goroutine started",
 	)
@@ -236,10 +240,10 @@ func (c *TrustMaterialCacher) Start() error {
 // Stop signals the background refresh goroutine to exit and blocks until it
 // has done so.
 func (c *TrustMaterialCacher) Stop() {
-	c.cfg.logger.DebugCtx(context.Background(), "TrustMaterialCacher: stopping")
+	c.cfg.Logger.DebugCtx(context.Background(), "TrustMaterialCacher: stopping")
 	close(c.stopCh)
 	<-c.doneCh
-	c.cfg.logger.DebugCtx(context.Background(), "TrustMaterialCacher: stopped")
+	c.cfg.Logger.DebugCtx(context.Background(), "TrustMaterialCacher: stopped")
 }
 
 // GetTrustBundle returns the most recently cached raw SPIFFE bundle bytes.
@@ -270,14 +274,14 @@ func (c *TrustMaterialCacher) refreshLoop() {
 	for {
 		select {
 		case <-c.stopCh:
-			c.cfg.logger.DebugCtx(
+			c.cfg.Logger.DebugCtx(
 				context.Background(),
 				"TrustMaterialCacher: refresh loop received stop signal; exiting",
 			)
 			return
 
 		case <-ticker.C:
-			c.cfg.logger.DebugCtx(
+			c.cfg.Logger.DebugCtx(
 				context.Background(),
 				"TrustMaterialCacher: refresh tick; fetching trust bundle",
 			)
@@ -300,7 +304,7 @@ func (c *TrustMaterialCacher) refresh(ticker *time.Ticker) {
 	if err != nil {
 		// ErrNotModified is not a real error: the cached bundle is still valid.
 		if err == trustbundle.ErrNotModified {
-			c.cfg.logger.DebugCtx(
+			c.cfg.Logger.DebugCtx(
 				context.Background(),
 				"TrustMaterialCacher: trust bundle not modified (304); retaining cached values",
 			)
@@ -308,9 +312,10 @@ func (c *TrustMaterialCacher) refresh(ticker *time.Ticker) {
 		}
 
 		// Any other error: log and retain stale cache.
-		c.cfg.logger.ErrorCtx(
+		c.cfg.Logger.ErrorCtx(
 			context.Background(),
-			"TrustMaterialCacher: refresh failed; retaining stale cache: %s", err.Error(),
+			"TrustMaterialCacher: refresh failed; retaining stale cache. ",
+			"error: ", err.Error(),
 		)
 		return
 	}
@@ -320,20 +325,25 @@ func (c *TrustMaterialCacher) refresh(ticker *time.Ticker) {
 	c.trustBundle.etag.Store(newEtag)
 	c.trustDomain.value.Store(trustDomain)
 
-	c.cfg.logger.DebugCtx(
+	// refresh() - cache updated
+	c.cfg.Logger.DebugCtx(
 		context.Background(),
-		"TrustMaterialCacher: cache updated; trustDomain=%s etag=%q bundleLen=%d",
-		trustDomain, newEtag, len(bundleBytes),
+		"TrustMaterialCacher: cache updated, ",
+		"trustDomain: ", trustDomain,
+		"etag: ", newEtag,
+		"bundleLen: ", len(bundleBytes),
 	)
 
 	// Re-evaluate spiffe_refresh_hint and reset the ticker if it has changed.
-	if hint, ok := extractRefreshHint(bundleBytes, c.cfg.logger); ok {
+	if hint, ok := extractRefreshHint(bundleBytes, c.cfg.Logger); ok {
 		newInterval := time.Duration(hint) * time.Second
 		if newInterval != c.interval {
-			c.cfg.logger.DebugCtx(
+			// refresh() - spiffe_refresh_hint changed
+			c.cfg.Logger.DebugCtx(
 				context.Background(),
-				"TrustMaterialCacher: spiffe_refresh_hint changed; resetting ticker from %s to %s",
-				c.interval, newInterval,
+				"TrustMaterialCacher: spiffe_refresh_hint changed; resetting ticker. ",
+				"old_interval: ", c.interval,
+				"new_interval: ", newInterval,
 			)
 			c.interval = newInterval
 			ticker.Reset(newInterval)
@@ -357,9 +367,11 @@ func extractRefreshHint(bundleBytes []byte, logger logger.Logger) (int64, bool) 
 
 	var doc spiffeBundle
 	if err := json.Unmarshal(bundleBytes, &doc); err != nil {
+		// extractRefreshHint() - parse failure
 		logger.DebugCtx(
 			context.Background(),
-			"TrustMaterialCacher: failed to parse bundle for spiffe_refresh_hint: %s", err.Error(),
+			"TrustMaterialCacher: failed to parse bundle for spiffe_refresh_hint. ",
+			"error: ", err.Error(),
 		)
 		return 0, false
 	}
