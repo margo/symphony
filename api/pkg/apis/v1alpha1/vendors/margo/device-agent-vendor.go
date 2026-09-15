@@ -751,15 +751,13 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		"Serving bundle for device %s with verified digest %s (%d bytes)",
 		deviceClientId, actualDigest, len(bundleData))
 
+	// Set headers directly in fasthttp context
+	setFastHTTPResponseHeaders(request.Context, "application/vnd.margo.bundle.v1+tar+gzip", actualDigest)
+
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
-		map[string]string{
-			"Content-Type":  "application/vnd.margo.bundle.v1+tar+gzip",
-			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
-			"Vary":          "Accept-Encoding",
-		},
+		nil,
 		v1alpha2.OK,
 		&bundleData,
 	)
@@ -900,15 +898,13 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		"Serving deployment %s with verified digest %s (%d bytes)",
 		deploymentId, actualDigest, len(yamlContent))
 
+	// Set headers directly in fasthttp context
+	setFastHTTPResponseHeaders(request.Context, "application/yaml", actualDigest)
+
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(span,
 		"application/yaml",
-		map[string]string{
-			"Content-Type":  "application/yaml",
-			"Cache-Control": "public, max-age=31536000, immutable",
-			"ETag":          fmt.Sprintf("\"%s\"", actualDigest), // Quoted ETag
-			"Vary":          "Accept-Encoding",
-		},
+		nil,
 		v1alpha2.OK,
 		&yamlContent,
 	)

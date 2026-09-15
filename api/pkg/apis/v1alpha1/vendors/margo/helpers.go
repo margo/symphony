@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/valyala/fasthttp"
 	"gopkg.in/yaml.v2"
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
@@ -14,6 +15,8 @@ import (
 	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"go.opentelemetry.io/otel/trace"
 )
+
+var helperVendorLogger = logger.NewLogger("coa.runtime")
 
 // Helper method for error responses
 func createErrorResponse(logger logger.Logger, span trace.Span, err error, message string, errorType v1alpha2.State) v1alpha2.COAResponse {
@@ -321,4 +324,22 @@ func createSuccessResponseWithHeadersSimple[T any](
 	}
 
 	return observ_utils.CloseSpanWithCOAResponse(span, coaResponse), nil
+}
+
+// setFastHTTPResponseHeaders sets standard cache and artifact headers (ETag, Cache-Control, Content-Type) directly on FastHTTP context
+func setFastHTTPResponseHeaders(
+	ctx context.Context,
+	contentType string,
+	digest string,
+) {
+	if fhCtx, ok := ctx.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
+		fhCtx.Response.Header.Set("Content-Type", contentType)
+		fhCtx.Response.Header.Set("Cache-Control", "public, max-age=31536000, immutable")
+		fhCtx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", digest)) // Quoted ETag per spec
+		fhCtx.Response.Header.Set("Vary", "Accept-Encoding")
+
+		helperVendorLogger.InfofCtx(ctx, "Set response headers directly - ETag: %s", digest)
+	} else {
+		helperVendorLogger.WarnfCtx(ctx, "Could not access fasthttp context to set headers")
+	}
 }
