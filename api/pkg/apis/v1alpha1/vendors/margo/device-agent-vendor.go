@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
@@ -16,6 +17,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/margo/sandbox/shared-lib/mis/parser"
 	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 	"github.com/valyala/fasthttp"
 	"gopkg.in/yaml.v2"
@@ -131,6 +133,13 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 			"Missing deviceId parameter", v1alpha2.BadRequest)
 	}
 
+	deviceSpiffeId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, err.Error(), v1alpha2.BadRequest),
+			"failed to extract device spiffeId", v1alpha2.BadRequest)
+	}
+
 	// Parse request body using the correct DeviceCapabilities type
 	var capabilities margoStdSbiAPI.DeviceCapabilitiesManifest
 	if err := json.Unmarshal(request.Body, &capabilities); err != nil {
@@ -138,7 +147,6 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	// Validate required fields
-
 	if capabilities.Properties.Id == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
@@ -153,7 +161,8 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	// Call DeviceManager to update capabilities
-	err := self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceId, capabilities)
+	// deviceid is just for residing in properties. For identity, MIAF related identity needs to be used.
+	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceSpiffeId, capabilities)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update device capabilities", v1alpha2.InternalError)
 	}
@@ -175,6 +184,13 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		})
 	defer span.End()
 
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, err.Error(), v1alpha2.BadRequest),
+			"failed to extract device spiffeId", v1alpha2.BadRequest)
+	}
+
 	deploymentId := request.Parameters["__deploymentId"]
 	if deploymentId == "" {
 		return createErrorResponse2(deviceVendorLogger, span,
@@ -193,12 +209,7 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update deployment status", v1alpha2.BadRequest)
 	}
 
-	// Temporary workaround: Extract deviceId from request body if available, otherwise use empty string( need to figureout with MIAF)
-	deviceId := ""
-	if statusReq.DeviceId != nil {
-		deviceId = string(*statusReq.DeviceId)
-	}
-	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceId, deploymentId, string(statusReq.Status.State)); err != nil {
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State)); err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update the status", v1alpha2.BadRequest)
 	}
 
@@ -231,24 +242,27 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 			"Not Acceptable", v1alpha2.NotAcceptable)
 	}
 
-	// deviceId from query param or TODO: from mTLS SPIFFE ID
-	// TODO: MIAF SUP — extract deviceId from mTLS client certificate SPIFFE ID
-	deviceId := request.Parameters["deviceId"] // temporary PoC workaround
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
+		return createErrorResponse2(deviceVendorLogger, span,
+			v1alpha2.NewCOAError(nil, err.Error(), v1alpha2.BadRequest),
+			"failed to extract device spiffeId", v1alpha2.BadRequest)
+	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Processing request for deviceClientId: %s", deviceId)
+	deviceVendorLogger.InfofCtx(pCtx, "Processing request for deviceClientId: %s", deviceClientId)
 
 	// Fix: Use lowercase header key
 	digest := headers["if-none-match"]
 	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
-	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceId, &digest)
+	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceClientId, &digest)
 	if err != nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "ShouldReplaceBundle failed for device %s: %v", deviceId, err)
+		deviceVendorLogger.ErrorfCtx(pCtx, "ShouldReplaceBundle failed for device %s: %v", deviceClientId, err)
 		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get the desired states", v1alpha2.InternalError)
 	}
 
 	if manifest == nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceId)
+		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceClientId)
 		return createErrorResponse2(deviceVendorLogger, span,
 			v1alpha2.NewCOAError(nil, "manifest is nil", v1alpha2.InternalError),
 			"Internal server error", v1alpha2.InternalError)
@@ -271,10 +285,10 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		etag = fmt.Sprintf("\"sha256:%x\"", hash)
 
 		deviceVendorLogger.InfofCtx(pCtx, "Returning empty manifest for device %s - Version: %d, ETag: %s",
-			deviceId, manifestVersionInt, etag)
+			deviceClientId, manifestVersionInt, etag)
 	} else {
 		if manifest.Bundle.Digest == nil {
-			deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceId)
+			deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceClientId)
 			return createErrorResponse2(deviceVendorLogger, span,
 				v1alpha2.NewCOAError(nil, "manifest bundle digest is nil", v1alpha2.InternalError),
 				"Internal server error", v1alpha2.InternalError)
@@ -284,7 +298,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		etag = fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
 
 		deviceVendorLogger.InfofCtx(pCtx, "Returning bundle manifest for device %s - Version: %d, Digest: %s, Deployments: %d",
-			deviceId, manifestVersionInt, *manifest.Bundle.Digest, len(manifest.Deployments))
+			deviceClientId, manifestVersionInt, *manifest.Bundle.Digest, len(manifest.Deployments))
 	}
 
 	// Set headers directly in fasthttp context
@@ -301,7 +315,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 
 	// Check if client already has this manifest (digest matches)
 	if !shouldReplaceBundle {
-		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", deviceId, etag)
+		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", deviceClientId, etag)
 
 		// Return NotModified state - COA framework will convert to HTTP 304
 		response := v1alpha2.COAResponse{
@@ -316,7 +330,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		return response
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", deviceId, etag)
+	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", deviceClientId, etag)
 
 	// Serialize manifest
 	manifestJSON, err := json.Marshal(manifest)
@@ -358,13 +372,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	}
 	accept := headers["accept"]
 	if accept != "" {
-		validAccept := false
-		for _, validType := range acceptedTypes {
-			if accept == validType {
-				validAccept = true
-				break
-			}
-		}
+		validAccept := slices.Contains(acceptedTypes, accept)
 		if !validAccept {
 			return createErrorResponse2(deviceVendorLogger, span,
 				v1alpha2.NewCOAError(nil,
@@ -374,13 +382,11 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		}
 	}
 
-	// Extract and validate parameters
-	// AFTER — PoC: deviceId from query param (TODO: MIAF — from mTLS SPIFFE ID)
-	deviceId := request.Parameters["deviceId"] // query param workaround
-	if deviceId == "" {
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "deviceId is required", v1alpha2.BadRequest),
-			"Missing deviceId parameter", v1alpha2.BadRequest)
+			v1alpha2.NewCOAError(nil, err.Error(), v1alpha2.BadRequest),
+			"failed to extract device spiffeId", v1alpha2.BadRequest)
 	}
 
 	requestedDigest := request.Parameters["__digest"]
@@ -394,7 +400,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	clientETag := headers["if-none-match"]
 
 	// Get bundle from database
-	path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceId, &requestedDigest)
+	path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
 	if err != nil {
 		return createErrorResponse2(deviceVendorLogger, span, err,
 			"Bundle not found", v1alpha2.NotFound)
@@ -420,7 +426,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		if clientETag != "" && clientETagClean == serverETagClean {
 			deviceVendorLogger.InfofCtx(pCtx,
 				"Bundle not modified for device %s (304) - ETag: %s",
-				deviceId, serverETag)
+				deviceClientId, serverETag)
 
 			// Return 304 Not Modified
 			return v1alpha2.COAResponse{
@@ -445,7 +451,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Bundle digest mismatch for device %s: requested=%s, actual=%s",
-			deviceId, requestedDigest, actualDigest)
+			deviceClientId, requestedDigest, actualDigest)
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
@@ -459,7 +465,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 
 	deviceVendorLogger.InfofCtx(pCtx,
 		"Serving bundle for device %s with verified digest %s (%d bytes)",
-		deviceId, actualDigest, len(bundleData))
+		deviceClientId, actualDigest, len(bundleData))
 
 	// Return with proper headers
 	return createSuccessResponseWithHeaders(
@@ -641,4 +647,35 @@ func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 		return headers, nil
 	}
 	return nil, nil
+}
+
+// ExtractTLSCertificates extracts the client (peer) certificates
+// from the mTLS connection embedded in the COARequest context.
+//
+// Returns (clientSpiffeID, serverSpiffeID, error).
+func ExtractPeerSpiffeID(request v1alpha2.COARequest) (string, error) {
+	fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx)
+	if !ok || fhCtx == nil {
+		return "", fmt.Errorf("fasthttp context not available in request")
+	}
+
+	tlsState := fhCtx.TLSConnectionState()
+	if tlsState == nil {
+		return "", fmt.Errorf("TLS connection state is nil — connection may not be over mTLS")
+	}
+
+	// ----------------------------------------------------------------
+	// Extract client certificate (peer certificate presented during mTLS handshake).
+	// ----------------------------------------------------------------
+	if len(tlsState.PeerCertificates) == 0 {
+		return "", fmt.Errorf("no client certificate presented by peer")
+	}
+	clientCert := tlsState.PeerCertificates[0] // leaf is always index 0
+
+	clientSpiffeID, err := parser.ParseSpiffeIdFromX509Svid(clientCert.Raw) // replace with parsed SPIFFE ID from clientCert
+	if err != nil {
+		return "", fmt.Errorf("failed to parse client spiffeId, err: %w", err)
+	}
+
+	return clientSpiffeID, nil
 }

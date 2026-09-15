@@ -18,8 +18,10 @@ import (
 	margoStdAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
 
-type PublishGroupName string
-type PublishFeed string
+type (
+	PublishGroupName string
+	PublishFeed      string
+)
 
 var (
 	margoDbLogger                                          = logger.NewLogger("coa.runtime")
@@ -78,20 +80,11 @@ type DeploymentDatabaseRow struct {
 // DeviceDatabaseRow represents a device record in the database.
 // It contains device identification, capabilities, and synchronization information.
 type DeviceDatabaseRow struct {
-	// DeviceClientId is the unique identifier for the device
+	// DeviceClientId is the unique identifier for the device, MIAF compliant SPIFFE ID
 	DeviceClientId string
 
-	// OAuthClientId is the unique identifier for the device auth
-	OAuthClientId string
-
-	// Client secret is the information that helps the device to generate/ask for an oauth token
-	OAuthClientSecret string
-
-	// OAuth token url
-	OAuthTokenURL string
-
-	// unique signature that is bind to this device, eg TPM, certificate etc...
-	DevicePubCert string
+	// This is same as device capabilities.properties.id
+	DeviceId string
 
 	// status of the onboarding
 	OnboardingStatus margoNonStdAPI.DeviceOnboardStatus
@@ -228,7 +221,6 @@ func (db *MargoDatabase) DeleteAppPackage(ctx context.Context, packageId string)
 		Metadata: db.appPkgMetadata,
 		ID:       packageId,
 	})
-
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteAppPackage: Failed to delete app package '%s': %v", packageId, err)
 		return fmt.Errorf("failed to delete app package '%s': %w", packageId, err)
@@ -346,7 +338,6 @@ func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId stri
 		Metadata: db.deploymentMetadata,
 		ID:       deploymentId,
 	})
-
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteDeployment: Failed to delete deployment '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to delete deployment '%s': %w", deploymentId, err)
@@ -521,7 +512,6 @@ func (db *MargoDatabase) GetDeploymentsByDevice(ctx context.Context, deviceId st
 
 	var deviceDeployments []DeploymentDatabaseRow
 	for _, deployment := range allDeployments {
-
 		if deployment.DeploymentRequest.Spec.DeviceRef != nil && deployment.DeploymentRequest.Spec.DeviceRef.Id != nil {
 			db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentsByDevice: Found deployment %s assigned to device %s",
 				*deployment.DeploymentRequest.Id, *deployment.DeploymentRequest.Spec.DeviceRef.Id)
@@ -597,40 +587,34 @@ func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabase
 	return nil
 }
 
-func (db *MargoDatabase) GetDevice(ctx context.Context, deviceId string) (*DeviceDatabaseRow, error) {
+func (db *MargoDatabase) GetDevice(ctx context.Context, deviceClientId string) (*DeviceDatabaseRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.deviceMetadata,
-		ID:       deviceId,
+		ID:       deviceClientId,
 	})
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to get device '%s': %v", deviceId, err)
-		return nil, fmt.Errorf("failed to get device '%s': %w", deviceId, err)
+		// sending not found error separately to track it.
+		if verr, ok := err.(v1alpha2.COAError); ok {
+			if verr.State == v1alpha2.NotFound {
+				// do not modify the error to enable tracking
+				return nil, err
+			}
+		}
+
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to get device '%s': %v", deviceClientId, err)
+		return nil, fmt.Errorf("failed to get device '%s': %w", deviceClientId, err)
 	}
 
 	var device DeviceDatabaseRow
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &device)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to unmarshal device '%s': %v", deviceId, err)
-		return nil, fmt.Errorf("failed to unmarshal device '%s': %w", deviceId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to unmarshal device '%s': %v", deviceClientId, err)
+		return nil, fmt.Errorf("failed to unmarshal device '%s': %w", deviceClientId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "GetDevice: device '%s' retrieved successfully", deviceId)
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDevice: device '%s' retrieved successfully", deviceClientId)
 	return &device, nil
-}
-
-func (db *MargoDatabase) GetDeviceUsingPubCert(ctx context.Context, cert string) (*DeviceDatabaseRow, error) {
-	devices, err := db.ListDevices(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, device := range devices {
-		if device.DevicePubCert == cert {
-			return &device, nil
-		}
-	}
-	return nil, fmt.Errorf("no device found with sign: %s", cert)
 }
 
 func (db *MargoDatabase) DeleteDevice(ctx context.Context, deviceId string) error {
@@ -638,7 +622,6 @@ func (db *MargoDatabase) DeleteDevice(ctx context.Context, deviceId string) erro
 		Metadata: db.deviceMetadata,
 		ID:       deviceId,
 	})
-
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteDevice: Failed to delete device '%s': %v", deviceId, err)
 		return fmt.Errorf("failed to delete device '%s': %w", deviceId, err)
@@ -712,26 +695,19 @@ func (db *MargoDatabase) DeviceExists(ctx context.Context, deviceId string) (boo
 	return true, nil
 }
 
-func (db *MargoDatabase) DevicePubCertExists(ctx context.Context, deviceCert string) (DeviceDatabaseRow, bool, error) {
-	devices, err := db.ListDevices(ctx)
-	if err != nil {
-		return DeviceDatabaseRow{}, false, err
-	}
-
-	for _, device := range devices {
-		if device.DevicePubCert == deviceCert {
-			return device, true, nil
-		}
-	}
-	return DeviceDatabaseRow{}, false, nil
-}
-
-func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceId string, capabilities *margoStdAPI.DeviceCapabilitiesManifest) error {
+func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities *margoStdAPI.DeviceCapabilitiesManifest) error {
 	// Get existing device
-	device, err := db.GetDevice(ctx, deviceId)
+	device, err := db.GetDevice(ctx, deviceClientId)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to get device '%s': %v", deviceId, err)
-		return fmt.Errorf("failed to get device '%s' for capabilities update: %w", deviceId, err)
+		// sending not found error separately to track it.
+		if verr, ok := err.(v1alpha2.COAError); ok {
+			if verr.State == v1alpha2.NotFound {
+				// do not modify the error to enable tracking
+				return err
+			}
+		}
+		db.MgrContext.Logger.WarnfCtx(ctx, "UpdateDeviceCapabilities: Failed to get device '%s': %v", deviceClientId, err)
+		return fmt.Errorf("failed to get device '%s' for capabilities update: %w", deviceClientId, err)
 	}
 
 	// Update the capabilities
@@ -741,11 +717,11 @@ func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceId 
 	// Save updated device
 	err = db.UpsertDevice(ctx, *device)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to update device capabilities for '%s': %v", deviceId, err)
-		return fmt.Errorf("failed to update device capabilities for '%s': %w", deviceId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to update device capabilities for '%s': %v", deviceClientId, err)
+		return fmt.Errorf("failed to update device capabilities for '%s': %w", deviceClientId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceCapabilities: device '%s' capabilities updated successfully", deviceId)
+	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceCapabilities: device '%s' capabilities updated successfully", deviceClientId)
 	return nil
 }
 
@@ -857,7 +833,6 @@ func (db *MargoDatabase) UpsertDeploymentBundle(ctx context.Context, bundleRow D
 			Body: bundleRow,
 		},
 	})
-
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx,
 			"UpsertDeploymentBundle: Failed to store bundle: %v", err)
@@ -995,7 +970,6 @@ func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClien
 	if existingBundle != nil && existingBundle.ArchivePath != "" {
 		if err := os.Remove(existingBundle.ArchivePath); err != nil && !os.IsNotExist(err) {
 			db.MgrContext.Logger.WarnfCtx(ctx, "DeleteDeploymentBundle: Failed to delete archive file '%s': %v", existingBundle.ArchivePath, err)
-
 		} else {
 			db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeploymentBundle: Deleted archive file '%s'", existingBundle.ArchivePath)
 		}
