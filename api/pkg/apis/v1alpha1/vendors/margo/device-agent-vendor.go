@@ -55,6 +55,18 @@ func (self *DeviceAgentVendor) Init(config vendors.VendorConfig, factories []man
 	return nil
 }
 
+func (self *DeviceAgentVendor) checkAuthorized(pCtx context.Context, spiffeId, instance string) *v1alpha2.COAResponse {
+    if err := self.DeviceManager.IsAuthorized(pCtx, spiffeId); err != nil {
+        deviceVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceVendor): authorization denied for %s at %s: %v", spiffeId, instance, err)
+        resp := problemResponse(margoStdSbiAPI.NewNotAuthorized(
+            "The request is not authorized by the WFM's local policy.",
+            instance,
+        ))
+        return &resp
+    }
+    return nil
+}
+
 func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 	route := DeviceAgentInterfaceDefaultBaseURL
 	// if self.Route != "" {
@@ -134,11 +146,17 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	deviceSpiffeId, err := ExtractPeerSpiffeID(request)
+    
+    // 403 — WFM local policy check
 	if err != nil {
         return problemResponse(margoStdSbiAPI.NewInvalidRequest(
             fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
             "/api/v1/capabilities/{deviceId}"))
     }
+
+	if resp := self.checkAuthorized(pCtx, deviceSpiffeId, fmt.Sprintf("/api/v1/capabilities/%s", deviceId)); resp != nil {
+    return *resp
+}
 
 	// Parse request body using the correct DeviceCapabilities type
 	var capabilities margoStdSbiAPI.DeviceCapabilitiesManifest
@@ -150,17 +168,24 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 
 	// Validate required fields
 	if capabilities.Properties.Id == "" {
-        return problemResponse(margoStdSbiAPI.NewSemanticError(
-            "device ID in properties is required",
-            fmt.Sprintf("/api/v1/capabilities/%s", deviceId)))
-    }
+    return problemResponse(margoStdSbiAPI.NewSemanticError(
+        "Request body includes a semantic error.",
+        fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+        margoStdSbiAPI.FieldError{
+            Field:   "properties.id",
+            Message: "device ID in properties is required",
+        }))
+}
 
-	// Validate deviceId matches the one in properties
-	if capabilities.Properties.Id != deviceId {
-		return problemResponse(margoStdSbiAPI.NewSemanticError(
-			"device ID mismatch",
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId)))
-	}
+if capabilities.Properties.Id != deviceId {
+    return problemResponse(margoStdSbiAPI.NewSemanticError(
+        "Request body includes a semantic error.",
+        fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+        margoStdSbiAPI.FieldError{
+            Field:   "properties.id",
+            Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", deviceId, capabilities.Properties.Id),
+        }))
+}
 
 	// Call DeviceManager to update capabilities
 	// deviceid is just for residing in properties. For identity, MIAF related identity needs to be used.
@@ -195,12 +220,18 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
             "/api/v1/deployments/{deploymentId}/status"))
     }
 
+	
+
 	deploymentId := request.Parameters["__deploymentId"]
  	if deploymentId == "" {
         return problemResponse(margoStdSbiAPI.NewInvalidRequest(
             "deploymentId path parameter is required",
             "/api/v1/deployments/{deploymentId}/status"))
     }
+
+	if resp := self.checkAuthorized(pCtx, deviceClientId, fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId)); resp != nil {
+    return *resp
+}
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onDeploymentStatusUpdate, method: %s, %s", request.Method, string(request.Body))
 	// Parse request
@@ -212,10 +243,14 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
     }
 
 	if err := self.validateStatusUpdateRequest(statusReq); err != nil {
-		 return problemResponse(margoStdSbiAPI.NewSemanticError(
-            err.Error(),
-            fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId)))
-	}
+    return problemResponse(margoStdSbiAPI.NewSemanticError(
+        "Request body includes a semantic error.",
+        fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
+        margoStdSbiAPI.FieldError{
+            Field:   "status.state",
+            Message: err.Error(),
+        }))
+}
 
 	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State)); err != nil {
 		 return problemResponse(margoStdSbiAPI.NewInternalError(
@@ -253,11 +288,18 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	}
 
 	deviceClientId, err := ExtractPeerSpiffeID(request)
+	
+
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
             "failed to extract device spiffeId",
             "/api/v1/deployments"))
 	}
+
+	// 403 — WFM local policy check
+	if resp := self.checkAuthorized(pCtx, deviceClientId, "/api/v1/deployments"); resp != nil {
+    return *resp
+}
 
 	deviceVendorLogger.InfofCtx(pCtx, "Processing request for deviceClientId: %s", deviceClientId)
 
@@ -399,12 +441,18 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
     "/api/v1/bundles/{digest}"))
 	}
 
+	
 	requestedDigest := request.Parameters["__digest"]
+
 	if requestedDigest == "" {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
         "digest path parameter is required",
         "/api/v1/bundles/{digest}"))
 	}
+
+	if resp := self.checkAuthorized(pCtx, deviceClientId, fmt.Sprintf("/api/v1/bundles/%s", requestedDigest)); resp != nil {
+    return *resp
+}
 
 	// Extract If-None-Match header from client
 	clientETag := headers["if-none-match"]
@@ -527,6 +575,18 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
     "digest path parameter is required",
     "/api/v1/deployments/{deploymentId}/{digest}"))
+	}
+
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+if err != nil {
+    return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+        fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
+        fmt.Sprintf("/api/v1/deployments/%s/%s", deploymentId, requestedDigest)))
+}
+
+	// 403 — WFM local policy check
+	if resp := self.checkAuthorized(pCtx, deviceClientId, fmt.Sprintf("/api/v1/deployments/%s/%s", deploymentId, requestedDigest)); resp != nil {
+		return *resp
 	}
 
 	// Extract If-None-Match header from client
