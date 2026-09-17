@@ -26,7 +26,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/itchyny/gojq v0.12.16
 	github.com/kr/pretty v0.3.1
-	github.com/margo/sandbox v1.0.0-rc.2.0.20260916141039-c41545a08e1e
+	github.com/margo/sandbox v1.0.0-rc.2.0.20260917102142-7325356d9a0c
 	github.com/princjef/mageutil v1.0.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
