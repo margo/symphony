@@ -727,7 +727,7 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 			truncateString(deploymentId, 48),
 			truncateString(dep.Metadata.Name, 10),
 			truncateString(dep.Spec.AppPackageRef.Id, 10),
-			truncateString(deviceId, 10),
+			deviceId,
 			operation,
 			state,
 			formatTime(lastUpdate),
@@ -747,7 +747,7 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 		{Number: 1, WidthMax: 48}, // ID
 		{Number: 2, WidthMax: 25}, // Name
 		{Number: 3, WidthMax: 35}, // Pkg
-		{Number: 4, WidthMax: 35}, // Device
+		{Number: 4, WidthMax: 35}, // Device //TODO: Change this
 		{Number: 5, WidthMax: 12}, // Op
 		{Number: 6, WidthMax: 12}, // RunningState
 		{Number: 7, WidthMax: 16}, // Updated
