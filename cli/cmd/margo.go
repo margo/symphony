@@ -617,7 +617,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 
 	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 60}, // ID
+		{Number: 1, WidthMax: 70}, // ID
 		{Number: 3, WidthMax: 28}, // Capabilities
 		{Number: 4, WidthMax: 28}, // Deployment Type
 		{Number: 5, WidthMax: 12}, // State
@@ -727,7 +727,7 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 			truncateString(deploymentId, 48),
 			truncateString(dep.Metadata.Name, 10),
 			truncateString(dep.Spec.AppPackageRef.Id, 10),
-			deviceId,
+			extractLastPartOfDeviceId(deviceId),
 			operation,
 			state,
 			formatTime(lastUpdate),
@@ -747,13 +747,27 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 		{Number: 1, WidthMax: 48}, // ID
 		{Number: 2, WidthMax: 25}, // Name
 		{Number: 3, WidthMax: 35}, // Pkg
-		{Number: 4, WidthMax: 35}, // Device //TODO: Change this
+		{Number: 4, WidthMax: 35}, // Device
 		{Number: 5, WidthMax: 12}, // Op
 		{Number: 6, WidthMax: 12}, // RunningState
 		{Number: 7, WidthMax: 16}, // Updated
 	})
 
 	t.Render()
+}
+
+// it extracts last part of deviceId, if according to spiffe standard. Else returns back original string
+func extractLastPartOfDeviceId(deviceId string) string {
+	devParts := strings.Split(deviceId, "/client/")
+	if len(devParts) != 2 {
+		return deviceId
+	}
+
+	if devParts[1] == "" {
+		return deviceId
+	}
+
+	return fmt.Sprintf(".../%s", devParts[1])
 }
 
 func truncateString(s string, maxLen int) string {
