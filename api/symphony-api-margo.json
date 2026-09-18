@@ -796,12 +796,7 @@
           "mis": {
             "endpoint": "https://mis.margo.org:9443",
             "caPath": "./mis/https-ca.crt",
-            "cacheInterval": 60,
-            "trustDomain": "margo.org",
-            "trustBundle": {
-              "uri": "/.well-known/spiffe/bundle.json",
-              "path": "./mis/trust-bundle.json"
-            }
+            "cacheInterval": 60
           },
           "authzPath": "./mis/authorized-clients.json"
         },
