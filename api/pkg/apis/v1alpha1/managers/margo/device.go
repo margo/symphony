@@ -24,9 +24,17 @@ import (
 
 var deviceLogger = logger.NewLogger("coa.runtime")
 
+const (
+	ClientConvergenceCurrent ClientConvergenceState = "current"
+	ClientConvergenceStale   ClientConvergenceState = "stale"
+	ClientConvergenceUnknown ClientConvergenceState = "unknown"
+)
+
 type PackageData struct {
 	CurrentState margoNonStdAPI.ApplicationPackageListResp
 }
+
+type ClientConvergenceState string
 
 type DeploymentData struct {
 	deviceClientId          string
@@ -235,13 +243,13 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 }
 
 // Called when device reports status update for the deployments
-func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, state string) error {
+func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, state string, adoptedManifestVersion uint64) error {
 	if deviceClientId == "" || deploymentId == "" || state == "" {
 		return fmt.Errorf("deviceClientId, deploymentId, and status are required")
 	}
 
-	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s",
-		deviceClientId, deploymentId, state)
+	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
+		deviceClientId, deploymentId, state, adoptedManifestVersion)
 
 	// Get deployment
 	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
@@ -252,14 +260,12 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
 	// Special handling for REMOVED state
 	if state == string(sbi.DeploymentStatusManifestStatusStateRemoved) {
 		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Device confirmed removal of deployment %s", deploymentId)
-
 		// Delete the deployment from database
 		if err := s.Database.DeleteDeployment(ctx, deploymentId, true); err != nil {
 			return fmt.Errorf("failed to delete deployment from database: %w", err)
 		}
 
 		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully deleted deployment %s after device confirmation", deploymentId)
-
 		// Note: Bundle regeneration is triggered by DeleteDeployment event subscription
 		return nil
 	}
@@ -267,6 +273,8 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
 	// Normal state updates (not REMOVED)
 	existingState := dbRow.CurrentState
 	existingState.Status.Status.State = margoStdAPI.DeploymentStatusManifestStatusState(state)
+	// STORE the reported adoptedManifestVersion so the WFM can compare against targetVersion
+	existingState.Status.AdoptedManifestVersion = sbi.ManifestVersion(adoptedManifestVersion)
 
 	if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, existingState, true); err != nil {
 		return fmt.Errorf("failed to update current state: %w", err)
@@ -297,7 +305,8 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
 		return fmt.Errorf("failed to update deployment: %w", err)
 	}
 
-	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s", deploymentId, nbiState)
+	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s, adoptedManifestVersion %d",
+		deploymentId, nbiState, adoptedManifestVersion)
 	return nil
 }
 
