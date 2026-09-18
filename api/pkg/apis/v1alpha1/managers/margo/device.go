@@ -24,17 +24,11 @@ import (
 
 var deviceLogger = logger.NewLogger("coa.runtime")
 
-const (
-	ClientConvergenceCurrent ClientConvergenceState = "current"
-	ClientConvergenceStale   ClientConvergenceState = "stale"
-	ClientConvergenceUnknown ClientConvergenceState = "unknown"
-)
 
 type PackageData struct {
 	CurrentState margoNonStdAPI.ApplicationPackageListResp
 }
 
-type ClientConvergenceState string
 
 type DeploymentData struct {
 	deviceClientId          string
@@ -58,21 +52,6 @@ type DeviceManager struct {
 	KeycloakProvider *keycloak.KeycloakProvider
 	MargoValidator   validation.MargoValidator
 	needValidate     bool
-}
-
-// targetVersion = the manifestVersion at which the WFM last changed this deployment's target
-func EvaluateClientConvergence(
-	adoptedManifestVersion uint64,
-	targetVersion uint64,
-	state sbi.DeploymentStatusManifestStatusState,
-) ClientConvergenceState {
-	if adoptedManifestVersion == 0 || targetVersion == 0 {
-		return ClientConvergenceUnknown
-	}
-	if adoptedManifestVersion >= targetVersion {
-		return ClientConvergenceCurrent // client has taken up current desired state
-	}
-	return ClientConvergenceStale // client is behind
 }
 
 // IsAuthorized checks if the device SPIFFE ID is permitted by WFM local policy.

@@ -75,9 +75,6 @@ type DeploymentDatabaseRow struct {
 
 	// LastStatusUpdate tracks when this deployment record was last modified
 	LastStatusUpdate time.Time
-
-	// ManifestVersion at which this deployment's target last changed
-	TargetManifestVersion uint64 `json:"targetManifestVersion,omitempty"`
 }
 
 // DeviceDatabaseRow represents a device record in the database.
