@@ -52,15 +52,6 @@ type DeviceManager struct {
 	needValidate     bool
 }
 
-// IsAuthorized checks if the device SPIFFE ID is permitted by WFM local policy.
-// TODO: This has been already done duing MTLs handshake to avoid attack surface, so this function is a stub for now. In the future, we may implement additional authorization checks here.
-func (s *DeviceManager) IsAuthorized(ctx context.Context, spiffeId string) error {
-	// mTLS handshake already validates the SPIFFE ID against the Trust Bundle.
-	deviceLogger.DebugfCtx(ctx, "IsAuthorized: PR1 stub — allowing spiffeId: %s", spiffeId)
-	//return fmt.Errorf("spiffeId %s is not authorized by WFM local policy (test)", spiffeId)
-	return nil
-}
-
 func (s *DeviceManager) Init(pCtx *contexts.VendorContext, config managers.ManagerConfig, providers map[string]providers.IProvider) error {
 	err := s.Manager.Init(pCtx, config, providers)
 	if err != nil {

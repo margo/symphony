@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,8 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/utils"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger/contexts"
+	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+
 	routing "github.com/fasthttp/router"
 	"github.com/margo/sandbox/shared-lib/mis/mtls"
 	"github.com/margo/sandbox/shared-lib/mis/parser"
@@ -350,42 +353,63 @@ func (h *HttpBinding) getRouter(endpoints []v1alpha2.Endpoint) *routing.Router {
 
 func (h *HttpBinding) mTLSAuthMiddleware(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
+		fullPath := string(ctx.Path())
+
+		httpLogger.DebugCtx(context.Background(), "H (mTLSAuthMiddleware): Incoming request", "path", fullPath)
+
 		tlsConn, ok := ctx.Conn().(*tls.Conn)
 		if !ok {
+			httpLogger.WarnCtx(context.Background(), "H (mTLSAuthMiddleware): Connection is not a TLS connection", "path", fullPath)
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
 			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
-			ctx.SetBodyString("mTLS required")
+			ctx.SetBody(resp)
 			return
 		}
 
 		state := tlsConn.ConnectionState()
 		if len(state.PeerCertificates) == 0 {
+			httpLogger.WarnCtx(context.Background(), "H (mTLSAuthMiddleware): No peer certificates found in TLS connection", "path", fullPath)
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
 			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
-			ctx.SetBodyString("client certificate required")
+			ctx.SetBody(resp)
 			return
 		}
 
 		spiffeID, err := parser.ParseSpiffeIdFromX509Svid(state.PeerCertificates[0].Raw)
 		if err != nil {
+			httpLogger.ErrorCtx(context.Background(), "H (mTLSAuthMiddleware): Failed to parse SPIFFE ID from peer certificate", "path", fullPath, "error", err.Error())
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
 			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
-			ctx.SetBodyString("invalid client certificate")
+			ctx.SetBody(resp)
 			return
 		}
+
+		httpLogger.DebugCtx(context.Background(), "H (mTLSAuthMiddleware): Parsed SPIFFE ID from peer certificate", "path", fullPath, "spiffeID", spiffeID)
 
 		allowList := h.authClientCacher.GetAuthorizedClients()
-		authorized := false
-		for _, id := range allowList {
-			if id == spiffeID {
-				authorized = true
-				break
-			}
-		}
+		authorized := slices.Contains(allowList, spiffeID)
 
 		if !authorized {
-			ctx.SetStatusCode(fasthttp.StatusForbidden)
-			ctx.SetBodyString("unauthorized spiffe id")
+			httpLogger.WarnCtx(context.Background(), "H (mTLSAuthMiddleware): SPIFFE ID not in authorized client list", "path", fullPath, "spiffeID", spiffeID)
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetBody(resp)
 			return
 		}
 
+		httpLogger.DebugCtx(context.Background(), "H (mTLSAuthMiddleware): Request authorized", "path", fullPath, "spiffeID", spiffeID)
 		next(ctx)
 	}
 }
