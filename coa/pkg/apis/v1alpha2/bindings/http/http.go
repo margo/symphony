@@ -293,6 +293,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			}
 
 			lnTls := tls.NewListener(ln, tlsConfig)
+			h.server.DisableKeepalive = true // disabling keep alives on server side as well
 			serverErr = h.server.Serve(lnTls)
 		} else {
 			serverErr = h.server.ListenAndServe(fmt.Sprintf(":%d", config.Port))
