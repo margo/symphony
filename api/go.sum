@@ -303,6 +303,8 @@ github.com/margo/sandbox v1.0.0-rc.2.0.20260916141039-c41545a08e1e h1:/O7eH/b+b6
 github.com/margo/sandbox v1.0.0-rc.2.0.20260916141039-c41545a08e1e/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260917102142-7325356d9a0c h1:dpkPwbLGS3u6M57gfs/O5OrNl09B5vMGGXdYqbM2smI=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260917102142-7325356d9a0c/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
+github.com/margo/sandbox v1.0.0-rc.2.0.20260918070441-31656a387183 h1:5879P3DkImzjxNwRiy0iV1ewwv0g5m96x1TwcB0OZ5w=
+github.com/margo/sandbox v1.0.0-rc.2.0.20260918070441-31656a387183/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
