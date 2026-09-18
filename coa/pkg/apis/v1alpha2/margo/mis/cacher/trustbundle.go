@@ -1,4 +1,4 @@
-package trustbundle
+package cacher
 
 // Package trustbundle provides utilities including trust material caching
 // for SPIFFE/MARGO identity and authorization framework (MIAF).
@@ -144,9 +144,9 @@ type TrustMaterialCacher struct {
 	doneCh   chan struct{}      // closed by the refresh goroutine when it exits
 }
 
-// New validates cfg and returns an initialised TrustMaterialCacherIfc.
+// NewTrustMaterialCacher validates cfg and returns an initialised TrustMaterialCacherIfc.
 // The returned cacher is ready to use; call Start() to begin background refresh.
-func New(cfg TrustMaterialCacherConfig) TrustMaterialCacherIfc {
+func NewTrustMaterialCacher(cfg TrustMaterialCacherConfig) TrustMaterialCacherIfc {
 	const defaultInterval = 60 * time.Second
 
 	interval := time.Duration(cfg.Interval) * time.Second
