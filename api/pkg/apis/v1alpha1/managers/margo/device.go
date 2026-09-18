@@ -24,17 +24,9 @@ import (
 
 var deviceLogger = logger.NewLogger("coa.runtime")
 
-const (
-	ClientConvergenceCurrent ClientConvergenceState = "current"
-	ClientConvergenceStale   ClientConvergenceState = "stale"
-	ClientConvergenceUnknown ClientConvergenceState = "unknown"
-)
-
 type PackageData struct {
 	CurrentState margoNonStdAPI.ApplicationPackageListResp
 }
-
-type ClientConvergenceState string
 
 type DeploymentData struct {
 	deviceClientId          string
