@@ -12,11 +12,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
 	v1alpha2 "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
-	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/margo/mis/trustbundle"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/margo/mis/cacher"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/certs"
 	autogen "github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/certs/autogen"
@@ -24,6 +25,8 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/utils"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger/contexts"
+	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+
 	routing "github.com/fasthttp/router"
 	"github.com/margo/sandbox/shared-lib/mis/mtls"
 	"github.com/margo/sandbox/shared-lib/mis/parser"
@@ -108,7 +111,8 @@ type HttpBinding struct {
 	server            *fasthttp.Server
 	pipeline          Pipeline
 	errChan           chan error
-	trustBundleCacher trustbundle.TrustMaterialCacherIfc
+	trustBundleCacher cacher.TrustMaterialCacherIfc
+	authClientCacher  cacher.AuthClientCatcherIfc
 }
 
 // ValidateMIAFConfig validates the MIAF configuration based on the following rules:
@@ -183,6 +187,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			return err
 		}
 	}
+	finalHandler := h.pipeline.Apply(handler)
 
 	// For MIAF
 	if config.MTLS {
@@ -216,7 +221,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 		h.ParsedMIAFConfig.X509.KeyPEM = key
 
 		// Now setup ways to obtain trustbundle, and a cache which can be accessed here
-		ccfg := trustbundle.TrustMaterialCacherConfig{
+		ccfg := cacher.TrustMaterialCacherConfig{
 			MISEndpoint: h.ParsedMIAFConfig.MIS.Endpoint,
 			MISCAPem:    h.ParsedMIAFConfig.MIS.CAPEM,
 			TrustDomain: h.ParsedMIAFConfig.MIS.TrustDomain,
@@ -228,7 +233,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			ccfg.TrustBundleJSON = h.ParsedMIAFConfig.MIS.TrustBundle.BundleJSON
 		}
 
-		tbc := trustbundle.New(ccfg)
+		tbc := cacher.NewTrustMaterialCacher(ccfg)
 		// this starts the trust bundle cacher
 		err = tbc.Start()
 		if err != nil {
@@ -237,10 +242,23 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 
 		h.trustBundleCacher = tbc
 
+		acc, err := cacher.NewAuthClientCacher(config.MIAF.AuthzPath, httpLogger)
+		if err != nil {
+			return fmt.Errorf("failed to get auth client cacher, err: %w", err)
+		}
+
+		err = acc.Start()
+		if err != nil {
+			return fmt.Errorf("failed to start auth client cacher, err: %w", err)
+		}
+
+		h.authClientCacher = acc
+		finalHandler = h.mTLSAuthMiddleware(finalHandler)
+
 	}
 
 	h.server = &fasthttp.Server{
-		Handler: h.pipeline.Apply(handler),
+		Handler: h.pipeline.Apply(finalHandler),
 	}
 
 	go func() {
@@ -261,9 +279,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			tlsConfig, err := mtls.NewMTLSServerConfig(serverCert, mtls.VerifierConfig{
 				GetOwnTrustDomain:   h.trustBundleCacher.GetTrustDomain,
 				GetTrustBundleBytes: h.trustBundleCacher.GetTrustBundle,
-				GetClientAllowList: func() []string {
-					return h.ParsedMIAFConfig.AuthorizedSPIFFEIDs
-				},
+				GetClientAllowList:  h.authClientCacher.GetAuthorizedClients,
 			})
 			if err != nil {
 				h.errChan <- v1alpha2.NewCOAError(nil, fmt.Sprintf("error getting mTLS config: %s", err.Error()), v1alpha2.BadConfig)
@@ -277,6 +293,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			}
 
 			lnTls := tls.NewListener(ln, tlsConfig)
+			h.server.DisableKeepalive = true // disabling keep alives on server side as well
 			serverErr = h.server.Serve(lnTls)
 		} else {
 			serverErr = h.server.ListenAndServe(fmt.Sprintf(":%d", config.Port))
@@ -291,8 +308,13 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 	select {
 	case err := <-h.errChan:
 		if h.trustBundleCacher != nil {
-			// Stopping caching mechanism for trust bundle
+			// Stopping caching mechanism for trust bundle cacher
 			h.trustBundleCacher.Stop()
+		}
+
+		if h.authClientCacher != nil {
+			// Stopping caching mechanism for auth client cacher
+			h.authClientCacher.Stop()
 		}
 		httpLogger.ErrorCtx(context.Background(), "H (HttpBinding): Server error:", err.Error())
 		return err
@@ -328,6 +350,69 @@ func (h *HttpBinding) getRouter(endpoints []v1alpha2.Endpoint) *routing.Router {
 		}
 	}
 	return router
+}
+
+func (h *HttpBinding) mTLSAuthMiddleware(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
+		fullPath := string(ctx.Path())
+
+		httpLogger.DebugCtx(context.Background(), "H (mTLSAuthMiddleware): Incoming request", "path", fullPath)
+
+		tlsConn, ok := ctx.Conn().(*tls.Conn)
+		if !ok {
+			httpLogger.WarnCtx(context.Background(), "H (mTLSAuthMiddleware): Connection is not a TLS connection", "path", fullPath)
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetBody(resp)
+			return
+		}
+
+		state := tlsConn.ConnectionState()
+		if len(state.PeerCertificates) == 0 {
+			httpLogger.WarnCtx(context.Background(), "H (mTLSAuthMiddleware): No peer certificates found in TLS connection", "path", fullPath)
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetBody(resp)
+			return
+		}
+
+		spiffeID, err := parser.ParseSpiffeIdFromX509Svid(state.PeerCertificates[0].Raw)
+		if err != nil {
+			httpLogger.ErrorCtx(context.Background(), "H (mTLSAuthMiddleware): Failed to parse SPIFFE ID from peer certificate", "path", fullPath, "error", err.Error())
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetBody(resp)
+			return
+		}
+
+		httpLogger.DebugCtx(context.Background(), "H (mTLSAuthMiddleware): Parsed SPIFFE ID from peer certificate", "path", fullPath, "spiffeID", spiffeID)
+
+		allowList := h.authClientCacher.GetAuthorizedClients()
+		authorized := slices.Contains(allowList, spiffeID)
+
+		if !authorized {
+			httpLogger.WarnCtx(context.Background(), "H (mTLSAuthMiddleware): SPIFFE ID not in authorized client list", "path", fullPath, "spiffeID", spiffeID)
+			resp, _ := margoStdSbiAPI.NewNotAuthorized(
+				"The request is not authorized by the WFM's local policy.",
+				fullPath,
+			).MarshalJSON()
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetBody(resp)
+			return
+		}
+
+		httpLogger.DebugCtx(context.Background(), "H (mTLSAuthMiddleware): Request authorized", "path", fullPath, "spiffeID", spiffeID)
+		next(ctx)
+	}
 }
 
 func composeCOARequestContext(reqCtx *fasthttp.RequestCtx, actCtx *contexts.ActivityLogContext, diagCtx *contexts.DiagnosticLogContext) context.Context {
