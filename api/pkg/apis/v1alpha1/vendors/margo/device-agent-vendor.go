@@ -239,7 +239,7 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		))
 	}
 
-	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State)); err != nil {
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State), uint64(statusReq.AdoptedManifestVersion)); err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update deployment status: %s", err.Error()),
 			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
@@ -666,6 +666,10 @@ func (self *DeviceAgentVendor) validateStatusUpdateRequest(req margoStdSbiAPI.De
 
 	if req.DeploymentId == "" {
 		return fmt.Errorf("invalid deployment id: %s", req.DeploymentId)
+	}
+
+	if req.AdoptedManifestVersion < 1 {
+		return fmt.Errorf("adoptedManifestVersion is required and must be >= 1, got: %v", req.AdoptedManifestVersion)
 	}
 
 	if req.Status.State == "" ||
