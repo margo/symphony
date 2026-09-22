@@ -566,8 +566,11 @@ To build Symphony locally, run the following commands from the repository root:
 ```bash
 # to build Rust provider binding
 cd api
-LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release
-cargo build --release --manifest-path pkg/apis/v1alpha1/providers/target/rust/Cargo.toml
+pushd .
+cd pkg/apis/v1alpha1/providers/target/rust
+cargo build --release
+popd #back to the api folder
+export LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release  
 CGO_ENABLED=1 GOARCH=amd64 GOOS=linux CC=gcc CGO_LDFLAGS="-L$LIBDIR" go build -o symphony-api
 # copy libsymphony.so to /usr/local/lib folder
 sudo cp $LIBDIR/libsymphony.so /usr/local/lib
