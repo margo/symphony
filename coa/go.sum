@@ -151,10 +151,6 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260917171804-e6dd57ab8209 h1:9lx+9D0hmld9lIoI0lyO6s0KFxJdrd0NdXvW14xhML8=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260917171804-e6dd57ab8209/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260918115400-8075a75dceab h1:8es3fdjXuq5BQBg4Nr/7bAzR7on07Gj69W9tOzRLQ78=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260918115400-8075a75dceab/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260921093447-7484ec820e1c h1:mi2Z5UMsXVPF3P2DqS4GV/YkvM3r31A1MqGDnlD9/mM=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260921093447-7484ec820e1c/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=

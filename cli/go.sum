@@ -55,10 +55,6 @@ github.com/lestrrat-go/option v1.0.1 h1:oAzP2fvZGQKWkvHa1/SAcFolBEca1oN+mQ7eooNB
 github.com/lestrrat-go/option v1.0.1/go.mod h1:5ZHFbivi4xwXxhxY9XHDe2FHo6/Z7WWmtT7T5nBBp3I=
 github.com/lestrrat-go/sfv v1.0.0 h1:+/VOs7lhUWAwNIklow4kPYlit0fPBC6HsF+GHKXrhGM=
 github.com/lestrrat-go/sfv v1.0.0/go.mod h1:wawOORrbzB4Vh0QT7WtbWEbMuTbjS8OPxum1wZAYCiQ=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260917171804-e6dd57ab8209 h1:9lx+9D0hmld9lIoI0lyO6s0KFxJdrd0NdXvW14xhML8=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260917171804-e6dd57ab8209/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260918115400-8075a75dceab h1:8es3fdjXuq5BQBg4Nr/7bAzR7on07Gj69W9tOzRLQ78=
-github.com/margo/sandbox v1.0.0-rc.2.0.20260918115400-8075a75dceab/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260921093447-7484ec820e1c h1:mi2Z5UMsXVPF3P2DqS4GV/YkvM3r31A1MqGDnlD9/mM=
 github.com/margo/sandbox v1.0.0-rc.2.0.20260921093447-7484ec820e1c/go.mod h1:exvgewlHdcAP2CB6icHolWChDkpW0JLYBsier1AD3S8=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
