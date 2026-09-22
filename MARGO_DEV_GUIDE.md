@@ -129,6 +129,49 @@ The Vendor layer is used to expose both:
 1. Standard Margo APIs
 2. Non-standard extension APIs
 
+## Standard and Non-Standard API Bindings
+
+The Margo deployment uses separate HTTP bindings for standard Margo APIs and non-standard extension APIs. This is a change from the earlier setup, where a single server-side TLS binding on port `8082` hosted both API categories.
+
+The default configuration in `api/symphony-api-margo.json` contains:
+
+* Port `8082`: regular TLS, used for non-standard extension APIs and other endpoints that are not reserved for standard Margo APIs. Its server certificate is configured with `certs.localfile`.
+* Port `8084`: MIAF mTLS, used for standard Margo API routes. Its WFM SVID and key are configured with `certs.localfile`.
+
+This separation is implemented by the COA host. Routes beginning with `margo/api/v1` are standard Margo API routes and are exposed on an mTLS binding. Routes beginning with `margo/nbi/v1` are non-standard extension API routes and remain on the non-mTLS binding. Other Symphony routes are available on both binding types. Consequently, an mTLS binding must not be treated as a general-purpose second API listener: it is intended for standard Margo APIs. Operators are discouraged from configuring more than one mTLS binding unless they understand the resulting route and certificate behavior.
+
+The binding split does not change Symphony's HB-MVP architecture or the separation between Vendors, Managers, and Providers. It adds a transport and authorization boundary around standard Margo APIs.
+
+## MIAF Configuration
+
+When `mtls` is `true`, the binding must include a valid `miaf` configuration. MIAF connects the WFM's standard Margo APIs to the Margo Identity Service (MIS), establishes the trust material used for SPIFFE identity verification, and supplies the local authorization policy for WFM clients.
+
+The fields have the following meanings:
+
+| Field | Meaning and requirements |
+| ----- | ------------------------ |
+| `miaf.mis.endpoint` | MIS endpoint used to obtain identity/trust information. It is optional only when a static trust bundle is supplied. |
+| `miaf.mis.caPath` | CA certificate used to establish TLS trust when connecting to MIS. It must be provided together with `endpoint`; supplying only one of the two is invalid. |
+| `miaf.mis.cacheInterval` | Refresh interval, in seconds, for the MIS/trust-material cacher. The COA HTTP binding passes this value to the cacher. |
+| `miaf.mis.trustDomain` | SPIFFE trust domain. It is required when using a static `trustBundle.path` without an MIS `endpoint` and `caPath`. |
+| `miaf.mis.trustBundle.uri` | URI used to obtain a trust bundle through MIS. If present, `endpoint` and `caPath` are also required. |
+| `miaf.mis.trustBundle.path` | Local static trust-bundle JSON file. It can be used instead of MIS endpoint access, but `trustDomain` is then required. |
+| `miaf.authzPath` | Local JSON file containing the SPIFFE IDs of clients authorized to call standard Margo APIs. The listed IDs must be WFM-client identities. |
+
+The configuration may omit optional fields when the deployment does not use them. The current validation rules require `miaf` and `miaf.mis`; require `endpoint` and `caPath` together; require either MIS access or a static trust-bundle path; and require `trustDomain` for static trust-bundle-only mode. The `certProvider` on an mTLS binding is separate from the MIS trust configuration: it supplies the WFM's own SVID certificate and private key, and currently must use `certs.localfile`.
+
+### How MIAF mTLS Works in Symphony
+
+At startup, the COA host selects only the standard Margo API endpoints for an mTLS binding, validates and parses the MIAF configuration, and validates every configured authorized client SPIFFE ID. The HTTP binding then:
+
+1. Loads and validates the WFM's own X.509 SVID and private key.
+2. Starts a trust-material cacher backed by MIS and/or the configured trust bundle.
+3. Starts an authorization cacher backed by `miaf.authzPath`.
+4. Builds an mTLS server configuration that verifies client certificates against the current trust bundle and trust domain.
+5. For each request, extracts the peer certificate's SPIFFE ID and checks it against the authorized-client list before invoking the endpoint handler.
+
+Requests without a TLS connection, without a peer certificate, with an invalid SPIFFE ID, or with a SPIFFE ID absent from the authorization file receive HTTP `401 Unauthorized`. The mTLS binding therefore provides both mutual certificate authentication and an explicit local client allow-list; possession of a certificate trusted by the trust bundle alone is not sufficient.
+
 ---
 
 # Standard vs Non-Standard APIs
@@ -186,11 +229,11 @@ This allows:
 
 # Important Architectural Decision
 
-Initially, the implementation attempted to convert Margo objects into Symphony’s internal state model in order to reuse Symphony’s state management system.
+Initially, the implementation attempted to convert Margo objects into Symphony's internal state model in order to reuse Symphony's state management system.
 
 However, this approach was eventually abandoned because:
 
-* Symphony’s internal target agent assumptions became difficult to preserve,
+* Symphony's internal target agent assumptions became difficult to preserve,
 * large rewrites would have been required,
 * integration complexity became too high.
 
@@ -482,24 +525,66 @@ This design enables:
 
 # Build & Run
 
-To build symphony locally you can use the following commands:
+The Margo configuration uses relative paths. Unless absolute paths are placed in the configuration, start the binary with the working directory set to `api/`, or change the paths in `api/symphony-api-margo.json` accordingly.
+
+Before starting Symphony with `symphony-api-margo.json`, the following files must exist on disk:
+
+| Path, relative to the process working directory | Purpose |
+| ----------------------------------------------- | ------- |
+| `certificates/server-cert.pem` | Server certificate for the regular TLS binding on port `8082`. |
+| `certificates/server-key.pem` | Private key for the port `8082` server certificate. |
+| `certificates/payload-cert.pem` | WFM X.509 SVID certificate for the MIAF mTLS binding on port `8084`. It must be a valid WFM SVID. |
+| `certificates/payload-key.pem` | Private key matching the WFM SVID. It must be a valid private key. |
+| `mis/https-ca.crt` | CA certificate used to verify the TLS connection from the WFM to the MIS endpoint. |
+| `mis/authorized-clients.json` | Authorized WFM-client SPIFFE IDs. The file must contain at least one valid WFM-client ID. |
+| `libsymphony.so` | Rust provider shared library. It must be installed in a system library directory or available through `LD_LIBRARY_PATH`; it is not embedded in `symphony-api`. |
+
+The active configuration obtains the SPIFFE trust bundle from `https://mis.margo.org:9443` using the configured MIS endpoint and `mis/https-ca.crt`. Therefore, a local `trustBundle.path` file is not required for the active configuration. A static trust bundle can be used instead by setting `miaf.mis.trustBundle.path`; in that mode, the file must exist, `miaf.mis.trustDomain` must be provided, and MIS endpoint access can be omitted according to the MIAF validation rules. When `trustBundle.uri` is configured, the MIS endpoint and CA path are required.
+
+The Rust provider shared library must also be available at runtime. It is not part of the Go binary. After building it, either copy `libsymphony.so` to a system library directory such as `/usr/local/lib` and run `ldconfig`, or expose its directory through `LD_LIBRARY_PATH`.
+
+The expected local layout is:
+
+```text
+api/
+├── symphony-api
+├── symphony-api-margo.json
+├── certificates/
+│   ├── server-cert.pem
+│   ├── server-key.pem
+│   ├── payload-cert.pem
+│   └── payload-key.pem
+└── mis/
+        ├── https-ca.crt
+        └── authorized-clients.json
+```
+
+The shared library may be outside this directory when it is installed system-wide or referenced through `LD_LIBRARY_PATH`.
+
+To build Symphony locally, run the following commands from the repository root:
+
 ```bash
 # to build Rust provider binding
 cd api
-pushd .
-cd api/pkg/apis/v1alpha1/providers/target/rust
-cargo build --release
-popd #back to the api folder
-export LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release        
+LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release
+cargo build --release --manifest-path pkg/apis/v1alpha1/providers/target/rust/Cargo.toml
 CGO_ENABLED=1 GOARCH=amd64 GOOS=linux CC=gcc CGO_LDFLAGS="-L$LIBDIR" go build -o symphony-api
 # copy libsymphony.so to /usr/local/lib folder
 sudo cp $LIBDIR/libsymphony.so /usr/local/lib
 sudo ldconfig
 ```
 
-# then run it:
+Run the API from the `api/` directory so the relative MIAF paths resolve correctly:
+
 ```bash
-./symphony-agent -c ./symphony-api-margo.json -l Debug
+cd api
+./symphony-api -c ./symphony-api-margo.json -l Debug
+```
+
+If the shared library is not installed system-wide, launch it with:
+
+```bash
+LD_LIBRARY_PATH="$PWD/pkg/apis/v1alpha1/providers/target/rust/target/release" ./symphony-api -c ./symphony-api-margo.json -l Debug
 ```
 
 To build Maestro locally you can use the following commands:
@@ -618,4 +703,4 @@ Instead, it:
 * extends the Vendor layer,
 * keeps orchestration semantics largely isolated from Symphony internals.
 
-This separation was intentional to avoid invasive rewrites of Symphony’s target-agent-oriented architecture.
+This separation was intentional to avoid invasive rewrites of Symphony's target-agent-oriented architecture.
