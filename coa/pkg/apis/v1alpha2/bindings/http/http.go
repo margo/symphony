@@ -225,6 +225,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			MISEndpoint: h.ParsedMIAFConfig.MIS.Endpoint,
 			MISCAPem:    h.ParsedMIAFConfig.MIS.CAPEM,
 			TrustDomain: h.ParsedMIAFConfig.MIS.TrustDomain,
+			Interval:    config.MIAF.MIS.CacheInterval,
 			Logger:      httpLogger,
 		}
 
