@@ -99,11 +99,8 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to get application package for checking eligible devices", v1alpha2.InternalError)
 	}
 
-	deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): Printing application package here: %s", pretty.Sprint(appPkgRow))
-
 	dc := constraints.New()
 	for i, d := range devices.Items {
-
 		devCap, err := ConvertAtoB[any, sbi.DeviceCapabilitiesManifest](d.Spec.Capabilities)
 		if err != nil {
 			deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to convert device capabilities, err: %s, rawCapabilities: %s", err.Error(), pretty.Sprint(d.Spec.Capabilities))
@@ -112,6 +109,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 
 		deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): printing converted device Capabilities here, : %s", pretty.Sprint(devCap))
 		eligible := true
+		unknown := true
 		for _, dp := range appPkgRow.AppDescription.DeploymentProfiles {
 
 			if dp.DeviceConstraints == nil {
@@ -120,6 +118,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 				deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): app deployment profile is nil, no need to check")
 				continue
 			}
+			unknown = false
 
 			devCons, err := ConvertAtoB[nbi.DeviceConstraints, sbi.DeviceConstraints](*dp.DeviceConstraints)
 			if err != nil {
@@ -141,9 +140,16 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 			}
 
 		}
+
+		// Eligibility is unknown due to missing device constraints in application, hence marking it as unknown.
+		if unknown {
+			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): device eligibility check is not possible, probably due to missing device constraints")
+			devices.Items[i].Eligible = pointers.Ptr(nbi.Unknown)
+			continue
+		}
+
 		if eligible {
 			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): device is eligible, checking for next, deviceId : %s", *d.Id)
-
 			devices.Items[i].Eligible = pointers.Ptr(nbi.True)
 			continue
 		}
