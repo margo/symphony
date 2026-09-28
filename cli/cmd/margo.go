@@ -4,9 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
-
 	"strings"
+	"time"
 
 	"github.com/eclipse-symphony/symphony/cli/utils"
 	"github.com/ghodss/yaml"
@@ -28,6 +27,8 @@ var (
 	applyFromFile string
 	// Output format flag
 	outputFormat string
+	// application Package Id
+	appPkgId string
 )
 
 type outputSchema struct {
@@ -161,7 +162,7 @@ var MargoListAllCmd = &cobra.Command{
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
 		}
-		if err := listDevices(); err != nil {
+		if err := listDevices(nil); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
 		}
@@ -181,7 +182,7 @@ var MargoListDevicesCmd = &cobra.Command{
 			printServerInfo()
 		}
 
-		if err := listDevices(); err != nil {
+		if err := listDevices(&appPkgId); err != nil {
 			fmt.Printf("\n%sList failed: %s%s\n\n", utils.ColorRed(), err.Error(), utils.ColorReset())
 			return
 		}
@@ -282,23 +283,14 @@ var MargoGetDeploymentCmd = &cobra.Command{
 
 // Implementation functions
 func applyAppConfig(filename string) error {
-	// Read the YAML file
 	yamlFile, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Unmarshal the YAML into a generic map
 	var data map[string]interface{}
-	err = yaml.Unmarshal(yamlFile, &data)
-	if err != nil {
+	if err := yaml.Unmarshal(yamlFile, &data); err != nil {
 		return fmt.Errorf("failed to unmarshal YAML: %w", err)
-	}
-
-	// Determine the type of resource and call the appropriate function
-	kind, ok := data["kind"].(string)
-	if !ok {
-		return fmt.Errorf("kind not found or not a string")
 	}
 
 	jsonFile, err := convertYamlToJson(yamlFile)
@@ -306,23 +298,31 @@ func applyAppConfig(filename string) error {
 		return fmt.Errorf("failed to convert yaml to json: %w", err)
 	}
 
-	switch kind {
-	case "ApplicationPackage":
+	// Determine resource type by spec fields since kind is removed
+	spec, _ := data["spec"].(map[string]interface{})
+	if spec == nil {
+		return fmt.Errorf("spec not found in resource")
+	}
+
+	switch {
+	case spec["sourceType"] != nil:
+		// ApplicationPackageManifestRequest has spec.sourceType
 		var appPkg nbi.ApplicationPackageManifestRequest
-		err = json.Unmarshal(jsonFile, &appPkg)
-		if err != nil {
+		if err := json.Unmarshal(jsonFile, &appPkg); err != nil {
 			return fmt.Errorf("failed to unmarshal ApplicationPackage: %w", err)
 		}
 		return onboardAppPkg(&appPkg)
-	case "ApplicationDeployment":
+
+	case spec["appPackageRef"] != nil:
+		// ApplicationDeploymentManifestRequest has spec.appPackageRef
 		var deployment nbi.ApplicationDeploymentManifestRequest
-		err = json.Unmarshal(jsonFile, &deployment)
-		if err != nil {
+		if err := json.Unmarshal(jsonFile, &deployment); err != nil {
 			return fmt.Errorf("failed to unmarshal ApplicationDeployment: %w", err)
 		}
 		return createDeployment(&deployment)
+
 	default:
-		return fmt.Errorf("unsupported kind: %s", kind)
+		return fmt.Errorf("cannot determine resource type: spec must contain 'sourceType' (ApplicationPackage) or 'appPackageRef' (ApplicationDeployment)")
 	}
 }
 
@@ -413,10 +413,10 @@ func printJson(data interface{}) {
 	fmt.Println(string(jsonData))
 }
 
-func listDevices() error {
+func listDevices(appPkgId *string) error {
 	northboundCli := createNorthboundClient()
 
-	devices, err := northboundCli.ListDevices()
+	devices, err := northboundCli.ListDevices(appPkgId)
 	if err != nil {
 		return fmt.Errorf("failed to list devices: %w", err)
 	}
@@ -427,7 +427,7 @@ func listDevices() error {
 		return nil
 	}
 
-	displayDevicesTable(*devices)
+	displayDevicesTable(*devices, (appPkgId != nil && *appPkgId != ""))
 	return nil
 }
 
@@ -528,6 +528,10 @@ func init() {
 
 	MargoListCmd.AddCommand(MargoListAppPkgCmd)
 	MargoListCmd.AddCommand(MargoListDeploymentCmd)
+	// Command Flag for getting eligible devices, if application package id is provided.
+	// Id should be of an application package which is onboarded successfully, else it will fail.
+	MargoListDevicesCmd.Flags().StringVarP(&appPkgId, "appPkgId", "p", "",
+		"Application package Id for getting eligible device(s)")
 	MargoListCmd.AddCommand(MargoListDevicesCmd)
 	MargoListCmd.AddCommand(MargoListAllCmd)
 
@@ -554,18 +558,24 @@ func printServerInfo() {
 	fmt.Printf("└─────────────────────────────────────────┘\n")
 }
 
-func displayDevicesTable(resp nbi.DeviceListResp) {
+func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 
+	tr := table.Row{
+		"ID", "Capabilities", "Deployment Type", "State", "CreatedAt",
+	}
+
+	if eligibilityMarker {
+		tr = append(tr, "Eligible")
+	}
+
 	// Set headers
-	t.AppendHeader(table.Row{
-		"ID", "Signature", "Capabilities", "Deployment Type", "State", "CreatedAt",
-	})
+	t.AppendHeader(tr)
 
 	// Add data rows
 	for _, device := range resp.Items {
-		if device.ApiVersion == "" || device.Kind == "" || device.Id == nil || *device.Id == "" {
+		if device.Id == nil || *device.Id == "" {
 			continue
 		}
 
@@ -586,12 +596,14 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
-			truncateString(*device.Id, 40),
-			truncateString(device.Spec.Signature, 28),
+			*device.Id, // deliberately not truncating device Id
 			truncateString(string(cap), 28),
 			deploymentTypeStr,
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
+		}
+		if eligibilityMarker && device.Eligible != nil {
+			row = append(row, *device.Eligible)
 		}
 		t.AppendRow(row)
 	}
@@ -600,13 +612,12 @@ func displayDevicesTable(resp nbi.DeviceListResp) {
 	t.AppendFooter(table.Row{
 		"", "", "",
 		fmt.Sprintf("Page %d/%d", 1, 1),
-		fmt.Sprintf("Total: %d", 1), //resp.Metadata.TotalItems),
+		fmt.Sprintf("Total: %d", 1), // resp.Metadata.TotalItems),
 	})
 
 	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
-		{Number: 1, WidthMax: 40}, // ID
-		{Number: 2, WidthMax: 28}, // Signature
+		{Number: 1, WidthMax: 70}, // ID
 		{Number: 3, WidthMax: 28}, // Capabilities
 		{Number: 4, WidthMax: 28}, // Deployment Type
 		{Number: 5, WidthMax: 12}, // State
@@ -629,10 +640,10 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	// Add data rows
 	for _, pkg := range resp.Items {
 		var version string
-		if pkg.Spec.SourceType == "GIT_REPO" {
-			gitRepo, err := pkg.Spec.Source.AsGitRepo()
+		if pkg.Spec.SourceType == "OCI_REPO" {
+			ociRepo, err := pkg.Spec.Source.AsOciRepo()
 			if err == nil {
-				version = gitRepo.Url
+				version = *ociRepo.Tag
 			}
 		}
 		// fmt.Println("-----------------------pkg------------------", pretty.Sprint(pkg))
@@ -654,8 +665,8 @@ func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	// Add footer with pagination
 	t.AppendFooter(table.Row{
 		"", "", "", "", "", "", "",
-		fmt.Sprintf("Page %d/%d", 1, 1), //resp.Metadata.Page, resp.Metadata.TotalPages),
-		fmt.Sprintf("Total: %d", 1),     //resp.Metadata.TotalItems),
+		fmt.Sprintf("Page %d/%d", 1, 1), // resp.Metadata.Page, resp.Metadata.TotalPages),
+		fmt.Sprintf("Total: %d", 1),     // resp.Metadata.TotalItems),
 	})
 
 	// Configure column settings
@@ -716,7 +727,7 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 			truncateString(deploymentId, 48),
 			truncateString(dep.Metadata.Name, 10),
 			truncateString(dep.Spec.AppPackageRef.Id, 10),
-			truncateString(deviceId, 10),
+			extractLastPartOfDeviceId(deviceId),
 			operation,
 			state,
 			formatTime(lastUpdate),
@@ -745,6 +756,20 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 	t.Render()
 }
 
+// it extracts last part of deviceId, if according to spiffe standard. Else returns back original string
+func extractLastPartOfDeviceId(deviceId string) string {
+	devParts := strings.Split(deviceId, "/client/")
+	if len(devParts) != 2 {
+		return deviceId
+	}
+
+	if devParts[1] == "" {
+		return deviceId
+	}
+
+	return fmt.Sprintf(".../%s", devParts[1])
+}
+
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -760,9 +785,9 @@ func formatTime(t time.Time) string {
 }
 
 func extractSource(source nbi.ApplicationPackageSpec_Source) string {
-	gitRepo, err := source.AsGitRepo()
+	ociRepo, err := source.AsOciRepo()
 	if err == nil {
-		jsonData, _ := json.Marshal(gitRepo)
+		jsonData, _ := json.Marshal(ociRepo)
 		return string(jsonData)
 	}
 	return "N/A"
@@ -777,7 +802,6 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 	fmt.Printf("  ID: %s\n", *appPkg.Id)
 	fmt.Printf("  Name: %s\n", appPkg.Metadata.Name)
 	fmt.Printf("  API Version: %s\n", appPkg.ApiVersion)
-	fmt.Printf("  Kind: %s\n", appPkg.Kind)
 
 	fmt.Printf("  Metadata:\n")
 	fmt.Printf("    Creation Timestamp: %s\n", appPkg.Metadata.CreationTimestamp)
@@ -786,14 +810,12 @@ func printAppPkgDetails(appPkg *nbi.ApplicationPackageManifestResp) {
 	fmt.Printf("  Spec:\n")
 	fmt.Printf("    Source Type: %s\n", appPkg.Spec.SourceType)
 
-	gitRepo, err := appPkg.Spec.Source.AsGitRepo()
+	ociRepo, err := appPkg.Spec.Source.AsOciRepo()
 	if err == nil {
-		fmt.Printf("    Git Source:\n")
-		fmt.Printf("      URL: %s\n", gitRepo.Url)
-		fmt.Printf("      Branch: %s\n", *gitRepo.Branch)
-		fmt.Printf("      Tag: %s\n", *gitRepo.Tag)
-		fmt.Printf("      Username: %s\n", *gitRepo.Username)
-		fmt.Printf("      SubPath: %s\n", *gitRepo.SubPath)
+		fmt.Printf("    OCI Source:\n")
+		fmt.Printf("      URL: %s\n", ociRepo.RegistryUrl)
+		fmt.Printf("      Repository: %s\n", *&ociRepo.Repository)
+		fmt.Printf("      Revision: %s\n", *ociRepo.Tag)
 	}
 
 	fmt.Printf("  Status:\n")
@@ -809,8 +831,6 @@ func printDeploymentDetails(deployment *nbi.ApplicationDeploymentManifestResp) {
 
 	fmt.Printf("  ID: %s\n", *deployment.Id)
 	fmt.Printf("  Name: %s\n", deployment.Metadata.Name)
-	fmt.Printf("  API Version: %s\n", deployment.ApiVersion)
-	fmt.Printf("  Kind: %s\n", deployment.Kind)
 
 	fmt.Printf("  Metadata:\n")
 	fmt.Printf("    Creation Timestamp: %s\n", deployment.Metadata.CreationTimestamp)

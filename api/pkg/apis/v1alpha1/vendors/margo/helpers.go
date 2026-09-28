@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	"github.com/pkg/errors"
 	"github.com/valyala/fasthttp"
 	"gopkg.in/yaml.v2"
 
@@ -266,7 +267,6 @@ func createSuccessResponseWithHeaders[T any](
 	state v1alpha2.State,
 	data *T,
 ) v1alpha2.COAResponse {
-
 	builder := NewResponseBuilder(span).
 		WithContentType(contentType).
 		WithMetadata(metadata).
@@ -295,7 +295,6 @@ func createSuccessResponseWithHeadersSimple[T any](
 	state v1alpha2.State,
 	data *T,
 ) (v1alpha2.COAResponse, error) {
-
 	// Initialize metadata if nil
 	if metadata == nil {
 		metadata = make(map[string]string)
@@ -342,4 +341,24 @@ func setFastHTTPResponseHeaders(
 	} else {
 		helperVendorLogger.WarnfCtx(ctx, "Could not access fasthttp context to set headers")
 	}
+}
+
+// ConvertAtoB converts one object type to another.
+// useful in converting sbi objects to nbi & vice versa, if required.
+//
+// Note: Types should not be pointers. Always pass conrete types
+func ConvertAtoB[T1 any, T2 any](input T1) (*T2, error) {
+	var output T2
+
+	rawJson, err := json.Marshal(input)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal input")
+	}
+
+	err = json.Unmarshal(rawJson, &output)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal into output")
+	}
+
+	return &output, nil
 }

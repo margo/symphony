@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
-	"os"
 	"strings"
 	"time"
 
@@ -19,13 +17,12 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/states"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	p "github.com/margo/sandbox/shared-lib/pointers"
 	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 	margoStdAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 )
 
-var (
-	deviceLogger = logger.NewLogger("coa.runtime")
-)
+var deviceLogger = logger.NewLogger("coa.runtime")
 
 type PackageData struct {
 	CurrentState margoNonStdAPI.ApplicationPackageListResp
@@ -238,13 +235,13 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 }
 
 // Called when device reports status update for the deployments
-func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, state string) error {
+func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, state string, adoptedManifestVersion uint64) error {
 	if deviceClientId == "" || deploymentId == "" || state == "" {
 		return fmt.Errorf("deviceClientId, deploymentId, and status are required")
 	}
 
-	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s",
-		deviceClientId, deploymentId, state)
+	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
+		deviceClientId, deploymentId, state, adoptedManifestVersion)
 
 	// Get deployment
 	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
@@ -255,14 +252,12 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
 	// Special handling for REMOVED state
 	if state == string(sbi.DeploymentStatusManifestStatusStateRemoved) {
 		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Device confirmed removal of deployment %s", deploymentId)
-
 		// Delete the deployment from database
 		if err := s.Database.DeleteDeployment(ctx, deploymentId, true); err != nil {
 			return fmt.Errorf("failed to delete deployment from database: %w", err)
 		}
 
 		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully deleted deployment %s after device confirmation", deploymentId)
-
 		// Note: Bundle regeneration is triggered by DeleteDeployment event subscription
 		return nil
 	}
@@ -270,6 +265,8 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
 	// Normal state updates (not REMOVED)
 	existingState := dbRow.CurrentState
 	existingState.Status.Status.State = margoStdAPI.DeploymentStatusManifestStatusState(state)
+	// STORE the reported adoptedManifestVersion so the WFM can compare against targetVersion
+	existingState.Status.AdoptedManifestVersion = sbi.ManifestVersion(adoptedManifestVersion)
 
 	if err := s.Database.UpsertDeploymentCurrentState(ctx, deploymentId, existingState, true); err != nil {
 		return fmt.Errorf("failed to update current state: %w", err)
@@ -300,13 +297,15 @@ func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, 
 		return fmt.Errorf("failed to update deployment: %w", err)
 	}
 
-	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s", deploymentId, nbiState)
+	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Successfully updated deployment %s to state %s, adoptedManifestVersion %d",
+		deploymentId, nbiState, adoptedManifestVersion)
 	return nil
 }
 
 func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret string, userClaims map[string]interface{}) (*TokenData, error) {
 	// dm.AuthProvider.ValidateToken(ctx, )
-	result, err := dm.KeycloakProvider.GetTokenWithClaims(ctx,
+	result, err := dm.KeycloakProvider.GetTokenWithClaims(
+		ctx,
 		clientId,
 		clientSecret,
 		userClaims,
@@ -323,114 +322,29 @@ func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret st
 	}, nil
 }
 
-func (dm *DeviceManager) OnboardDevice(ctx context.Context, devicePubCert string) (*DeviceOnboardingData, error) {
-	var success bool
-	// Generate unique client ID for the device
-	clientID := generateDeviceClientID()
-	authClientSecret := ""
-	authTokenUrl := ""
-
-	onboardStatus := margoNonStdAPI.DeviceOnboardStatusINPROGRESS
+func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
 	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-		DeviceClientId:    clientID,
-		OAuthClientSecret: authClientSecret,
-		OAuthClientId:     clientID,
-		OAuthTokenURL:     authTokenUrl,
-		DevicePubCert:     devicePubCert,
-		OnboardingStatus:  onboardStatus,
-		Capabilities:      nil,
-		LastStateSync:     time.Now().UTC(),
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
+		DeviceClientId:   deviceClientId,
+		DeviceId:         capabilities.Properties.Id,
+		OnboardingStatus: margoNonStdAPI.DeviceOnboardStatusONBOARDED,
+		Capabilities:     &capabilities,
+		LastStateSync:    time.Now().UTC(),
+		CreatedAt:        time.Now().UTC(),
+		UpdatedAt:        time.Now().UTC(),
 	}); err != nil {
-		return nil, fmt.Errorf("failed to save device details: %w", err)
+		return fmt.Errorf("failed to save device details: %w", err)
 	}
-
-	defer func() {
-		onboardStatus = margoNonStdAPI.DeviceOnboardStatusONBOARDED
-		if !success {
-			onboardStatus = margoNonStdAPI.DeviceOnboardStatusFAILED
-		}
-		_ = dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-			DeviceClientId:    clientID,
-			OAuthClientSecret: authClientSecret,
-			OAuthClientId:     clientID,
-			OAuthTokenURL:     authTokenUrl,
-			DevicePubCert:     devicePubCert,
-			OnboardingStatus:  onboardStatus,
-			Capabilities:      nil,
-			LastStateSync:     time.Now().UTC(),
-			CreatedAt:         time.Now().UTC(),
-			UpdatedAt:         time.Now().UTC(),
-		})
-	}()
-
-	// review: devise a cleaner way for this
-	if dm.KeycloakProvider != nil {
-		// Define client configuration
-		config := keycloak.ClientConfig{
-			ClientID:                  clientID,
-			Enabled:                   true,
-			ServiceAccountsEnabled:    true,
-			StandardFlowEnabled:       false,
-			DirectAccessGrantsEnabled: true,
-			// Name: ,
-			Attributes: &map[string]string{
-				"device.onboarded": "true",
-				"created.by":       "device-manager",
-			},
-		}
-
-		// Get admin token
-		clientResult, err := dm.KeycloakProvider.CreateClientWithClaims(ctx, config, map[string]interface{}{
-			"deviceId": clientID,
-		})
-		if err != nil {
-			success = false
-			return nil, fmt.Errorf("failed to authenticate with Keycloak: %s", err.Error())
-		}
-
-		// Verify client was created successfully
-		if clientResult.ClientID == "" {
-			success = false
-			return nil, fmt.Errorf("client creation returned empty ID")
-		}
-		if clientResult.ClientSecret == "" {
-			success = false
-			return nil, fmt.Errorf("client creation returned empty ID")
-		}
-		if clientResult.ClientUUID == "" {
-			success = false
-			return nil, fmt.Errorf("client creation returned empty ID")
-		}
-		if clientResult.TokenUrl == "" {
-			success = false
-			return nil, fmt.Errorf("client creation returned empty token url")
-		}
-
-		clientID = clientResult.ClientID
-		authClientSecret = clientResult.ClientSecret
-		authTokenUrl = clientResult.TokenUrl
-	}
-
-	success = true
 
 	// Log successful onboarding
-	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "clientId", clientID)
+	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "clientId", deviceClientId)
 
-	return &DeviceOnboardingData{
-		ClientId:         clientID,
-		ClientSecret:     authClientSecret,
-		TokenEndpointUrl: authTokenUrl,
-	}, nil
+	return nil
 }
 
 func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.DeviceListResp, error) {
 	devices := margoNonStdAPI.DeviceListResp{
-		ApiVersion: "non.margo.org",
-		Kind:       "DeviceList",
-		Items:      []margoNonStdAPI.DeviceManifestResp{},
-		Metadata:   &margoNonStdAPI.PaginationMetadata{},
+		Items:    []margoNonStdAPI.DeviceManifestResp{},
+		Metadata: &margoNonStdAPI.PaginationMetadata{},
 	}
 
 	rows, err := dm.Database.ListDevices(ctx)
@@ -440,16 +354,15 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 
 	for _, row := range rows {
 		devices.Items = append(devices.Items, margoNonStdAPI.DeviceManifestResp{
-			ApiVersion: "non.margo.org",
-			Kind:       "Device",
 			Metadata: margoNonStdAPI.Metadata{
 				CreationTimestamp: &row.CreatedAt,
 			},
-			Id:                &row.DeviceClientId,
+			Id: &row.DeviceClientId,
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,
-				Signature:    row.DevicePubCert,
 			},
+			// setting unknown eligibility here, as it is not checked while fetching. after fetching, it should be checked for eligibility
+			Eligible: p.Ptr(margoNonStdAPI.Unknown),
 			State: margoNonStdAPI.DeviceState{
 				Onboard: margoNonStdAPI.DeviceOnboardStatusONBOARDED,
 			},
@@ -457,18 +370,6 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 	}
 	deviceLogger.DebugfCtx(ctx, "Devices: ", len(devices.Items))
 	return devices, nil
-}
-
-// Helper function to generate unique device ID
-func generateDeviceClientID() string {
-	return fmt.Sprintf("client-%s-%d", fmt.Sprintf("%x", rand.Uint64()), time.Now().Unix())
-	// return )
-}
-
-type DeviceOnboardingData struct {
-	ClientId         string
-	ClientSecret     string
-	TokenEndpointUrl string
 }
 
 func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, error) {
@@ -483,7 +384,6 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 
 	// Call GetBundle to retrieve bundle information
 	bundleArchivePath, bundleManifest, err := s.GetBundle(ctx, deviceClientId, nil)
-
 	// Log the return values from GetBundle
 	if err != nil {
 		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: GetBundle returned error: %v", err)
@@ -664,7 +564,22 @@ func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceClient
 }
 
 func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
-	return s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
+	err := s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
+	if err == nil {
+		return nil
+	}
+
+	verr, ok := err.(v1alpha2.COAError)
+	if !ok {
+		return err
+	}
+
+	if verr.State != v1alpha2.NotFound {
+		return err
+	}
+
+	// NOT FOUND ERROR HERE -- enroll it.
+	return s.OnboardDevice(ctx, deviceClientId, capabilities)
 }
 
 func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceClientId string) (*margoStdAPI.DeviceCapabilitiesManifest, error) {
@@ -673,10 +588,6 @@ func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceClientI
 		return nil, fmt.Errorf("failed to get device capabilities: %w", err)
 	}
 	return device.Capabilities, nil
-}
-
-func (s *DeviceManager) GetDeviceFromSignature(ctx context.Context, sign string) (*DeviceDatabaseRow, error) {
-	return s.Database.GetDeviceUsingPubCert(ctx, sign)
 }
 
 func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, clientId string) (*DeviceDatabaseRow, error) {
@@ -692,14 +603,4 @@ func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, clientId str
 	}
 
 	return device, nil
-}
-
-func (s *DeviceManager) GetServerCA(ctx context.Context) ([]byte, error) {
-	// review: this function is not suitable for DeviceManager, it should be kept separately as settings in the vendor itself
-	serverCAPath, exists := s.Config.Properties["serverCAPath"]
-	if !exists || serverCAPath == "" {
-		return nil, fmt.Errorf("serverCAPath property is empty in the config")
-	}
-
-	return os.ReadFile(serverCAPath)
 }

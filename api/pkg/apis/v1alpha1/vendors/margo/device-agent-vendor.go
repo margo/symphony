@@ -1,16 +1,12 @@
 package margo
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/managers/margo"
@@ -21,8 +17,7 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/providers/pubsub"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
-	"github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
-	"github.com/margo/sandbox/shared-lib/crypto"
+	"github.com/margo/sandbox/shared-lib/mis/parser"
 	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 	"github.com/valyala/fasthttp"
 	"gopkg.in/yaml.v2"
@@ -33,34 +28,6 @@ var deviceVendorLogger = logger.NewLogger("coa.runtime")
 type DeviceAgentVendor struct {
 	vendors.Vendor
 	DeviceManager *margo.DeviceManager
-}
-
-// struct for the onboarding response
-type DeviceOnboardingResponse struct {
-	// ClientId The uuid assigned to the device client.
-	ClientId string `json:"clientId"`
-
-	// EndpointList The endpoints
-	EndpointList *[]string `json:"endpoint_list,omitempty"`
-
-	// ClientId         string `json:"clientId"`
-	// ClientSecret     string `json:"clientSecret"`
-	// TokenEndpointUrl string `json:"tokenEndpointUrl"`
-}
-
-// struct for the token request
-type TokenRequest struct {
-	ClientId         string `json:"clientId"`
-	ClientSecret     string `json:"clientSecret"`
-	TokenEndpointUrl string `json:"tokenEndpointUrl"`
-}
-
-// struct for the token response
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
-	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 func (self *DeviceAgentVendor) GetInfo() vendors.VendorInfo {
@@ -94,147 +61,54 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 	// 	route = self.Route
 	// }
 	return []v1alpha2.Endpoint{
+		// GET /api/v1/deployments
 		{
-			Methods:    []string{fasthttp.MethodGet},
-			Route:      route + "/clients/{clientId}/deployments",
-			Version:    self.Version,
-			Handler:    self.getDesiredManifest,
-			Parameters: []string{"clientId?"},
+			Methods: []string{fasthttp.MethodGet},
+			Route:   route + "/deployments",
+			Version: self.Version,
+			Handler: self.getDesiredManifest,
 		},
+		// GET /api/v1/bundles/{digest}
 		{
 			Methods:    []string{fasthttp.MethodGet},
-			Route:      route + "/clients/{clientId}/bundles/{digest}",
+			Route:      route + "/bundles/{digest}",
 			Version:    self.Version,
 			Handler:    self.downloadBundle,
-			Parameters: []string{"clientId?", "digest?"},
+			Parameters: []string{"digest?"},
 		},
+		// GET /api/v1/deployments/{deploymentId}/{digest}
 		{
 			Methods:    []string{fasthttp.MethodGet},
-			Route:      route + "/clients/{clientId}/deployments/{deploymentId}/{digest}",
+			Route:      route + "/deployments/{deploymentId}/{digest}",
 			Version:    self.Version,
 			Handler:    self.downloadDeployment,
-			Parameters: []string{"clientId?", "deploymentId?", "digest?"},
-		},
-		{
-			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/onboarding",
-			Version: self.Version,
-			Handler: self.onboardDevice,
-		},
-		{
-			Methods: []string{fasthttp.MethodPost},
-			Route:   route + "/auth/token",
-			Version: self.Version,
-			Handler: self.getToken,
+			Parameters: []string{"deploymentId?", "digest?"},
 		},
 		// Endpoints for device capabilities
+		// DELETE /api/v1/capabilities/{deviceId}
 		{
-			Methods:    []string{fasthttp.MethodPost},
-			Route:      route + "/clients/{clientId}/capabilities",
-			Version:    self.Version,
-			Handler:    self.saveDeviceCapabilities,
-			Parameters: []string{"clientId?"},
+			Methods: []string{fasthttp.MethodDelete},
+			Route:   route + "/capabilities/{deviceId}",
+			Version: self.Version,
+			// Handler:    self.deleteDevice, //TODO: Update delete flow here
+			Parameters: []string{"deviceId?"},
 		},
+		// PUT /api/v1/capabilities/{deviceId}
 		{
 			Methods:    []string{fasthttp.MethodPut},
-			Route:      route + "/clients/{clientId}/capabilities",
+			Route:      route + "/capabilities/{deviceId}",
 			Version:    self.Version,
 			Handler:    self.updateDeviceCapabilities,
-			Parameters: []string{"clientId?"},
+			Parameters: []string{"deviceId?"},
 		},
+		// POST /api/v1/deployments/{deploymentId}/status
 		{
 			Methods:    []string{fasthttp.MethodPost},
-			Route:      route + "/clients/{clientId}/deployments/{deploymentId}/status",
+			Route:      route + "/deployments/{deploymentId}/status",
 			Version:    self.Version,
 			Handler:    self.onDeploymentStatusUpdate,
-			Parameters: []string{"clientId?", "deploymentId?"},
+			Parameters: []string{"deploymentId?"},
 		},
-		{
-			Methods:    []string{fasthttp.MethodGet},
-			Route:      route + "/onboarding/certificate",
-			Version:    self.Version,
-			Handler:    self.downloadServerCA,
-			Parameters: []string{},
-		},
-	}
-}
-
-// Handler for POST /device/{deviceId}/capabilities
-func (self *DeviceAgentVendor) saveDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo Device Vendor",
-		request.Context,
-		&map[string]string{
-			"method": "saveDeviceCapabilities",
-			"route":  request.Route,
-			"verb":   request.Method,
-		})
-	defer span.End()
-
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): saveDeviceCapabilities, method: %s", request.Method)
-
-	// Extract deviceId from URL parameters
-	fmt.Println("<---------------Request Prameteres----------------->", request.Parameters)
-	deviceClientId := request.Parameters["__clientId"]
-	if deviceClientId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-			"Missing deviceId parameter", v1alpha2.BadRequest)
-	}
-
-	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
-	}
-	if !validReq {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
-			"Invalid Request Signature", v1alpha2.BadRequest)
-	}
-
-	// Parse request body using the correct DeviceCapabilities type
-	var capabilities margoStdSbiAPI.DeviceCapabilitiesManifest
-	if err := json.Unmarshal(request.Body, &capabilities); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device capabilities", v1alpha2.BadRequest)
-	}
-
-	// Validate required fields
-	if capabilities.ApiVersion != "device.margo.org/v1alpha1" {
-		msg := fmt.Sprintf("invalid API version: %s", capabilities.ApiVersion)
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
-			msg, v1alpha2.BadRequest)
-	}
-
-	if capabilities.Kind != margoStdSbiAPI.DeviceCapabilitiesManifestKindDeviceCapabilitiesManifest {
-		msg := fmt.Sprintf("invalid kind: %s", capabilities.Kind)
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
-			msg, v1alpha2.BadRequest)
-	}
-
-	if capabilities.Properties.Id == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
-			"Missing device ID in capabilities", v1alpha2.BadRequest)
-	}
-
-	// Validate deviceId matches the one in properties
-	if capabilities.Properties.Id != deviceClientId {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "device ID mismatch", v1alpha2.BadRequest),
-			"Device ID in URL does not match device ID in capabilities", v1alpha2.BadRequest)
-	}
-
-	// Call DeviceManager to report capabilities
-	err = self.DeviceManager.SaveDeviceCapabilities(pCtx, deviceClientId, capabilities)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
-	}
-
-	return v1alpha2.COAResponse{
-		State:       v1alpha2.Created,
-		Body:        []byte(`{"message": "Device capabilities reported successfully"}`),
-		ContentType: "application/json",
 	}
 }
 
@@ -251,62 +125,64 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
 
-	// Extract deviceClientId from URL parameters
-	deviceClientId := request.Parameters["__clientId"]
-	if deviceClientId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-			"Missing deviceId parameter", v1alpha2.BadRequest)
+	// Extract deviceId from URL parameters
+	deviceId := request.Parameters["__deviceId"]
+	if deviceId == "" {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"deviceId path parameter is required",
+			"/api/v1/capabilities/{deviceId}",
+		))
 	}
 
-	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
+	deviceSpiffeId, err := ExtractPeerSpiffeID(request)
+	// 403 — WFM local policy check
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
-	}
-	if !validReq {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
-			"Invalid Request Signature", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
+			"/api/v1/capabilities/{deviceId}",
+		))
 	}
 
 	// Parse request body using the correct DeviceCapabilities type
 	var capabilities margoStdSbiAPI.DeviceCapabilitiesManifest
 	if err := json.Unmarshal(request.Body, &capabilities); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse device capabilities", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("failed to parse device capabilities: %s", err.Error()),
+			"/api/v1/capabilities/{deviceId}",
+		))
 	}
 
 	// Validate required fields
-	if capabilities.ApiVersion != "device.margo.org/v1alpha1" {
-		msg := fmt.Sprintf("invalid API version: %s", capabilities.ApiVersion)
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
-			msg, v1alpha2.BadRequest)
-	}
-
-	if capabilities.Kind != margoStdSbiAPI.DeviceCapabilitiesManifestKindDeviceCapabilitiesManifest {
-		msg := fmt.Sprintf("invalid kind: %s", capabilities.Kind)
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, msg, v1alpha2.BadRequest),
-			msg, v1alpha2.BadRequest)
-	}
-
 	if capabilities.Properties.Id == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "device ID in properties is required", v1alpha2.BadRequest),
-			"Missing device ID in capabilities", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewSemanticError(
+			"Request body includes a semantic error.",
+			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			margoStdSbiAPI.FieldError{
+				Field:   "properties.id",
+				Message: "device ID in properties is required",
+			},
+		))
 	}
 
-	// Validate deviceId matches the one in properties
-	if capabilities.Properties.Id != deviceClientId {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "device ID mismatch", v1alpha2.BadRequest),
-			"Device ID in URL does not match device ID in capabilities", v1alpha2.BadRequest)
+	if capabilities.Properties.Id != deviceId {
+		return problemResponse(margoStdSbiAPI.NewSemanticError(
+			"Request body includes a semantic error.",
+			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			margoStdSbiAPI.FieldError{
+				Field:   "properties.id",
+				Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", deviceId, capabilities.Properties.Id),
+			},
+		))
 	}
 
 	// Call DeviceManager to update capabilities
-	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceClientId, capabilities)
+	// deviceid is just for residing in properties. For identity, MIAF related identity needs to be used.
+	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceSpiffeId, capabilities)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update device capabilities", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("failed to update device capabilities: %s", err.Error()),
+			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+		))
 	}
 
 	return v1alpha2.COAResponse{
@@ -314,110 +190,6 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 		Body:        []byte(`{"message": "Device capabilities updated successfully"}`),
 		ContentType: "application/json",
 	}
-}
-
-// Handler func for getToken
-func (self *DeviceAgentVendor) getToken(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo Device Vendor",
-		request.Context,
-		&map[string]string{
-			"method": "getToken",
-			"route":  request.Route,
-			"verb":   request.Method,
-		})
-	defer span.End()
-
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getToken, method: %s", request.Method)
-
-	// Parse request
-	var tokenReq TokenRequest
-	if err := json.Unmarshal(request.Body, &tokenReq); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the token request", v1alpha2.BadRequest)
-	}
-
-	// Validate required fields
-	if tokenReq.ClientId == "" || tokenReq.ClientSecret == "" || tokenReq.TokenEndpointUrl == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "ClientId, ClientSecret, and TokenEndpointUrl are required", v1alpha2.BadRequest),
-			"Missing required fields", v1alpha2.BadRequest)
-	}
-
-	// Call DeviceManager to get token from Keycloak
-	tokenData, err := self.DeviceManager.GetToken(pCtx, tokenReq.ClientId, tokenReq.ClientSecret, nil)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get token from Keycloak", v1alpha2.InternalError)
-	}
-
-	// Create response
-	response := TokenResponse{
-		AccessToken:  tokenData.AccessToken,
-		TokenType:    tokenData.TokenType,
-		ExpiresIn:    tokenData.ExpiresIn,
-		RefreshToken: tokenData.RefreshToken,
-	}
-
-	return createSuccessResponse(span, v1alpha2.OK, &response)
-}
-
-// Handler func for onboardDevice
-func (self *DeviceAgentVendor) onboardDevice(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo Device Vendor",
-		request.Context,
-		&map[string]string{
-			"method": "onboardDevice",
-			"route":  request.Route,
-			"verb":   request.Method,
-		})
-	defer span.End()
-
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onboardDevice, method: %s", request.Method)
-
-	// Parse request body using the correct DeviceCapabilities type
-	var onboardingReq margoStdSbiAPI.PostApiV1OnboardingJSONRequestBody
-	if err := json.Unmarshal(request.Body, &onboardingReq); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
-	}
-
-	if err := self.validateOnboardingRequest(onboardingReq); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.BadRequest)
-	}
-	devicePubCert := onboardingReq.Certificate
-
-	device, deviceSignatureExists, err := self.DeviceManager.Database.DevicePubCertExists(pCtx, devicePubCert)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to check if device pub cert already onboarded", v1alpha2.InternalError)
-	}
-
-	// note: we are allowing failed devices to retry onboarding, hence excluded them here
-	if deviceSignatureExists && (device.OnboardingStatus == nbi.DeviceOnboardStatusONBOARDED || device.OnboardingStatus == nbi.DeviceOnboardStatusINPROGRESS) {
-		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Device signature already exists"), "Device onboarding denied", v1alpha2.Conflict)
-	}
-
-	onboardingResult, err := self.DeviceManager.OnboardDevice(pCtx, devicePubCert)
-
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to onboard device", v1alpha2.InternalError)
-	}
-
-	// Debug: List all devices to see what's in the database
-	deviceVendorLogger.InfofCtx(pCtx, "DEBUG: Calling DebugListAllDevices after onboarding")
-	self.DeviceManager.Database.DebugListAllDevices(pCtx)
-
-	// Verify the specific device exists
-	if device, err := self.DeviceManager.Database.GetDevice(pCtx, onboardingResult.ClientId); err != nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "CRITICAL: Device %s not found immediately after onboarding: %v", onboardingResult.ClientId, err)
-	} else {
-		deviceVendorLogger.InfofCtx(pCtx, "VERIFIED: Device %s exists with status %s", onboardingResult.ClientId, device.OnboardingStatus)
-	}
-
-	// Create response
-	response := DeviceOnboardingResponse{
-		ClientId: onboardingResult.ClientId,
-		// EndpointList: &[]string{}, // this has been removed from the spec, need to reconfirm it once the spec is resynced
-		// ClientSecret:     onboardingResult.ClientSecret,
-		// TokenEndpointUrl: onboardingResult.TokenEndpointUrl,
-	}
-	return createSuccessResponse(span, v1alpha2.Created, &response)
 }
 
 func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1alpha2.COAResponse {
@@ -430,42 +202,48 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		})
 	defer span.End()
 
-	deviceClientId := request.Parameters["__clientId"]
-	if deviceClientId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-			"Missing deviceId parameter", v1alpha2.BadRequest)
-	}
-	deploymentId := request.Parameters["__deploymentId"]
-	if deploymentId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "deploymentId is required", v1alpha2.BadRequest),
-			"Missing deploymentId parameter", v1alpha2.BadRequest)
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
+			"/api/v1/deployments/{deploymentId}/status",
+		))
 	}
 
-	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
-	}
-	if !validReq {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "request signaure is invalid", v1alpha2.BadRequest),
-			"Invalid Request Signature", v1alpha2.BadRequest)
+	deploymentId := request.Parameters["__deploymentId"]
+	if deploymentId == "" {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"deploymentId path parameter is required",
+			"/api/v1/deployments/{deploymentId}/status",
+		))
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): onDeploymentStatusUpdate, method: %s, %s", request.Method, string(request.Body))
 	// Parse request
 	var statusReq margoStdSbiAPI.DeploymentStatusManifest
 	if err := json.Unmarshal(request.Body, &statusReq); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to parse the request", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("failed to parse request: %s", err.Error()),
+			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
+		))
 	}
 
 	if err := self.validateStatusUpdateRequest(statusReq); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update deployment status", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewSemanticError(
+			"Request body includes a semantic error.",
+			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
+			margoStdSbiAPI.FieldError{
+				Field:   "status.state",
+				Message: err.Error(),
+			},
+		))
 	}
 
-	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State)); err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to update the status", v1alpha2.BadRequest)
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State), uint64(statusReq.AdoptedManifestVersion)); err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("failed to update deployment status: %s", err.Error()),
+			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
+		))
 	}
 
 	return createSuccessResponse(span, v1alpha2.Created, (*int)(nil))
@@ -484,38 +262,30 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	// Extract the fasthttp request from the context
 	headers, err := ParseRequestHeaders(request.Context)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(err, "Failed to extract fasthttp request from context", v1alpha2.InternalError),
-			"Internal server error", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			"failed to extract request headers",
+			"/api/v1/deployments",
+		))
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getDesiredManifest, parsedHeaders, method: sign(%v)", headers)
 
 	if accept := headers["accept"]; accept != "application/vnd.margo.manifest.v1+json" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "The accept header should be application/vnd.margo.manifest.v1+json", v1alpha2.NotAcceptable),
-			"Not Acceptable", v1alpha2.NotAcceptable)
+		return problemResponse(margoStdSbiAPI.NewServerCannotGenerateResponse(
+			"Accept header must be application/vnd.margo.manifest.v1+json",
+			"/api/v1/deployments",
+		))
 	}
 
-	// Access a specific header
-	deviceClientId := request.Parameters["__clientId"]
-	if deviceClientId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-			"Missing deviceId parameter", v1alpha2.BadRequest)
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			"failed to extract device spiffeId",
+			"/api/v1/deployments",
+		))
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx, "Processing request for deviceClientId: %s", deviceClientId)
-
-	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to verify the request signature", v1alpha2.BadRequest)
-	}
-	if !validReq {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "request signature is invalid", v1alpha2.BadRequest),
-			"Invalid Request Signature", v1alpha2.BadRequest)
-	}
 
 	// Fix: Use lowercase header key
 	digest := headers["if-none-match"]
@@ -523,15 +293,18 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 
 	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceClientId, &digest)
 	if err != nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "ShouldReplaceBundle failed for device %s: %v", deviceClientId, err)
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to get the desired states", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("failed to get desired states: %s", err.Error()),
+			"/api/v1/deployments",
+		))
 	}
 
 	if manifest == nil {
 		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceClientId)
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "manifest is nil", v1alpha2.InternalError),
-			"Internal server error", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			"manifest is nil",
+			"/api/v1/deployments",
+		))
 	}
 
 	// SPEC-COMPLIANT: Compute ETag as digest of the manifest JSON
@@ -543,7 +316,8 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		manifestJSON, err := json.Marshal(manifest)
 		if err != nil {
 			deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
-			return createErrorResponse2(deviceVendorLogger, span, err, "Failed to compute manifest digest", v1alpha2.InternalError)
+			return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to compute manifest digest: %s", err.Error()),
+				"/api/v1/deployments"))
 		}
 
 		// Compute SHA-256 digest of the manifest JSON
@@ -555,9 +329,8 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	} else {
 		if manifest.Bundle.Digest == nil {
 			deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceClientId)
-			return createErrorResponse2(deviceVendorLogger, span,
-				v1alpha2.NewCOAError(nil, "manifest bundle digest is nil", v1alpha2.InternalError),
-				"Internal server error", v1alpha2.InternalError)
+			return problemResponse(margoStdSbiAPI.NewInternalError("manifest bundle digest is nil",
+				"/api/v1/deployments"))
 		}
 
 		// Bundle with deployments: Use bundle digest as ETag
@@ -602,7 +375,8 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	manifestJSON, err := json.Marshal(manifest)
 	if err != nil {
 		deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest: %v", err)
-		return createErrorResponse2(deviceVendorLogger, span, err, "Failed to marshal manifest", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to marshal manifest: %s", err.Error()),
+			"/api/v1/deployments"))
 	}
 
 	return v1alpha2.COAResponse{
@@ -625,9 +399,10 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	// Extract headers
 	headers, err := ParseRequestHeaders(request.Context)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(err, "Failed to extract headers", v1alpha2.InternalError),
-			"Internal server error", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			"failed to extract request headers",
+			"/api/v1/bundles/{digest}",
+		))
 	}
 
 	// Validate Accept header (406 Not Acceptable)
@@ -638,65 +413,48 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	}
 	accept := headers["accept"]
 	if accept != "" {
-		validAccept := false
-		for _, validType := range acceptedTypes {
-			if accept == validType {
-				validAccept = true
-				break
-			}
-		}
+		validAccept := slices.Contains(acceptedTypes, accept)
 		if !validAccept {
-			return createErrorResponse2(deviceVendorLogger, span,
-				v1alpha2.NewCOAError(nil,
-					"Accept header must be application/vnd.margo.bundle.v1+tar+gzip",
-					v1alpha2.NotAcceptable),
-				"Not Acceptable", v1alpha2.NotAcceptable)
+			return problemResponse(margoStdSbiAPI.NewServerCannotGenerateResponse(
+				"Accept header must be application/vnd.margo.bundle.v1+tar+gzip",
+				"/api/v1/bundles/{digest}",
+			))
 		}
 	}
 
-	// Extract and validate parameters
-	deviceClientId := request.Parameters["__clientId"]
-	if deviceClientId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-			"Missing clientId parameter", v1alpha2.BadRequest)
+	deviceClientId, err := ExtractPeerSpiffeID(request)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
+			"/api/v1/bundles/{digest}",
+		))
 	}
 
 	requestedDigest := request.Parameters["__digest"]
+
 	if requestedDigest == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "digest is required", v1alpha2.BadRequest),
-			"Missing digest parameter", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"digest path parameter is required",
+			"/api/v1/bundles/{digest}",
+		))
 	}
 
-	// Verify request signature
-	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Signature verification failed", v1alpha2.Unauthorized)
-	}
-	if !validReq {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Invalid signature", v1alpha2.Unauthorized),
-			"Signature verification failed", v1alpha2.Unauthorized)
-	}
-
-	//Extract If-None-Match header from client
+	// Extract If-None-Match header from client
 	clientETag := headers["if-none-match"]
 
 	// Get bundle from database
 	path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Bundle not found", v1alpha2.NotFound)
+		return problemResponse(margoStdSbiAPI.NewInvalidBundle(
+			fmt.Sprintf("bundle not found for digest %s", requestedDigest),
+			fmt.Sprintf("/api/v1/bundles/%s", requestedDigest),
+		))
 	}
 	if path == "" || manifest == nil {
-		return createSuccessResponseWithHeaders(span,
-			"application/vnd.margo.bundle.v1+tar+gzip",
-			nil,
-			v1alpha2.NotFound,
-			(*int)(nil),
-		)
+		return problemResponse(margoStdSbiAPI.NewInvalidBundle(
+			fmt.Sprintf("bundle not found for digest %s", requestedDigest),
+			fmt.Sprintf("/api/v1/bundles/%s", requestedDigest),
+		))
 	}
 
 	//  Check If-None-Match before reading file
@@ -724,8 +482,10 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	// Read bundle archive (this is the "exact bytes" that will be sent)
 	bundleData, err := os.ReadFile(path)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Failed to read bundle", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("failed to read bundle: %s", err.Error()),
+			fmt.Sprintf("/api/v1/bundles/%s", requestedDigest),
+		))
 	}
 
 	// Verify digest of the bundle archive (Exact Bytes Rule)
@@ -739,12 +499,10 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil,
-				fmt.Sprintf("Digest mismatch: requested %s, actual %s",
-					requestedDigest, actualDigest),
-				v1alpha2.NotFound),
-			"Bundle not found for the given digest", v1alpha2.NotFound)
+		return problemResponse(margoStdSbiAPI.NewInvalidBundle(
+			fmt.Sprintf("digest mismatch: requested %s, actual %s", requestedDigest, actualDigest),
+			fmt.Sprintf("/api/v1/bundles/%s", requestedDigest),
+		))
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx,
@@ -755,7 +513,8 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	setFastHTTPResponseHeaders(request.Context, "application/vnd.margo.bundle.v1+tar+gzip", actualDigest)
 
 	// Return with proper headers
-	return createSuccessResponseWithHeaders(span,
+	return createSuccessResponseWithHeaders(
+		span,
 		"application/vnd.margo.bundle.v1+tar+gzip",
 		nil,
 		v1alpha2.OK,
@@ -776,50 +535,37 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	// Extract headers
 	headers, err := ParseRequestHeaders(request.Context)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(err, "Failed to extract headers", v1alpha2.InternalError),
-			"Internal server error", v1alpha2.InternalError)
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			"failed to extract request headers",
+			"/api/v1/deployments/{deploymentId}/{digest}",
+		))
 	}
 
 	// Validate Accept header (406 Not Acceptable)
 	if accept := headers["accept"]; accept != "" && accept != "application/yaml" && accept != "*/*" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Accept header must be application/yaml", v1alpha2.NotAcceptable),
-			"Not Acceptable", v1alpha2.NotAcceptable)
+		return problemResponse(margoStdSbiAPI.NewServerCannotGenerateResponse(
+			"Accept header must be application/yaml",
+			"/api/v1/deployments/{deploymentId}/{digest}",
+		))
 	}
 
-	// Extract and validate parameters
-	deviceClientId := request.Parameters["__clientId"]
-	if deviceClientId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "clientId is required", v1alpha2.BadRequest),
-			"Missing clientId parameter", v1alpha2.BadRequest)
-	}
+	// AFTER — no deviceId needed (deploymentId is sufficient to look up deployment)
+	// remove deviceClientId entirely
 
 	deploymentId := request.Parameters["__deploymentId"]
 	if deploymentId == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "deploymentId is required", v1alpha2.BadRequest),
-			"Missing deploymentId parameter", v1alpha2.BadRequest)
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"deploymentId path parameter is required",
+			"/api/v1/deployments/{deploymentId}/{digest}",
+		))
 	}
 
 	requestedDigest := request.Parameters["__digest"]
 	if requestedDigest == "" {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "digest is required", v1alpha2.BadRequest),
-			"Missing digest parameter", v1alpha2.BadRequest)
-	}
-
-	// Verify request signature
-	validReq, err := self.verifyRequestSignature(pCtx, deviceClientId, request)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Signature verification failed", v1alpha2.Unauthorized)
-	}
-	if !validReq {
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil, "Invalid signature", v1alpha2.Unauthorized),
-			"Signature verification failed", v1alpha2.Unauthorized)
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"digest path parameter is required",
+			"/api/v1/deployments/{deploymentId}/{digest}",
+		))
 	}
 
 	// Extract If-None-Match header from client
@@ -828,16 +574,16 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	// Get deployment from database
 	deployment, err := self.DeviceManager.Database.GetDeployment(pCtx, deploymentId)
 	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, err,
-			"Deployment not found", v1alpha2.NotFound)
+		return problemResponse(margoStdSbiAPI.NewDeploymentNotFound(
+			fmt.Sprintf("deployment %s not found: %s", deploymentId, err.Error()),
+			fmt.Sprintf("/api/v1/deployments/%s/%s", deploymentId, requestedDigest),
+		))
 	}
 	if deployment == nil {
-		return createSuccessResponseWithHeaders(span,
-			"application/yaml",
-			nil,
-			v1alpha2.NotFound,
-			(*int)(nil),
-		)
+		return problemResponse(margoStdSbiAPI.NewDeploymentNotFound(
+			fmt.Sprintf("deployment %s not found", deploymentId),
+			fmt.Sprintf("/api/v1/deployments/%s/%s", deploymentId, requestedDigest),
+		))
 	}
 
 	var yamlContent []byte
@@ -851,8 +597,10 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 
 		yamlContent, err = yaml.Marshal(deployment.DesiredState.AppDeploymentManifest)
 		if err != nil {
-			return createErrorResponse2(deviceVendorLogger, span, err,
-				"Failed to marshal deployment", v1alpha2.InternalError)
+			return problemResponse(margoStdSbiAPI.NewInternalError(
+				fmt.Sprintf("failed to marshal deployment: %s", err.Error()),
+				fmt.Sprintf("/api/v1/deployments/%s/%s", deploymentId, requestedDigest),
+			))
 		}
 	}
 
@@ -886,12 +634,10 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
-		return createErrorResponse2(deviceVendorLogger, span,
-			v1alpha2.NewCOAError(nil,
-				fmt.Sprintf("Digest mismatch: requested %s, actual %s",
-					requestedDigest, actualDigest),
-				v1alpha2.NotFound),
-			"Deployment not found for the given digest", v1alpha2.NotFound)
+		return problemResponse(margoStdSbiAPI.NewDeploymentNotFound(
+			fmt.Sprintf("digest mismatch: requested %s, actual %s", requestedDigest, actualDigest),
+			fmt.Sprintf("/api/v1/deployments/%s/%s", deploymentId, requestedDigest),
+		))
 	}
 
 	deviceVendorLogger.InfofCtx(pCtx,
@@ -902,7 +648,8 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	setFastHTTPResponseHeaders(request.Context, "application/yaml", actualDigest)
 
 	// Return with proper headers
-	return createSuccessResponseWithHeaders(span,
+	return createSuccessResponseWithHeaders(
+		span,
 		"application/yaml",
 		nil,
 		v1alpha2.OK,
@@ -910,76 +657,15 @@ func (self *DeviceAgentVendor) downloadDeployment(request v1alpha2.COARequest) v
 	)
 }
 
-func (self *DeviceAgentVendor) verifyRequestSignature(ctx context.Context, clientId string, request v1alpha2.COARequest) (valid bool, err error) {
-	deviceClient, err := self.DeviceManager.GetDeviceClientUsingId(ctx, clientId)
-	if err != nil {
-		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to get device %s: %v", clientId, err)
-		return false, fmt.Errorf("device %s not found: %w", clientId, err)
-	}
-
-	// Add nil check for device
-	if deviceClient == nil {
-		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Device %s is nil", clientId)
-		return false, fmt.Errorf("device %s not found", clientId)
-	}
-
-	// Check if device certificate exists
-	if len(deviceClient.DevicePubCert) == 0 {
-		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Device %s has no public certificate", clientId)
-		return false, fmt.Errorf("device public certificate is not yet available with the wfm")
-	}
-
-	verifier, err := crypto.NewVerifier(deviceClient.DevicePubCert, true)
-	if err != nil {
-		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to create verifier for device %s: %v", clientId, err)
-		return false, fmt.Errorf("failed to verify the request using the device certificate, %s", err.Error())
-	}
-	httpReq, err := COARequestToHTTPRequest(request)
-	if err != nil {
-		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Failed to convert request for device %s: %v", clientId, err)
-		return false, fmt.Errorf("failed to parse the request, %s", err.Error())
-	}
-
-	if err := verifier.VerifyRequest(ctx, httpReq); err != nil {
-		deviceVendorLogger.ErrorfCtx(ctx, "verifyRequestSignature: Signature verification failed for device %s: %v", clientId, err)
-		return false, err
-	}
-
-	deviceVendorLogger.DebugfCtx(ctx, "verifyRequestSignature: Successfully verified signature for device %s", clientId)
-	return true, nil
-}
-
-func (self *DeviceAgentVendor) validateOnboardingRequest(req margoStdSbiAPI.PostApiV1OnboardingJSONRequestBody) error {
-	if req.ApiVersion != "onboarding.margo.org/v1alpha1" {
-		return fmt.Errorf("invalid API version: %s", req.ApiVersion)
-	}
-
-	if len(req.Certificate) == 0 {
-		return fmt.Errorf("certificate is required")
-	}
-
-	if req.Kind != margoStdSbiAPI.OnboardingRequest {
-		return fmt.Errorf("invalid kind: %s", req.Kind)
-	}
-	return nil
-}
-
 func (self *DeviceAgentVendor) validateStatusUpdateRequest(req margoStdSbiAPI.DeploymentStatusManifest) error {
 	// validate the request fields
-	if req.ApiVersion != "deployment.margo.org/v1alpha1" {
-		return fmt.Errorf("invalid API version: %s", req.ApiVersion)
-	}
-
-	if req.Kind != margoStdSbiAPI.DeploymentStatusManifestKindDeploymentStatusManifest {
-		return fmt.Errorf("invalid kind: %s", req.Kind)
-	}
-
-	if req.Kind != margoStdSbiAPI.DeploymentStatusManifestKindDeploymentStatusManifest {
-		return fmt.Errorf("invalid kind: %s", req.Kind)
-	}
 
 	if req.DeploymentId == "" {
 		return fmt.Errorf("invalid deployment id: %s", req.DeploymentId)
+	}
+
+	if req.AdoptedManifestVersion < 1 {
+		return fmt.Errorf("adoptedManifestVersion is required and must be >= 1, got: %v", req.AdoptedManifestVersion)
 	}
 
 	if req.Status.State == "" ||
@@ -995,38 +681,10 @@ func (self *DeviceAgentVendor) validateStatusUpdateRequest(req margoStdSbiAPI.De
 	return nil
 }
 
-func (self *DeviceAgentVendor) downloadServerCA(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo Device Vendor",
-		request.Context,
-		&map[string]string{
-			"method": "downloadServerCA",
-			"route":  request.Route,
-			"verb":   request.Method,
-		})
-	defer span.End()
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): downloadServerCA, method: %s", request.Method)
-
-	ca, err := self.DeviceManager.GetServerCA(pCtx)
-	if err != nil {
-		return createErrorResponse2(deviceVendorLogger, span, fmt.Errorf("Unable to find Server CA, %s", err.Error()), "Server CA download failed", v1alpha2.InternalError)
-	}
-
-	response := map[string]string{
-		"certificate": base64.RawURLEncoding.EncodeToString(ca),
-	}
-	body, _ := json.Marshal(response)
-
-	return v1alpha2.COAResponse{
-		State:       v1alpha2.OK,
-		Body:        body,
-		ContentType: "application/json",
-	}
-}
-
 // Create a utility function for consistent header parsing
 func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 	headers := make(map[string]string)
-	if httpReq, ok := ctx.Value((v1alpha2.COAFastHTTPContextKey)).(*fasthttp.RequestCtx); ok {
+	if httpReq, ok := ctx.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
 		for _, key := range httpReq.Request.Header.PeekKeys() {
 			value := httpReq.Request.Header.Peek(string(key))
 			headers[strings.ToLower(string(key))] = string(value)
@@ -1036,75 +694,33 @@ func ParseRequestHeaders(ctx context.Context) (map[string]string, error) {
 	return nil, nil
 }
 
-// COARequestToHTTPRequest converts a COARequest to *http.Request (best-effort).
-// If the fasthttp.RequestCtx is present in the COARequest.Context (v1alpha2.COAFastHTTPContextKey)
-// this preserves headers and the exact request URI. Otherwise builds a request using Route,
-// Parameters and Body. Some fields (RemoteAddr, TLS info, RequestURI internals) cannot be reconstructed.
-func COARequestToHTTPRequest(cr v1alpha2.COARequest) (*http.Request, error) {
-	// prefer fasthttp.RequestCtx when available
-	if fhCtx, ok := cr.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
-		scheme := "https"
-		host := string(fhCtx.Request.Host())
-		uri := string(fhCtx.RequestURI())
-		full := scheme + "://" + host + uri
-
-		body := io.NopCloser(bytes.NewReader(cr.Body))
-		r, err := http.NewRequest(cr.Method, full, body)
-		if err != nil {
-			return nil, err
-		}
-
-		// copy headers
-		fhCtx.Request.Header.VisitAll(func(k, v []byte) {
-			r.Header.Add(string(k), string(v))
-		})
-
-		// best-effort: fill remote addr
-		if addr := fhCtx.RemoteAddr(); addr != nil {
-			r.RemoteAddr = addr.String()
-		}
-		return r, nil
+// ExtractTLSCertificates extracts the client (peer) certificates
+// from the mTLS connection embedded in the COARequest context.
+//
+// Returns (clientSpiffeID, serverSpiffeID, error).
+func ExtractPeerSpiffeID(request v1alpha2.COARequest) (string, error) {
+	fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx)
+	if !ok || fhCtx == nil {
+		return "", fmt.Errorf("fasthttp context not available in request")
 	}
 
-	// fallback: build from Route + Parameters + headers via ParseRequestHeaders
-	u := &url.URL{
-		Path:   cr.Route,
-		Scheme: "https",
+	tlsState := fhCtx.TLSConnectionState()
+	if tlsState == nil {
+		return "", fmt.Errorf("TLS connection state is nil — connection may not be over mTLS")
 	}
 
-	headers, _ := ParseRequestHeaders(cr.Context)
-	// checking if headers is not nil
-	if headers != nil {
-		// if headers are extracted, check for Host header & attach it
-		if v, ok := headers["Host"]; ok {
-			u.Host = v
-		}
-
+	// ----------------------------------------------------------------
+	// Extract client certificate (peer certificate presented during mTLS handshake).
+	// ----------------------------------------------------------------
+	if len(tlsState.PeerCertificates) == 0 {
+		return "", fmt.Errorf("no client certificate presented by peer")
 	}
+	clientCert := tlsState.PeerCertificates[0] // leaf is always index 0
 
-	q := u.Query()
-	for k, v := range cr.Parameters {
-		if v != "" {
-			q.Set(k, v)
-		}
-	}
-	u.RawQuery = q.Encode()
-
-	body := io.NopCloser(bytes.NewReader(cr.Body))
-	r, err := http.NewRequest(cr.Method, u.String(), body)
+	clientSpiffeID, err := parser.ParseSpiffeIdFromX509Svid(clientCert.Raw) // replace with parsed SPIFFE ID from clientCert
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("failed to parse client spiffeId, err: %w", err)
 	}
 
-	for k, v := range headers {
-
-		if k == "Host" {
-			r.Host = v
-		}
-		r.Header.Set(k, v)
-	}
-
-	r.URL = u
-
-	return r, nil
+	return clientSpiffeID, nil
 }

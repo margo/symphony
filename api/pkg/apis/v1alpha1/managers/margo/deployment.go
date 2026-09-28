@@ -206,14 +206,12 @@ func (s *DeploymentManager) buildInitialDeployment(req margoNonStdAPI.Applicatio
 	contextMsg := "stored on wfm, yet to be synced with the device"
 
 	return &margoNonStdAPI.ApplicationDeploymentManifestResp{
-		ApiVersion: req.ApiVersion,
-		Kind:       "ApplicationDeploymentManifest",
 		Metadata: margoNonStdAPI.Metadata{
 			Name:              req.Metadata.Name,
 			Namespace:         req.Metadata.Namespace,
 			CreationTimestamp: &now,
 		},
-		Id:                &deploymentId,
+		Id:   &deploymentId,
 		Spec: req.Spec,
 		Status: &margoNonStdAPI.ApplicationDeploymentStatus{
 			State:          &state,
@@ -348,25 +346,21 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 
 	desiredState := AppDeploymentState{
 		AppDeploymentManifest: sbi.AppDeploymentManifest{
-			ApiVersion: deployment.ApiVersion,
-			Kind:       deployment.Kind,
 			Metadata: sbi.AppDeploymentMetadata{
-				Name:        deployment.Metadata.Name,
-				Namespace:   namespace,
+				Name:      deployment.Metadata.Name,
+				Namespace: namespace,
 				// Annotations: deployment.Metadata.Annotations,
-				Labels:      deployment.Metadata.Labels,
+				Labels:   deployment.Metadata.Labels,
 				DeviceId: *deployment.Spec.DeviceRef.Id,
 			},
-			Id:          deployment.Id,
+			Id: deployment.Id,
 			Spec: sbi.AppDeploymentSpec{
-				ApplicationId: appId,
+				ApplicationId:     appId,
 				DeploymentProfile: s.tranformer.ConvertDeploymentProfile(deployment.Spec.DeploymentProfile),
 				Parameters:        &sbi.AppDeploymentParams{},
 			},
 		},
 		Status: sbi.DeploymentStatusManifest{
-			ApiVersion:   "margo.org",
-			Kind:         "DeploymentStatus",
 			DeploymentId: *deployment.Id,
 			Status: struct {
 				Error *struct {
