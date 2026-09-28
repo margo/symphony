@@ -39,8 +39,10 @@ const (
 	NotAcceptable             State = 406
 	Conflict                  State = 409
 	StatusUnprocessableEntity State = 422
+	TooManyRequests           State = 429
 	// InternalError = HTTP 500
 	InternalError State = 500
+	ServiceUnavailable State = 503
 	// Config errors
 	BadConfig     State = 1000
 	MissingConfig State = 1001
@@ -172,10 +174,14 @@ func GetHttpStatus(code int) State {
 		return NotFound
 	case code == 405:
 		return MethodNotAllowed
-	case code == 409:
+	case code == 409:	
 		return Conflict
+	case code == 422:
+    	return StatusUnprocessableEntity	
 	case code >= 400 && code < 500:
 		return BadRequest
+	case code == 503:
+    	return ServiceUnavailable    	
 	case code >= 500:
 		return InternalError
 	default:
@@ -209,6 +215,10 @@ func (s State) String() string {
 		return "Conflict"
 	case StatusUnprocessableEntity:
 		return "Unprocessable Entity"
+	case TooManyRequests:                 
+    	return "Too Many Requests"	
+	case ServiceUnavailable:              
+    	return "Service Unavailable"
 	case InternalError:
 		return "Internal Error"
 	case BadConfig:

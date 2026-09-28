@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -28,14 +29,20 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/utils"
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
+	mcp "github.com/margo/sandbox/shared-lib/mis/parser"
+	"github.com/margo/sandbox/shared-lib/mis/validators"
 	"golang.org/x/sync/errgroup"
 )
 
-var log = logger.NewLogger("coa.runtime")
-var defaultShutdownGracePeriod = "30s"
+var (
+	log                        = logger.NewLogger("coa.runtime")
+	defaultShutdownGracePeriod = "30s"
+)
 
-var hostIsReadyFlag bool = false
-var rwLock sync.RWMutex
+var (
+	hostIsReadyFlag bool = false
+	rwLock          sync.RWMutex
+)
 
 func IsHostReady() bool {
 	rwLock.RLock()
@@ -107,7 +114,8 @@ func overrideWithEnvVariable(value string, env string) string {
 func (h *APIHost) Launch(config HostConfig,
 	vendorFactories []vendors.IVendorFactory,
 	managerFactories []mf.IManagerFactroy,
-	providerFactories []pf.IProviderFactory, wait bool) error {
+	providerFactories []pf.IProviderFactory, wait bool,
+) error {
 	h.Vendors = make([]VendorSpec, 0)
 	h.Bindings = make([]bindings.IBinding, 0)
 	log.Info("--- launching COA host ---")
@@ -147,7 +155,8 @@ func (h *APIHost) Launch(config HostConfig,
 						for _, providerFactory := range providerFactories {
 							mProvider, err := providerFactory.CreateProvider(
 								config.API.PubSub.Provider.Type,
-								config.API.PubSub.Provider.Config)
+								config.API.PubSub.Provider.Config,
+							)
 							if err != nil {
 								return err
 							}
@@ -168,7 +177,8 @@ func (h *APIHost) Launch(config HostConfig,
 						for _, providerFactory := range providerFactories {
 							mProvider, err := providerFactory.CreateProvider(
 								config.API.KeyLock.Provider.Type,
-								config.API.KeyLock.Provider.Config)
+								config.API.KeyLock.Provider.Config,
+							)
 							if err != nil {
 								return err
 							}
@@ -185,13 +195,13 @@ func (h *APIHost) Launch(config HostConfig,
 					if err != nil {
 						return err
 					}
-					for k, _ := range mProviders {
+					for k := range mProviders {
 						if _, ok := providers[k]; ok {
 							for ik, iv := range mProviders[k] {
 								if _, ok := providers[k][ik]; !ok {
 									providers[k][ik] = iv
 								} else {
-									//TODO: what to do if there are conflicts?
+									// TODO: what to do if there are conflicts?
 								}
 							}
 						} else {
@@ -270,7 +280,8 @@ func (h *APIHost) Launch(config HostConfig,
 					for _, providerFactory := range providerFactories {
 						mProvider, err := providerFactory.CreateProvider(
 							config.API.PubSub.Provider.Type,
-							config.API.PubSub.Provider.Config)
+							config.API.PubSub.Provider.Config,
+						)
 						if err != nil {
 							return err
 						}
@@ -348,7 +359,67 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 		return nil, err
 	}
 	binding := &http.HttpBinding{}
+
+	nme, me := segregateMargoInterface(endpoints)
+	endpoints = nme // by default, all non margo endpoints
+
+	// MTLS is specifically for MARGO (MIAF Compliant)
+	if httpConfig.MTLS == true {
+		// This will only contain MARGO SBI Endpoint in case of mTLS
+		if len(me) == 0 {
+			return nil, fmt.Errorf("margo management interface missing, cannot serve margo interface")
+		}
+		endpoints = me
+
+		// Validate MIAF Config here
+		err := http.ValidateMIAFConfig(httpConfig.MIAF)
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse MIAF Config here, almost everything except x509 SVID & key
+		pmc, err := mcp.ParseMIAFConfig(httpConfig.MIAF.ToMIAFInput(), "")
+		if err != nil {
+			return nil, err
+		}
+
+		// Validate Authorized spiffe Ids here
+		for _, spid := range pmc.AuthorizedSPIFFEIDs {
+			// Authorization list for symphony will contain SPIFFE IDs of WFM-Clients, hence using principal WFMClient here.
+			err := validators.ValidateSpiffeID(spid, validators.PrincipalWFMClient)
+			if err != nil {
+				return nil, fmt.Errorf("failed to validate client spiffeId %s, err : %w", spid, err)
+			}
+		}
+
+		// Certificates are not attached here, they will be in next step
+		binding.ParsedMIAFConfig = pmc
+	}
+
 	return binding, binding.Launch(httpConfig, endpoints, pubsubProvider)
+}
+
+// separates out margo and non margo interface endpoints.
+// Returns Non Margo Endpoints & Margo Interface endpoints
+func segregateMargoInterface(eps []v1alpha2.Endpoint) (nme []v1alpha2.Endpoint, me []v1alpha2.Endpoint) {
+	for _, e := range eps {
+
+		// only nbi should be separate, rest of the routes must remain same
+		if strings.HasPrefix(e.Route, "margo/nbi/v1") {
+			nme = append(nme, e)
+			continue
+		}
+
+		if strings.HasPrefix(e.Route, "margo/api/v1") { // this is Margo Management Interface Route
+			me = append(me, e)
+			continue
+		}
+
+		nme = append(nme, e)
+		me = append(me, e)
+
+	}
+	return nme, me
 }
 
 func (h *APIHost) launchMQTT(config interface{}, endpoints []v1alpha2.Endpoint) (bindings.IBinding, error) {
