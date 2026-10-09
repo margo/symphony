@@ -1,3 +1,4 @@
+
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
@@ -5,13 +6,16 @@ project_name: margo-symphony-api
 
 before:
   hooks:
+    # Download Go dependencies.
     - sh -c "cd api && go mod download"
 
-    # Build Rust provider binding required by the standalone Symphony binary.
+    # Build native Rust provider binding for the standalone AMD64 binary.
     - sh -c "cd api/pkg/apis/v1alpha1/providers/target/rust && cargo build --release"
 
 builds:
-  - id: "symphony-api-linux-amd64"
+  # Standalone Linux AMD64 binary.
+  # ARM64 is provided through the multi-architecture Docker image below.
+  - id: symphony-api-linux-amd64
     dir: ./api
     main: .
     binary: symphony-api
@@ -19,7 +23,6 @@ builds:
     flags:
       - -trimpath
 
-    # Embed release metadata into the Symphony binary.
     ldflags:
       - >-
         -X main.build={{.Version}}
@@ -32,20 +35,18 @@ builds:
     goos:
       - linux
 
-    # The standalone Rust binding is built natively.
-    # Multi-architecture builds are handled by the Dockerfile.
     goarch:
       - amd64
 
-
 dockers_v2:
-  - id: "margo-symphony-api"
+  - id: margo-symphony-api
 
     images:
       - "ghcr.io/margo/margo-symphony-api"
 
     dockerfile: ./api/Dockerfile
 
+    # Publish a multi-architecture image.
     platforms:
       - linux/amd64
       - linux/arm64
@@ -53,8 +54,6 @@ dockers_v2:
     flags:
       - "--network=host"
 
-    # Passed to the Dockerfile so the binary built inside the
-    # container receives the same release metadata.
     build_args:
       VERSION: "{{.Version}}"
       DATE: "{{.CommitDate}}"
@@ -68,19 +67,13 @@ dockers_v2:
       org.opencontainers.image.revision: "{{.FullCommit}}"
       org.opencontainers.image.created: "{{.CommitDate}}"
 
-    # Dockerfile uses the repository root as its build context:
-    #
-    # COPY ./packages /workspace/packages
-    # COPY ./coa      /workspace/coa
-    # COPY ./api      /workspace/api
+    # Files required by api/Dockerfile.
     extra_files:
       - api/
       - coa/
       - packages/
 
-
 report_sizes: true
-
 
 archives:
   - id: symphony-api-archive
@@ -104,14 +97,11 @@ archives:
       - src: api/symphony-api-margo.json
         dst: symphony-api-margo.json
 
-
 checksum:
   name_template: "{{.ProjectName}}_checksums.txt"
 
-
 changelog:
   use: github-native
-
 
 release:
   make_latest: true
