@@ -1,0 +1,119 @@
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: margo-symphony-api
+
+before:
+  hooks:
+    # Download Go dependencies.
+    - sh -c "cd api && go mod download"
+
+    # Build native Rust provider binding for the standalone AMD64 binary.
+    - sh -c "cd api/pkg/apis/v1alpha1/providers/target/rust && cargo build --release"
+
+builds:
+  # Standalone Linux AMD64 binary.
+  # ARM64 is provided through the multi-architecture Docker image below.
+  - id: symphony-api-linux-amd64
+    dir: ./api
+    main: .
+    binary: symphony-api
+
+    flags:
+      - -trimpath
+
+    ldflags:
+      - >-
+        -X main.build={{.Version}}
+        -X main.commit={{.Commit}}
+        -X main.date={{.CommitDate}}
+
+    env:
+      - CGO_ENABLED=1
+
+    goos:
+      - linux
+
+    goarch:
+      - amd64
+
+dockers_v2:
+  - id: margo-symphony-api
+
+    images:
+      - "ghcr.io/margo/margo-symphony-api"
+
+    dockerfile: ./api/Dockerfile
+
+    # Publish a multi-architecture image.
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+    flags:
+      - "--network=host"
+
+    build_args:
+      VERSION: "{{.Version}}"
+      DATE: "{{.CommitDate}}"
+      COMMIT: "{{.Commit}}"
+
+    labels:
+      org.opencontainers.image.title: "{{.ProjectName}}"
+      org.opencontainers.image.description: "Margo Symphony API. A reference implementation."
+      org.opencontainers.image.source: "{{.GitURL}}"
+      org.opencontainers.image.version: "{{.Version}}"
+      org.opencontainers.image.revision: "{{.FullCommit}}"
+      org.opencontainers.image.created: "{{.CommitDate}}"
+
+    # Files required by api/Dockerfile.
+    extra_files:
+      - api/
+      - coa/
+      - packages/
+
+report_sizes: true
+
+archives:
+  - id: symphony-api-archive
+
+    ids:
+      - symphony-api-linux-amd64
+
+    formats:
+      - tar.gz
+
+    name_template: "{{.ProjectName}}_{{.Version}}_{{.Os}}-{{.Arch}}"
+
+    wrap_in_directory: symphony-api
+
+    files:
+      - LICENSE
+
+      - src: api/symphony-api.json
+        dst: symphony-api.json
+
+      - src: api/symphony-api-margo.json
+        dst: symphony-api-margo.json
+
+checksum:
+  name_template: "{{.ProjectName}}_checksums.txt"
+
+changelog:
+  use: github-native
+
+release:
+  make_latest: true
+
+  header: |
+    ## This release targets the Margo spec version: {{.Env.MARGO_SPEC_VERSION}}, which can be tracked here: https://github.com/margo/specification
+
+  footer: |
+    **Full Changelog**: https://github.com/margo/symphony/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+  github:
+    owner: margo
+    name: symphony
+
+  disable: false
