@@ -18,6 +18,18 @@ builds:
     main: .
     binary: symphony-api
 
+    # Exclude the native Rust workspace path so the Go build pipeline 
+    # doesn't treat the pure Rust directory as an invalid Go package.
+    ignore:
+      - goos: linux
+        goarch: amd64
+        ignored_packages:
+          - ./pkg/apis/v1alpha1/providers/target/rust/...
+      - goos: linux
+        goarch: arm64
+        ignored_packages:
+          - ./pkg/apis/v1alpha1/providers/target/rust/...
+
     flags:
       - -trimpath
 
