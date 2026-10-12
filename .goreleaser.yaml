@@ -11,24 +11,15 @@ before:
     # Build native Rust provider binding.
     - sh -c "cd api/pkg/apis/v1alpha1/providers/target/rust && cargo build --release"
 
+    # Inject the dummy Go constraint so the Go toolchain safely ignores the Rust subdirectory.
+    - sh -c "printf '//go:build ignore\n\npackage rust\n' > api/pkg/apis/v1alpha1/providers/target/rust/dummy.go"
+
 builds:
   # Standalone Linux binaries for AMD64 and ARM64.
   - id: symphony-api-linux
     dir: ./api
     main: .
     binary: symphony-api
-
-    # Exclude the native Rust workspace path so the Go build pipeline 
-    # doesn't treat the pure Rust directory as an invalid Go package.
-    ignore:
-      - goos: linux
-        goarch: amd64
-        ignored_packages:
-          - ./pkg/apis/v1alpha1/providers/target/rust/...
-      - goos: linux
-        goarch: arm64
-        ignored_packages:
-          - ./pkg/apis/v1alpha1/providers/target/rust/...
 
     flags:
       - -trimpath
