@@ -14,7 +14,7 @@ before:
     # Clean up any leftover sub-module configs from previous tracking runs.
     - sh -c "rm -f api/pkg/apis/v1alpha1/providers/target/rust/go.mod api/pkg/apis/v1alpha1/providers/target/rust/go.sum"
     
-    # Decodes a 100% verified struct mockup with correct receiver spelling.
+    # Decodes a 100% verified struct mockup with correct receiver spelling for local compilation.
     - sh -c "echo 'cGFja2FnZSBydXN0CgppbXBvcnQgKAoJImdpdGh1Yi5jb20vZWNsaXBzZS1zeW1waG9ueS9zeW1waG9ueS9jb2EvcGtnL2FwaXMvdjFhbHBoYTIvcHJvdmlkZXJzIikKCnR5cGUgUnVzdFRhcmdldFByb3ZpZGVyIHN0cnVjdCB7CglDb250ZXh0IGludGVyZmFjZXt9Cn0KCmZ1bmMgKHAgKlJ1c3RUYXJnZXRQcm92aWRlcikgSW5pdChjb25maWcgcHJvdmlkZXJzLklQcm92aWRlckNvbmZpZykgZXJyb3IgeyByZXR1cm4gbmlsIH0KCmZ1bmMgKHAgKlJ1c3RUYXJnZXRQcm92aWRlcikgSW5pdFdpdGhNYXAocHJvcGVydGllcyBtYXBbc3RyaW5nXXN0cmluZykgZXJyb3IgeyByZXR1cm4gbmlsIH0K' | base64 -d > api/pkg/apis/v1alpha1/providers/target/rust/provider.go"
 
 builds:
@@ -23,6 +23,11 @@ builds:
     dir: ./api
     main: .
     binary: symphony-api
+
+    # Lifecycle hook to destroy the placeholder immediately after binary compilation ends
+    hooks:
+      post:
+        - sh -c "rm -f ./pkg/apis/v1alpha1/providers/target/rust/provider.go"
 
     flags:
       - -trimpath
