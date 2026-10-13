@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
@@ -126,6 +127,7 @@ type MargoDatabase struct {
 	deploymentMetadata map[string]interface{}
 	deviceMetadata     map[string]interface{}
 	bundleMetadata     map[string]interface{}
+	deploymentLock     sync.RWMutex
 }
 
 func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGroupName, stateProvider states.IStateProvider) *MargoDatabase {
@@ -161,6 +163,7 @@ func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGr
 			"namespace":    "margo",
 			"kind":         "Bundle",
 		},
+		deploymentLock: sync.RWMutex{},
 	}
 }
 
@@ -279,6 +282,12 @@ func (db *MargoDatabase) AppPackageExists(ctx context.Context, packageId string)
 }
 
 func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment DeploymentDatabaseRow, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+	return db.upsertDeployment(ctx, deployment, publishEvent)
+}
+
+func (db *MargoDatabase) upsertDeployment(ctx context.Context, deployment DeploymentDatabaseRow, publishEvent bool) error {
 	deploymentId := *deployment.DeploymentRequest.Id
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
@@ -306,6 +315,12 @@ func (db *MargoDatabase) UpsertDeployment(ctx context.Context, deployment Deploy
 }
 
 func (db *MargoDatabase) GetDeployment(ctx context.Context, deploymentId string) (*DeploymentDatabaseRow, error) {
+	db.deploymentLock.RLock()
+	defer db.deploymentLock.RUnlock()
+	return db.getDeployment(ctx, deploymentId)
+}
+
+func (db *MargoDatabase) getDeployment(ctx context.Context, deploymentId string) (*DeploymentDatabaseRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.deploymentMetadata,
 		ID:       deploymentId,
@@ -328,7 +343,10 @@ func (db *MargoDatabase) GetDeployment(ctx context.Context, deploymentId string)
 }
 
 func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId string, publishEvent bool) error {
-	existingDeployment, err := db.GetDeployment(ctx, deploymentId)
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
+	existingDeployment, err := db.getDeployment(ctx, deploymentId)
 	if err != nil {
 		return fmt.Errorf("deployment doesn't exist, hence can't perform deletion")
 	}
@@ -358,6 +376,12 @@ func (db *MargoDatabase) DeleteDeployment(ctx context.Context, deploymentId stri
 }
 
 func (db *MargoDatabase) ListDeployments(ctx context.Context) ([]DeploymentDatabaseRow, error) {
+	db.deploymentLock.RLock()
+	defer db.deploymentLock.RUnlock()
+	return db.listDeployments(ctx)
+}
+
+func (db *MargoDatabase) listDeployments(ctx context.Context) ([]DeploymentDatabaseRow, error) {
 	var deployments []DeploymentDatabaseRow
 	entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
 		Metadata: db.deploymentMetadata,
@@ -383,6 +407,9 @@ func (db *MargoDatabase) ListDeployments(ctx context.Context) ([]DeploymentDatab
 }
 
 func (db *MargoDatabase) DeploymentExists(ctx context.Context, deploymentId string) (bool, error) {
+	db.deploymentLock.RLock()
+	defer db.deploymentLock.RUnlock()
+
 	_, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.deploymentMetadata,
 		ID:       deploymentId,
@@ -399,8 +426,11 @@ func (db *MargoDatabase) DeploymentExists(ctx context.Context, deploymentId stri
 }
 
 func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentId string, status margoNonStdAPI.ApplicationDeploymentOperationStatus, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
 	// Get existing deployment
-	deployment, err := db.GetDeployment(ctx, deploymentId)
+	deployment, err := db.getDeployment(ctx, deploymentId)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeploymentStatus: Failed to get deployment '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to get deployment '%s' for status update: %w", deploymentId, err)
@@ -413,7 +443,7 @@ func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentI
 	deployment.LastStatusUpdate = now
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
+	err = db.upsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeploymentStatus: Failed to update deployment status for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to update deployment status for '%s': %w", deploymentId, err)
@@ -424,8 +454,11 @@ func (db *MargoDatabase) UpdateDeploymentStatus(ctx context.Context, deploymentI
 }
 
 func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deploymentId string, operation margoNonStdAPI.ApplicationDeploymentOperation, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
 	// Get existing deployment
-	deployment, err := db.GetDeployment(ctx, deploymentId)
+	deployment, err := db.getDeployment(ctx, deploymentId)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeploymentOperation: Failed to get deployment '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to get deployment '%s' for operation update: %w", deploymentId, err)
@@ -438,7 +471,7 @@ func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deployme
 	deployment.LastStatusUpdate = now
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
+	err = db.upsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeploymentOperation: Failed to update deployment operation for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to update deployment operation for '%s': %w", deploymentId, err)
@@ -449,8 +482,11 @@ func (db *MargoDatabase) UpdateDeploymentOperation(ctx context.Context, deployme
 }
 
 func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deploymentId string, desired AppDeploymentState, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
 	// Get existing deployment or create new one if it doesn't exist
-	deployment, err := db.GetDeployment(ctx, deploymentId)
+	deployment, err := db.getDeployment(ctx, deploymentId)
 	if err != nil {
 		// If deployment doesn't exist, create a new DeploymentDatabaseRow
 		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentDesiredState: Deployment '%s' not found, creating new entry", deploymentId)
@@ -464,7 +500,7 @@ func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deplo
 	deployment.LastStatusUpdate = time.Now().UTC()
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
+	err = db.upsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDeploymentDesiredState: Failed to upsert deployment desired state for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to upsert deployment desired state for '%s': %w", deploymentId, err)
@@ -475,8 +511,11 @@ func (db *MargoDatabase) UpsertDeploymentDesiredState(ctx context.Context, deplo
 }
 
 func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deploymentId string, current AppDeploymentState, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
 	// Get existing deployment or create new one if it doesn't exist
-	deployment, err := db.GetDeployment(ctx, deploymentId)
+	deployment, err := db.getDeployment(ctx, deploymentId)
 	if err != nil {
 		// If deployment doesn't exist, create a new DeploymentDatabaseRow
 		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentCurrentState: Deployment '%s' not found, creating new entry", deploymentId)
@@ -490,7 +529,7 @@ func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deplo
 	deployment.LastStatusUpdate = time.Now().UTC()
 
 	// Save updated deployment
-	err = db.UpsertDeployment(ctx, *deployment, publishEvent)
+	err = db.upsertDeployment(ctx, *deployment, publishEvent)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDeploymentCurrentState: Failed to upsert deployment current state for '%s': %v", deploymentId, err)
 		return fmt.Errorf("failed to upsert deployment current state for '%s': %w", deploymentId, err)
@@ -501,8 +540,11 @@ func (db *MargoDatabase) UpsertDeploymentCurrentState(ctx context.Context, deplo
 }
 
 func (db *MargoDatabase) GetDeploymentsByDevice(ctx context.Context, deviceId string) ([]DeploymentDatabaseRow, error) {
+	db.deploymentLock.RLock()
+	defer db.deploymentLock.RUnlock()
+
 	// Get all deployments first
-	allDeployments, err := db.ListDeployments(ctx)
+	allDeployments, err := db.listDeployments(ctx)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentsByDevice: Failed to list deployments for device filtering: %v", err)
 		return nil, fmt.Errorf("failed to list deployments for device '%s': %w", deviceId, err)
@@ -532,8 +574,11 @@ func (db *MargoDatabase) GetDeploymentsByDevice(ctx context.Context, deviceId st
 }
 
 func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId string) ([]DeploymentDatabaseRow, error) {
+	db.deploymentLock.RLock()
+	defer db.deploymentLock.RUnlock()
+
 	// Get all deployments first
-	allDeployments, err := db.ListDeployments(ctx)
+	allDeployments, err := db.listDeployments(ctx)
 	if err != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentsByPackage: Failed to list deployments for package filtering: %v", err)
 		return nil, fmt.Errorf("failed to list deployments for package '%s': %w", packageId, err)
@@ -749,6 +794,9 @@ func (db *MargoDatabase) UpdateDeviceLastSync(ctx context.Context, deviceId stri
 }
 
 func (db *MargoDatabase) UpsertDeploymentBundle(ctx context.Context, bundleRow DeploymentBundleRow, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
 	deviceClientId := bundleRow.DeviceClientId
 	bundleRow.UpdatedAt = time.Now().UTC()
 
@@ -842,7 +890,7 @@ func (db *MargoDatabase) UpsertDeploymentBundle(ctx context.Context, bundleRow D
 	//  Verify the bundle was stored correctly
 	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying bundle storage for device %s", deviceClientId)
 
-	verifyBundle, verifyErr := db.GetDeploymentBundle(ctx, deviceClientId)
+	verifyBundle, verifyErr := db.getDeploymentBundle(ctx, deviceClientId)
 	if verifyErr != nil {
 		db.MgrContext.Logger.ErrorfCtx(ctx,
 			"UpsertDeploymentBundle: CRITICAL - Bundle not found after storage: %v", verifyErr)
@@ -917,6 +965,12 @@ func (db *MargoDatabase) DebugListAllBundles(ctx context.Context) {
 }
 
 func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId string) (*DeploymentBundleRow, error) {
+	db.deploymentLock.RLock()
+	defer db.deploymentLock.RUnlock()
+	return db.getDeploymentBundle(ctx, deviceClientId)
+}
+
+func (db *MargoDatabase) getDeploymentBundle(ctx context.Context, deviceClientId string) (*DeploymentBundleRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.bundleMetadata,
 		ID:       deviceClientId,
@@ -939,8 +993,11 @@ func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId
 }
 
 func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClientId string, publishEvent bool) error {
+	db.deploymentLock.Lock()
+	defer db.deploymentLock.Unlock()
+
 	// Get existing bundle for cleanup
-	existingBundle, err := db.GetDeploymentBundle(ctx, deviceClientId)
+	existingBundle, err := db.getDeploymentBundle(ctx, deviceClientId)
 	if err != nil {
 		// Return nil if bundle doesn't exist (not an error)
 		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "Not Found") {
