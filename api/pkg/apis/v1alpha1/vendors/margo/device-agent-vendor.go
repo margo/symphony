@@ -296,6 +296,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	digest := headers["if-none-match"]
 	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
+	// deviceClientId is the SPIFFE ID of the device making the request.
 	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(pCtx, deviceClientId)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
@@ -304,24 +305,17 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		))
 	}
 
-	var parentDeviceID string
+	var targetDeviceID string
 	if len(deviceIdentity.TargetIds) == 0 {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("device identity has no target IDs for device %s", deviceClientId),
 			"/api/v1/bundles/{digest}",
 		))
-	} else if len(deviceIdentity.TargetIds) == 1 {
-		parentDeviceID = deviceIdentity.TargetIds[0]
 	} else {
-		for _, targetID := range deviceIdentity.TargetIds {
-			if !strings.Contains(targetID, "/") {
-				parentDeviceID = targetID
-				break
-			}
-		}
+		targetDeviceID = deviceIdentity.TargetIds[0]
 	}
 
-	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, parentDeviceID, &digest)
+	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, targetDeviceID, &digest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to get desired states: %s", err.Error()),
@@ -330,7 +324,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	}
 
 	if manifest == nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", parentDeviceID)
+		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", targetDeviceID)
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			"manifest is nil",
 			"/api/v1/deployments",
@@ -353,7 +347,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	etag = fmt.Sprintf("\"sha256:%x\"", hash)
 
 	deviceVendorLogger.InfofCtx(pCtx, "Returning manifest for device %s - Version: %d, ETag: %s",
-		parentDeviceID, manifestVersionInt, etag)
+		targetDeviceID, manifestVersionInt, etag)
 
 	// Set headers directly in fasthttp context
 	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
@@ -369,7 +363,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 
 	// Check if client already has this manifest (digest matches)
 	if !shouldReplaceBundle {
-		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", parentDeviceID, etag)
+		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", targetDeviceID, etag)
 
 		// Return NotModified state - COA framework will convert to HTTP 304
 		response := v1alpha2.COAResponse{
@@ -384,7 +378,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		return response
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", parentDeviceID, etag)
+	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", targetDeviceID, etag)
 
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.OK,
@@ -437,6 +431,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		))
 	}
 
+	// deviceClientId is the SPIFFE ID of the device making the request.
 	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(pCtx, deviceClientId)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
@@ -445,21 +440,14 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		))
 	}
 
-	var parentDeviceID string
+	var targetDeviceID string
 	if len(deviceIdentity.TargetIds) == 0 {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("device identity has no target IDs for device %s", deviceClientId),
 			"/api/v1/bundles/{digest}",
 		))
-	} else if len(deviceIdentity.TargetIds) == 1 {
-		parentDeviceID = deviceIdentity.TargetIds[0]
 	} else {
-		for _, targetID := range deviceIdentity.TargetIds {
-			if !strings.Contains(targetID, "/") {
-				parentDeviceID = targetID
-				break
-			}
-		}
+		targetDeviceID = deviceIdentity.TargetIds[0]
 	}
 
 	requestedDigest := request.Parameters["__digest"]
@@ -475,7 +463,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	clientETag := headers["if-none-match"]
 
 	// Get bundle from database
-	path, manifest, err := self.DeviceManager.GetBundle(pCtx, parentDeviceID, &requestedDigest)
+	path, manifest, err := self.DeviceManager.GetBundle(pCtx, targetDeviceID, &requestedDigest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidBundle(
 			fmt.Sprintf("bundle not found for digest %s", requestedDigest),
@@ -500,7 +488,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		if clientETag != "" && clientETagClean == serverETagClean {
 			deviceVendorLogger.InfofCtx(pCtx,
 				"Bundle not modified for device %s (304) - ETag: %s",
-				parentDeviceID, serverETag)
+				targetDeviceID, serverETag)
 
 			// Return 304 Not Modified
 			return v1alpha2.COAResponse{
@@ -527,7 +515,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Bundle digest mismatch for device %s: requested=%s, actual=%s",
-			parentDeviceID, requestedDigest, actualDigest)
+			targetDeviceID, requestedDigest, actualDigest)
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
@@ -539,7 +527,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 
 	deviceVendorLogger.InfofCtx(pCtx,
 		"Serving bundle for device %s with verified digest %s (%d bytes)",
-		parentDeviceID, actualDigest, len(bundleData))
+		targetDeviceID, actualDigest, len(bundleData))
 
 	// Set headers directly in fasthttp context
 	setFastHTTPResponseHeaders(request.Context, "application/vnd.margo.bundle.v1+tar+gzip", actualDigest)
