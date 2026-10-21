@@ -933,25 +933,25 @@ func (db *MargoDatabase) DebugListAllBundles(ctx context.Context) {
 	}
 }
 
-func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId string) (*DeploymentBundleRow, error) {
+func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, targetId string) (*DeploymentBundleRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.bundleMetadata,
-		ID:       deviceClientId,
+		ID:       targetId,
 	})
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle '%s': %v", deviceClientId, err)
-		return nil, fmt.Errorf("failed to get deployment bundle '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle for '%s': %v", targetId, err)
+		return nil, fmt.Errorf("failed to get deployment bundle for '%s': %w", targetId, err)
 	}
 
 	var bundle DeploymentBundleRow
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &bundle)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal deployment bundle '%s': %v", deviceClientId, err)
-		return nil, fmt.Errorf("failed to unmarshal deployment bundle '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal deployment bundle for '%s': %v", targetId, err)
+		return nil, fmt.Errorf("failed to unmarshal deployment bundle for '%s': %w", targetId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle '%s' retrieved successfully", deviceClientId)
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle for '%s' retrieved successfully", targetId)
 	return &bundle, nil
 }
 
