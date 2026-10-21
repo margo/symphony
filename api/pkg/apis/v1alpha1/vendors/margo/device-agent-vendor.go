@@ -296,7 +296,32 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	digest := headers["if-none-match"]
 	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
-	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceClientId, &digest)
+	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(pCtx, deviceClientId)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("failed to get device identity: %s", err.Error()),
+			"/api/v1/bundles/{digest}",
+		))
+	}
+
+	var parentDeviceID string
+	if len(deviceIdentity.TargetIds) == 0 {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("device identity has no target IDs for device %s", deviceClientId),
+			"/api/v1/bundles/{digest}",
+		))
+	} else if len(deviceIdentity.TargetIds) == 1 {
+		parentDeviceID = deviceIdentity.TargetIds[0]
+	} else {
+		for _, targetID := range deviceIdentity.TargetIds {
+			if !strings.Contains(targetID, "/") {
+				parentDeviceID = targetID
+				break
+			}
+		}
+	}
+
+	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, parentDeviceID, &digest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to get desired states: %s", err.Error()),
@@ -305,7 +330,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	}
 
 	if manifest == nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceClientId)
+		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", parentDeviceID)
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			"manifest is nil",
 			"/api/v1/deployments",
@@ -316,34 +341,19 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	var etag string
 	manifestVersionInt := uint64(manifest.ManifestVersion)
 
-	if manifest.Bundle == nil {
-		// Empty bundle: Compute digest of the manifest JSON (per spec)
-		manifestJSON, err := json.Marshal(manifest)
-		if err != nil {
-			deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
-			return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to compute manifest digest: %s", err.Error()),
-				"/api/v1/deployments"))
-		}
-
-		// Compute SHA-256 digest of the manifest JSON
-		hash := sha256.Sum256(manifestJSON)
-		etag = fmt.Sprintf("\"sha256:%x\"", hash)
-
-		deviceVendorLogger.InfofCtx(pCtx, "Returning empty manifest for device %s - Version: %d, ETag: %s",
-			deviceClientId, manifestVersionInt, etag)
-	} else {
-		if manifest.Bundle.Digest == nil {
-			deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceClientId)
-			return problemResponse(margoStdSbiAPI.NewInternalError("manifest bundle digest is nil",
-				"/api/v1/deployments"))
-		}
-
-		// Bundle with deployments: Use bundle digest as ETag
-		etag = fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
-
-		deviceVendorLogger.InfofCtx(pCtx, "Returning bundle manifest for device %s - Version: %d, Digest: %s, Deployments: %d",
-			deviceClientId, manifestVersionInt, *manifest.Bundle.Digest, len(manifest.Deployments))
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
+		return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to marshal manifest digest: %s", err.Error()),
+			"/api/v1/deployments"))
 	}
+
+	// Compute SHA-256 digest of the manifest JSON
+	hash := sha256.Sum256(manifestJSON)
+	etag = fmt.Sprintf("\"sha256:%x\"", hash)
+
+	deviceVendorLogger.InfofCtx(pCtx, "Returning manifest for device %s - Version: %d, ETag: %s",
+		parentDeviceID, manifestVersionInt, etag)
 
 	// Set headers directly in fasthttp context
 	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
@@ -359,7 +369,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 
 	// Check if client already has this manifest (digest matches)
 	if !shouldReplaceBundle {
-		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", deviceClientId, etag)
+		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", parentDeviceID, etag)
 
 		// Return NotModified state - COA framework will convert to HTTP 304
 		response := v1alpha2.COAResponse{
@@ -374,15 +384,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		return response
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", deviceClientId, etag)
-
-	// Serialize manifest
-	manifestJSON, err := json.Marshal(manifest)
-	if err != nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest: %v", err)
-		return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to marshal manifest: %s", err.Error()),
-			"/api/v1/deployments"))
-	}
+	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", parentDeviceID, etag)
 
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.OK,
@@ -435,6 +437,31 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		))
 	}
 
+	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(pCtx, deviceClientId)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("failed to get device identity: %s", err.Error()),
+			"/api/v1/bundles/{digest}",
+		))
+	}
+
+	var parentDeviceID string
+	if len(deviceIdentity.TargetIds) == 0 {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			fmt.Sprintf("device identity has no target IDs for device %s", deviceClientId),
+			"/api/v1/bundles/{digest}",
+		))
+	} else if len(deviceIdentity.TargetIds) == 1 {
+		parentDeviceID = deviceIdentity.TargetIds[0]
+	} else {
+		for _, targetID := range deviceIdentity.TargetIds {
+			if !strings.Contains(targetID, "/") {
+				parentDeviceID = targetID
+				break
+			}
+		}
+	}
+
 	requestedDigest := request.Parameters["__digest"]
 
 	if requestedDigest == "" {
@@ -448,7 +475,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	clientETag := headers["if-none-match"]
 
 	// Get bundle from database
-	path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
+	path, manifest, err := self.DeviceManager.GetBundle(pCtx, parentDeviceID, &requestedDigest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidBundle(
 			fmt.Sprintf("bundle not found for digest %s", requestedDigest),
@@ -473,7 +500,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		if clientETag != "" && clientETagClean == serverETagClean {
 			deviceVendorLogger.InfofCtx(pCtx,
 				"Bundle not modified for device %s (304) - ETag: %s",
-				deviceClientId, serverETag)
+				parentDeviceID, serverETag)
 
 			// Return 304 Not Modified
 			return v1alpha2.COAResponse{
@@ -500,7 +527,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Bundle digest mismatch for device %s: requested=%s, actual=%s",
-			deviceClientId, requestedDigest, actualDigest)
+			parentDeviceID, requestedDigest, actualDigest)
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
@@ -512,7 +539,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 
 	deviceVendorLogger.InfofCtx(pCtx,
 		"Serving bundle for device %s with verified digest %s (%d bytes)",
-		deviceClientId, actualDigest, len(bundleData))
+		parentDeviceID, actualDigest, len(bundleData))
 
 	// Set headers directly in fasthttp context
 	setFastHTTPResponseHeaders(request.Context, "application/vnd.margo.bundle.v1+tar+gzip", actualDigest)
