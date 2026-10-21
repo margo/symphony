@@ -563,8 +563,13 @@ func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceClient
 	return nil
 }
 
-func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
-	err := s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
+func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceSpiffeId string, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
+	err := s.Database.UpsertDeviceIdentity(ctx, deviceSpiffeId, deviceClientId)
+	if err != nil {
+		return err
+	}
+
+	err = s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
 	if err == nil {
 		return nil
 	}
