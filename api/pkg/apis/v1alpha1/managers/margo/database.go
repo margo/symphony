@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -109,6 +110,13 @@ type DeploymentBundleRow struct {
 	UpdatedAt      time.Time                            `json:"updatedAt"`
 }
 
+// DeviceIdentityRow represents the mapping of a SPIFFE ID to gateway-compliant target IDs.
+// e.g. "spiffe://trustdomain/margo/wfm/wfmid/client/wfmclient" --> []string{"gateway1", "gateway1/device1"}
+type DeviceIdentityRow struct {
+	SpiffeId  string   `json:"spiffeId"`
+	TargetIds []string `json:"targetIds"`
+}
+
 // MargoDatabase provides a centralized database interface for all Margo entities.
 // It abstracts the underlying state provider and provides type-safe operations
 // for application packages, deployments, and devices.
@@ -126,6 +134,8 @@ type MargoDatabase struct {
 	deploymentMetadata map[string]interface{}
 	deviceMetadata     map[string]interface{}
 	bundleMetadata     map[string]interface{}
+	// This will map target's spiffeId with targetId in a gateway compliant manner.
+	deviceIdentityMetadata map[string]interface{} // "spiffe://trustdomain/margo/wfm/wfmid/client/wfmclient" --> []{"gateway1", "gateway1/device1"}
 }
 
 func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGroupName, stateProvider states.IStateProvider) *MargoDatabase {
@@ -160,6 +170,13 @@ func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGr
 			"resource":     "deploymentBundle",
 			"namespace":    "margo",
 			"kind":         "Bundle",
+		},
+		deviceIdentityMetadata: map[string]interface{}{
+			"version":      "v1",
+			"producerName": model.MargoGroup,
+			"resource":     "deviceIdentities",
+			"namespace":    "margo",
+			"kind":         "DeviceIdentity",
 		},
 	}
 }
@@ -989,3 +1006,129 @@ func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClien
 
 	return nil
 }
+
+func (db *MargoDatabase) UpsertDeviceIdentity(ctx context.Context, spiffeId string, targetId string) error {
+	if spiffeId == "" {
+		return fmt.Errorf("spiffeId cannot be empty")
+	}
+
+	if targetId == "" {
+		return fmt.Errorf("id cannot be empty")
+	}
+	targetIds := make([]string, 0)
+
+	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.deviceIdentityMetadata,
+		ID:       spiffeId,
+	})
+
+	// record already exists, update the row
+	if err == nil {
+		var row DeviceIdentityRow
+		jData, _ := json.Marshal(entry.Body)
+		err = json.Unmarshal(jData, &row)
+		if err != nil {
+			db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDeviceIdentity: Failed to unmarshal device identity '%s': %v", spiffeId, err)
+			return fmt.Errorf("failed to unmarshal device identity '%s': %w", spiffeId, err)
+		}
+
+		// If device already exists, simple return. no update required.
+		if slices.Contains(row.TargetIds, targetId) {
+			return nil
+		}
+
+		targetIds = row.TargetIds
+	}
+
+	// append new targetId
+	targetIds = append(targetIds, targetId)
+
+	row := DeviceIdentityRow{
+		SpiffeId:  spiffeId,
+		TargetIds: targetIds,
+	}
+
+	// insert in database
+	_, err = db.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: db.deviceIdentityMetadata,
+		Value: states.StateEntry{
+			ID:   spiffeId,
+			Body: row,
+		},
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDeviceIdentity: Failed to upsert device identity '%s': %v", spiffeId, err)
+		return fmt.Errorf("failed to upsert device identity '%s': %w", spiffeId, err)
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeviceIdentity: device identity '%s' stored successfully with %d target(s)", spiffeId, len(targetIds))
+	return nil
+}
+
+func (db *MargoDatabase) GetDeviceIdentity(ctx context.Context, spiffeId string) (*DeviceIdentityRow, error) {
+	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.deviceIdentityMetadata,
+		ID:       spiffeId,
+	})
+	if err != nil {
+		if verr, ok := err.(v1alpha2.COAError); ok {
+			if verr.State == v1alpha2.NotFound {
+				return nil, err
+			}
+		}
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeviceIdentity: Failed to get device identity '%s': %v", spiffeId, err)
+		return nil, fmt.Errorf("failed to get device identity '%s': %w", spiffeId, err)
+	}
+
+	var row DeviceIdentityRow
+	jData, _ := json.Marshal(entry.Body)
+	err = json.Unmarshal(jData, &row)
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeviceIdentity: Failed to unmarshal device identity '%s': %v", spiffeId, err)
+		return nil, fmt.Errorf("failed to unmarshal device identity '%s': %w", spiffeId, err)
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeviceIdentity: device identity '%s' retrieved successfully", spiffeId)
+	return &row, nil
+}
+
+func (db *MargoDatabase) ListDeviceIdentities(ctx context.Context) ([]DeviceIdentityRow, error) {
+	var identities []DeviceIdentityRow
+	entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
+		Metadata: db.deviceIdentityMetadata,
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "ListDeviceIdentities: Failed to list device identities: %v", err)
+		return nil, fmt.Errorf("failed to list device identities: %w", err)
+	}
+
+	for _, entry := range entries {
+		var row DeviceIdentityRow
+		jData, _ := json.Marshal(entry.Body)
+		err = json.Unmarshal(jData, &row)
+		if err == nil {
+			identities = append(identities, row)
+		} else {
+			db.MgrContext.Logger.WarnfCtx(ctx, "ListDeviceIdentities: Failed to unmarshal entry: %v", err)
+		}
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "ListDeviceIdentities: Listed %d device identities successfully", len(identities))
+	return identities, nil
+}
+
+// * Delete functionality is not defined, hence commenting it for now.
+// func (db *MargoDatabase) DeleteDeviceIdentity(ctx context.Context, spiffeId string) error {
+// 	err := db.StateProvider.Delete(ctx, states.DeleteRequest{
+// 		Metadata: db.deviceIdentityMetadata,
+// 		ID:       spiffeId,
+// 	})
+// 	if err != nil {
+// 		db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteDeviceIdentity: Failed to delete device identity '%s': %v", spiffeId, err)
+// 		return fmt.Errorf("failed to delete device identity '%s': %w", spiffeId, err)
+// 	}
+
+// 	db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeviceIdentity: device identity '%s' deleted successfully", spiffeId)
+// 	return nil
+// }

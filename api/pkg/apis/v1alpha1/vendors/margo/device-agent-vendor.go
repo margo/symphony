@@ -176,8 +176,8 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	}
 
 	// Call DeviceManager to update capabilities
-	// deviceid is just for residing in properties. For identity, MIAF related identity needs to be used.
-	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceSpiffeId, capabilities)
+	// deviceid is same as id in properties. Related spiffeId is stored in deviceIdentityMetadata database.
+	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceSpiffeId, deviceId, capabilities)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update device capabilities: %s", err.Error()),
