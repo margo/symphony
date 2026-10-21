@@ -125,16 +125,16 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
 
-	// Extract deviceId from URL parameters
-	deviceId := request.Parameters["__deviceId"]
-	if deviceId == "" {
+	// Extract targetId from URL parameters
+	targetId := request.Parameters["__deviceId"]
+	if targetId == "" {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			"deviceId path parameter is required",
 			"/api/v1/capabilities/{deviceId}",
 		))
 	}
 
-	deviceSpiffeId, err := ExtractPeerSpiffeID(request)
+	targetSpiffeId, err := ExtractPeerSpiffeID(request)
 	// 403 — WFM local policy check
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
@@ -156,7 +156,7 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	if capabilities.Properties.Id == "" {
 		return problemResponse(margoStdSbiAPI.NewSemanticError(
 			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
 			margoStdSbiAPI.FieldError{
 				Field:   "properties.id",
 				Message: "device ID in properties is required",
@@ -164,24 +164,24 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 		))
 	}
 
-	if capabilities.Properties.Id != deviceId {
+	if capabilities.Properties.Id != targetId {
 		return problemResponse(margoStdSbiAPI.NewSemanticError(
 			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
 			margoStdSbiAPI.FieldError{
 				Field:   "properties.id",
-				Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", deviceId, capabilities.Properties.Id),
+				Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", targetId, capabilities.Properties.Id),
 			},
 		))
 	}
 
 	// Call DeviceManager to update capabilities
 	// deviceid is same as id in properties. Related spiffeId is stored in deviceIdentityMetadata database.
-	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceSpiffeId, deviceId, capabilities)
+	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, targetSpiffeId, targetId, capabilities)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update device capabilities: %s", err.Error()),
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
 		))
 	}
 
