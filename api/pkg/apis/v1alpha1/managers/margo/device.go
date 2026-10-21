@@ -236,26 +236,12 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 
 // Called when device reports status update for the deployments
 func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, targetID, deploymentId string, state string, adoptedManifestVersion uint64) error {
-	if deviceClientId == "" || deploymentId == "" || state == "" {
-		return fmt.Errorf("deviceClientId, deploymentId, and status are required")
+	if deviceClientId == "" || deploymentId == "" || state == "" || targetID == "" {
+		return fmt.Errorf("deviceClientId, deploymentId, targetID, and status are required")
 	}
 
-	deviceIdentity, err := s.Database.GetDeviceIdentity(ctx, deviceClientId)
-	if err != nil {
-		return fmt.Errorf("failed to get device identity: %w", err)
-	}
-
-	if targetID != "" {
-		for _, tid := range deviceIdentity.TargetIds {
-			if tid == targetID {
-				deviceLogger.InfoCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, targetID: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
-					deviceClientId, targetID, deploymentId, state, adoptedManifestVersion)
-			}
-		}
-	} else {
-		deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
-			deviceClientId, deploymentId, state, adoptedManifestVersion)
-	}
+	deviceLogger.InfoCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, targetID: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
+		deviceClientId, targetID, deploymentId, state, adoptedManifestVersion)
 
 	// Get deployment
 	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
