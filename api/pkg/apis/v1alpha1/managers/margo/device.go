@@ -322,10 +322,10 @@ func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret st
 	}, nil
 }
 
-func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
+func (dm *DeviceManager) OnboardDevice(ctx context.Context, targetSpiffeId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
 	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-		DeviceClientId:   deviceClientId,
-		DeviceId:         capabilities.Properties.Id,
+		TargetId:         capabilities.Properties.Id,
+		TargetSpiffeId:   targetSpiffeId,
 		OnboardingStatus: margoNonStdAPI.DeviceOnboardStatusONBOARDED,
 		Capabilities:     &capabilities,
 		LastStateSync:    time.Now().UTC(),
@@ -336,7 +336,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceClientId strin
 	}
 
 	// Log successful onboarding
-	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "clientId", deviceClientId)
+	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "deviceid", capabilities.Properties.Id)
 
 	return nil
 }
@@ -357,7 +357,8 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			Metadata: margoNonStdAPI.Metadata{
 				CreationTimestamp: &row.CreatedAt,
 			},
-			Id: &row.DeviceClientId,
+			Id:             &row.TargetId,
+			SpiffeIdentity: &row.TargetSpiffeId,
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,
 			},
@@ -563,13 +564,13 @@ func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceClient
 	return nil
 }
 
-func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceSpiffeId string, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
-	err := s.Database.UpsertDeviceIdentity(ctx, deviceSpiffeId, deviceClientId)
+func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, targetSpiffeId string, targetId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
+	err := s.Database.UpsertDeviceIdentity(ctx, targetSpiffeId, targetId)
 	if err != nil {
 		return err
 	}
 
-	err = s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
+	err = s.Database.UpdateDeviceCapabilities(ctx, targetId, &capabilities)
 	if err == nil {
 		return nil
 	}
@@ -584,7 +585,7 @@ func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceSpif
 	}
 
 	// NOT FOUND ERROR HERE -- enroll it.
-	return s.OnboardDevice(ctx, deviceClientId, capabilities)
+	return s.OnboardDevice(ctx, targetSpiffeId, capabilities)
 }
 
 func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceClientId string) (*margoStdAPI.DeviceCapabilitiesManifest, error) {
