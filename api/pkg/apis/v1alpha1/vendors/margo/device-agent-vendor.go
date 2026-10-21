@@ -239,7 +239,12 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		))
 	}
 
-	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State), uint64(statusReq.AdoptedManifestVersion)); err != nil {
+	var targetID string
+	if statusReq.DeviceId != nil {
+		targetID = *statusReq.DeviceId
+	}
+
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, targetID, deploymentId, string(statusReq.Status.State), uint64(statusReq.AdoptedManifestVersion)); err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update deployment status: %s", err.Error()),
 			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
