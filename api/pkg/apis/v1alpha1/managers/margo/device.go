@@ -429,30 +429,17 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	// SPEC-COMPLIANT: Compute server-side ETag
 	var serverETag string
 
-	if bundleManifest.Bundle == nil {
-		// Empty bundle: Compute SHA-256 digest of the manifest JSON (per spec)
-		manifestJSON, err := json.Marshal(bundleManifest)
-		if err != nil {
-			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
-			return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
-		}
-
-		hash := sha256.Sum256(manifestJSON)
-		serverETag = fmt.Sprintf("\"sha256:%x\"", hash)
-
-		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Computed ETag for empty bundle: %s", serverETag)
-	} else {
-		// Bundle with deployments: Use bundle digest as ETag
-		if bundleManifest.Bundle.Digest == nil {
-			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Bundle digest is nil for device %s", deviceClientId)
-			return false, "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
-		}
-
-		serverETag = fmt.Sprintf("\"%s\"", *bundleManifest.Bundle.Digest)
-
-		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Using bundle digest as ETag: %s", serverETag)
-
+	// Empty bundle: Compute SHA-256 digest of the manifest JSON (per spec)
+	manifestJSON, err := json.Marshal(bundleManifest)
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
+		return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
 	}
+
+	hash := sha256.Sum256(manifestJSON)
+	serverETag = fmt.Sprintf("\"sha256:%x\"", hash)
+
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Computed ETag for bundle: %s", serverETag)
 
 	// Compare client ETag with server ETag
 	if clientETag != nil && *clientETag != "" {
