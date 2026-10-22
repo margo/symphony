@@ -239,8 +239,15 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		))
 	}
 
-	var targetID string
-	if statusReq.DeviceId != nil {
+	// deviceClientId is the SPIFFE ID of the device making the request.
+	targetID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			err.Error(),
+			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
+		))
+	}
+	if statusReq.DeviceId != nil && *statusReq.DeviceId != "" {
 		targetID = *statusReq.DeviceId
 	}
 
@@ -297,22 +304,12 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
 	// deviceClientId is the SPIFFE ID of the device making the request.
-	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(pCtx, deviceClientId)
+	targetDeviceID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
-			fmt.Sprintf("failed to get device identity: %s", err.Error()),
-			"/api/v1/bundles/{digest}",
+			err.Error(),
+			"/api/v1/deployments",
 		))
-	}
-
-	var targetDeviceID string
-	if len(deviceIdentity.TargetIds) == 0 {
-		return problemResponse(margoStdSbiAPI.NewInternalError(
-			fmt.Sprintf("device identity has no target IDs for device %s", deviceClientId),
-			"/api/v1/bundles/{digest}",
-		))
-	} else {
-		targetDeviceID = deviceIdentity.TargetIds[0]
 	}
 
 	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, targetDeviceID, &digest)
@@ -432,22 +429,12 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	}
 
 	// deviceClientId is the SPIFFE ID of the device making the request.
-	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(pCtx, deviceClientId)
+	targetDeviceID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
-			fmt.Sprintf("failed to get device identity: %s", err.Error()),
+			err.Error(),
 			"/api/v1/bundles/{digest}",
 		))
-	}
-
-	var targetDeviceID string
-	if len(deviceIdentity.TargetIds) == 0 {
-		return problemResponse(margoStdSbiAPI.NewInternalError(
-			fmt.Sprintf("device identity has no target IDs for device %s", deviceClientId),
-			"/api/v1/bundles/{digest}",
-		))
-	} else {
-		targetDeviceID = deviceIdentity.TargetIds[0]
 	}
 
 	requestedDigest := request.Parameters["__digest"]
@@ -743,4 +730,19 @@ func ExtractPeerSpiffeID(request v1alpha2.COARequest) (string, error) {
 	}
 
 	return clientSpiffeID, nil
+}
+
+// helper function which retrives target id mapped to spiffe id. It assumes 1 target id is mapped to 1 spiffe id,
+// does not constitute to be gateway compliance.
+func (self *DeviceAgentVendor) retrieveTargetIdFromSpiffeId(ctx context.Context, tsid string) (string, error) {
+	// deviceClientId is the SPIFFE ID of the device making the request.
+	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(ctx, tsid)
+	if err != nil {
+		return "", fmt.Errorf("failed to get device identity: %s", err.Error())
+	}
+
+	if len(deviceIdentity.TargetIds) == 0 {
+		return "", fmt.Errorf("device identity has no target IDs for device %s", tsid)
+	}
+	return deviceIdentity.TargetIds[0], nil
 }
