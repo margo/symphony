@@ -235,13 +235,13 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 }
 
 // Called when device reports status update for the deployments
-func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, deploymentId string, state string, adoptedManifestVersion uint64) error {
-	if deviceClientId == "" || deploymentId == "" || state == "" {
-		return fmt.Errorf("deviceClientId, deploymentId, and status are required")
+func (s *DeviceManager) OnDeploymentStatus(ctx context.Context, deviceClientId, targetID, deploymentId string, state string, adoptedManifestVersion uint64) error {
+	if deviceClientId == "" || deploymentId == "" || state == "" || targetID == "" {
+		return fmt.Errorf("deviceClientId, deploymentId, targetID, and status are required")
 	}
 
-	deviceLogger.InfofCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
-		deviceClientId, deploymentId, state, adoptedManifestVersion)
+	deviceLogger.InfoCtx(ctx, "OnDeploymentStatus: Received status update - device: %s, targetID: %s, deployment: %s, state: %s, adoptedManifestVersion: %d",
+		deviceClientId, targetID, deploymentId, state, adoptedManifestVersion)
 
 	// Get deployment
 	dbRow, err := s.Database.GetDeployment(ctx, deploymentId)
@@ -322,10 +322,10 @@ func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret st
 	}, nil
 }
 
-func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
+func (dm *DeviceManager) OnboardDevice(ctx context.Context, targetSpiffeId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
 	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-		DeviceClientId:   deviceClientId,
-		DeviceId:         capabilities.Properties.Id,
+		TargetId:         capabilities.Properties.Id,
+		TargetSpiffeId:   targetSpiffeId,
 		OnboardingStatus: margoNonStdAPI.DeviceOnboardStatusONBOARDED,
 		Capabilities:     &capabilities,
 		LastStateSync:    time.Now().UTC(),
@@ -336,7 +336,7 @@ func (dm *DeviceManager) OnboardDevice(ctx context.Context, deviceClientId strin
 	}
 
 	// Log successful onboarding
-	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "clientId", deviceClientId)
+	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "deviceid", capabilities.Properties.Id)
 
 	return nil
 }
@@ -357,7 +357,8 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			Metadata: margoNonStdAPI.Metadata{
 				CreationTimestamp: &row.CreatedAt,
 			},
-			Id: &row.DeviceClientId,
+			Id:             &row.TargetId,
+			SpiffeIdentity: &row.TargetSpiffeId,
 			Spec: margoNonStdAPI.DeviceSpec{
 				Capabilities: row.Capabilities,
 			},
@@ -428,30 +429,17 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	// SPEC-COMPLIANT: Compute server-side ETag
 	var serverETag string
 
-	if bundleManifest.Bundle == nil {
-		// Empty bundle: Compute SHA-256 digest of the manifest JSON (per spec)
-		manifestJSON, err := json.Marshal(bundleManifest)
-		if err != nil {
-			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
-			return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
-		}
-
-		hash := sha256.Sum256(manifestJSON)
-		serverETag = fmt.Sprintf("\"sha256:%x\"", hash)
-
-		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Computed ETag for empty bundle: %s", serverETag)
-	} else {
-		// Bundle with deployments: Use bundle digest as ETag
-		if bundleManifest.Bundle.Digest == nil {
-			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Bundle digest is nil for device %s", deviceClientId)
-			return false, "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
-		}
-
-		serverETag = fmt.Sprintf("\"%s\"", *bundleManifest.Bundle.Digest)
-
-		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Using bundle digest as ETag: %s", serverETag)
-
+	// Empty bundle: Compute SHA-256 digest of the manifest JSON (per spec)
+	manifestJSON, err := json.Marshal(bundleManifest)
+	if err != nil {
+		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
+		return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
 	}
+
+	hash := sha256.Sum256(manifestJSON)
+	serverETag = fmt.Sprintf("\"sha256:%x\"", hash)
+
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Computed ETag for bundle: %s", serverETag)
 
 	// Compare client ETag with server ETag
 	if clientETag != nil && *clientETag != "" {
@@ -563,8 +551,13 @@ func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceClient
 	return nil
 }
 
-func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
-	err := s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
+func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, targetSpiffeId string, targetId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
+	err := s.Database.UpsertDeviceIdentity(ctx, targetSpiffeId, targetId)
+	if err != nil {
+		return err
+	}
+
+	err = s.Database.UpdateDeviceCapabilities(ctx, targetId, &capabilities)
 	if err == nil {
 		return nil
 	}
@@ -579,7 +572,7 @@ func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, deviceClie
 	}
 
 	// NOT FOUND ERROR HERE -- enroll it.
-	return s.OnboardDevice(ctx, deviceClientId, capabilities)
+	return s.OnboardDevice(ctx, targetSpiffeId, capabilities)
 }
 
 func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceClientId string) (*margoStdAPI.DeviceCapabilitiesManifest, error) {

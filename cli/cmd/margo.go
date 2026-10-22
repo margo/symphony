@@ -563,7 +563,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t.SetOutputMirror(os.Stdout)
 
 	tr := table.Row{
-		"ID", "Capabilities", "Deployment Type", "State", "CreatedAt",
+		"ID", "SpiffeId", "Capabilities", "Deployment Type", "State", "CreatedAt",
 	}
 
 	if eligibilityMarker {
@@ -597,6 +597,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
 			*device.Id, // deliberately not truncating device Id
+			extractLastPartOfTargetSpiffeId(*device.SpiffeIdentity),
 			truncateString(string(cap), 28),
 			deploymentTypeStr,
 			string(device.State.Onboard),
@@ -727,7 +728,7 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 			truncateString(deploymentId, 48),
 			truncateString(dep.Metadata.Name, 10),
 			truncateString(dep.Spec.AppPackageRef.Id, 10),
-			extractLastPartOfDeviceId(deviceId),
+			deviceId,
 			operation,
 			state,
 			formatTime(lastUpdate),
@@ -757,14 +758,14 @@ func displayDeploymentsTable(resp nbi.ApplicationDeploymentListResp) {
 }
 
 // it extracts last part of deviceId, if according to spiffe standard. Else returns back original string
-func extractLastPartOfDeviceId(deviceId string) string {
-	devParts := strings.Split(deviceId, "/client/")
+func extractLastPartOfTargetSpiffeId(targetSpiffeId string) string {
+	devParts := strings.Split(targetSpiffeId, "/client/")
 	if len(devParts) != 2 {
-		return deviceId
+		return targetSpiffeId
 	}
 
 	if devParts[1] == "" {
-		return deviceId
+		return targetSpiffeId
 	}
 
 	return fmt.Sprintf(".../%s", devParts[1])
