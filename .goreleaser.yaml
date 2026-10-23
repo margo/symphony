@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://goreleaser.com
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
 project_name: margo-symphony-api
@@ -8,29 +8,38 @@ before:
     # Download Go dependencies.
     - sh -c "cd api && go mod download"
 
-    # Build native Rust provider binding.
-    - sh -c "cd api/pkg/apis/v1alpha1/providers/target/rust && cargo build --release"
+    # Remove any Rust build output left on the host. The Rust extension is
+    # compiled inside the Docker image, so host output only bloats the build
+    # context and fills the disk.
+    - sh -c "rm -rf api/pkg/apis/v1alpha1/providers/target/rust/target"
 
-    # Clean up any leftover sub-module configs from previous tracking runs.
+    # Remove a stale provider.go stub left in the source tree by earlier runs.
+    # It clashes with rust.go in the Docker build (CGO enabled). The stub is now
+    # only injected via -overlay. Skipped if the file is tracked in git.
+    - sh -c "f=api/pkg/apis/v1alpha1/providers/target/rust/provider.go; git ls-files --error-unmatch $f >/dev/null 2>&1 || rm -f $f"
+
+    # Remove leftover sub-module configs from previous runs.
     - sh -c "rm -f api/pkg/apis/v1alpha1/providers/target/rust/go.mod api/pkg/apis/v1alpha1/providers/target/rust/go.sum"
-    
-    # Decodes a 100% verified struct mockup with correct receiver spelling for local compilation.
-    - sh -c "echo 'cGFja2FnZSBydXN0CgppbXBvcnQgKAoJImdpdGh1Yi5jb20vZWNsaXBzZS1zeW1waG9ueS9zeW1waG9ueS9jb2EvcGtnL2FwaXMvdjFhbHBoYTIvcHJvdmlkZXJzIikKCnR5cGUgUnVzdFRhcmdldFByb3ZpZGVyIHN0cnVjdCB7CglDb250ZXh0IGludGVyZmFjZXt9Cn0KCmZ1bmMgKHAgKlJ1c3RUYXJnZXRQcm92aWRlcikgSW5pdChjb25maWcgcHJvdmlkZXJzLklQcm92aWRlckNvbmZpZykgZXJyb3IgeyByZXR1cm4gbmlsIH0KCmZ1bmMgKHAgKlJ1c3RUYXJnZXRQcm92aWRlcikgSW5pdFdpdGhNYXAocHJvcGVydGllcyBtYXBbc3RyaW5nXXN0cmluZykgZXJyb3IgeyByZXR1cm4gbmlsIH0K' | base64 -d > api/pkg/apis/v1alpha1/providers/target/rust/provider.go"
+
+    # Write a CGO-free stub of the Rust provider into /tmp (NOT into the source
+    # tree or dist/, which GoReleaser requires to stay empty during hooks). The Go build swaps it in with -overlay, so provider.go in git is
+    # never overwritten or deleted.
+    - sh -c "mkdir -p /tmp/symphony-rust-overlay && echo 'cGFja2FnZSBydXN0CgppbXBvcnQgKAoJImdpdGh1Yi5jb20vZWNsaXBzZS1zeW1waG9ueS9zeW1waG9ueS9jb2EvcGtnL2FwaXMvdjFhbHBoYTIvcHJvdmlkZXJzIikKCnR5cGUgUnVzdFRhcmdldFByb3ZpZGVyIHN0cnVjdCB7CglDb250ZXh0IGludGVyZmFjZXt9Cn0KCmZ1bmMgKHAgKlJ1c3RUYXJnZXRQcm92aWRlcikgSW5pdChjb25maWcgcHJvdmlkZXJzLklQcm92aWRlckNvbmZpZykgZXJyb3IgeyByZXR1cm4gbmlsIH0KCmZ1bmMgKHAgKlJ1c3RUYXJnZXRQcm92aWRlcikgSW5pdFdpdGhNYXAocHJvcGVydGllcyBtYXBbc3RyaW5nXXN0cmluZykgZXJyb3IgeyByZXR1cm4gbmlsIH0K' | base64 -d > /tmp/symphony-rust-overlay/rust_provider_stub.go"
+
+    # Overlay map: key is relative to the build dir (./api), value is absolute.
+    - |
+      sh -c "printf '%s' '{\"Replace\":{\"pkg/apis/v1alpha1/providers/target/rust/provider.go\":\"/tmp/symphony-rust-overlay/rust_provider_stub.go\"}}' > /tmp/symphony-rust-overlay/rust_overlay.json"
 
 builds:
-  # Standalone Linux binaries for AMD64 and ARM64.
+  # Standalone Linux binaries for AMD64 and ARM64 (used for the tar.gz archives).
   - id: symphony-api-linux
     dir: ./api
     main: .
     binary: symphony-api
 
-    # Lifecycle hook to destroy the placeholder immediately after binary compilation ends
-    hooks:
-      post:
-        - sh -c "rm -f ./pkg/apis/v1alpha1/providers/target/rust/provider.go"
-
     flags:
       - -trimpath
+      - -overlay=/tmp/symphony-rust-overlay/rust_overlay.json
 
     ldflags:
       - >-
@@ -56,7 +65,7 @@ dockers_v2:
 
     dockerfile: ./api/Dockerfile
 
-    # Publish a multi-architecture image.
+    # Multi-architecture image (needs docker buildx + QEMU binfmt).
     platforms:
       - linux/amd64
       - linux/arm64
@@ -77,6 +86,7 @@ dockers_v2:
       org.opencontainers.image.revision: "{{.FullCommit}}"
       org.opencontainers.image.created: "{{.CommitDate}}"
 
+    # The Dockerfile compiles everything from source, so it needs these trees.
     extra_files:
       - api/
       - coa/
@@ -99,7 +109,7 @@ archives:
 
     files:
       - LICENSE
-      
+
       - src: api/symphony-api-margo.json
         dst: symphony-api-margo.json
 
@@ -113,10 +123,10 @@ release:
   make_latest: true
 
   header: |
-    ## This release targets the Margo spec version: {{.Env.MARGO_SPEC_VERSION}}, which can be tracked here: https://github.com
+    ## This release targets the Margo spec version: {{ envOrDefault "MARGO_SPEC_VERSION" "latest" }}, which can be tracked here, https://github.com/margo/specification .
 
   footer: |
-    **Full Changelog**: https://github.com{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/margo/symphony/compare/{{ .PreviousTag }}...{{ .Tag }}
 
   github:
     owner: margo
