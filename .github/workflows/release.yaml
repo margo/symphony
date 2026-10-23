@@ -16,14 +16,6 @@ jobs:
   release:
     runs-on: ubuntu-24.04
 
-    # Rust cross-compilation environment variables
-    env:
-      PKG_CONFIG_ALLOW_CROSS: "1"
-      CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-      CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
-      AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-
     steps:
       - name: Checkout Symphony
         uses: actions/checkout@v4
@@ -38,71 +30,14 @@ jobs:
           cache: true
           cache-dependency-path: api/go.sum
 
-      # Install Rust toolchain and AMD64/ARM64 targets
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
+      - name: Verify Go toolchain
+        run: go version
 
-      # Configure multi-arch apt repositories and install dependencies
-      - name: Install build dependencies
-        run: |
-          sudo dpkg --add-architecture arm64
-          
-          # Ubuntu 24.04 (deb822) requires ports.ubuntu.com for arm64 packages
-          sudo sed -i 's/Architectures: .*/Architectures: amd64 i386/' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
-          sudo tee /etc/apt/sources.list.d/arm64.sources <<EOF
-          Types: deb
-          URIs: http://ports.ubuntu.com/ubuntu-ports/
-          Suites: noble noble-updates noble-security
-          Components: main restricted universe
-          Architectures: arm64
-          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-          EOF
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc \
-            g++ \
-            gcc-x86-64-linux-gnu \
-            g++-x86-64-linux-gnu \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
-            make \
-            pkg-config \
-            libssl-dev \
-            libssl-dev:arm64 \
-            protobuf-compiler
-
-      # Configure Cargo linker and archiver for both architectures
-      - name: Configure Rust cross-compilation
-        run: |
-          mkdir -p "$HOME/.cargo"
-
-          cat >> "$HOME/.cargo/config.toml" <<'EOF'
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          ar = "aarch64-linux-gnu-ar"
-
-          [target.x86_64-unknown-linux-gnu]
-          linker = "x86_64-linux-gnu-gcc"
-          ar = "x86_64-linux-gnu-ar"
-          EOF
-
-      # Verify compilers before running GoReleaser
-      - name: Verify build toolchains
-        run: |
-          go version
-          cargo --version
-          rustc --version
-          x86_64-linux-gnu-gcc --version
-          aarch64-linux-gnu-gcc --version
-          rustup target list --installed
-
-      # Robust extraction of MARGO_SPEC_VERSION using python YAML parser
+      # The spec version is the OpenAPI info.version field of the sandbox spec
       - name: Extract Margo spec version from sandbox
         run: |
+          python3 -m pip install --quiet --break-system-packages pyyaml || true
+
           git clone --depth 1 \
             https://github.com/margo/sandbox.git \
             /tmp/margo-sandbox
@@ -113,15 +48,13 @@ jobs:
             exit 1
           fi
 
-          # Parse YAML and strip quotes/whitespace
-          MARGO_SPEC_VERSION=$(python3 -c "
-          import yaml
-          with open('$SPEC_FILE') as f:
-              doc = yaml.safe_load(f)
-              # Check top-level 'version' or nested spec version
-              version = doc.get('version') or doc.get('spec', {}).get('version', '')
-              print(version)
-          " | tr -d ' "\r\n')
+          MARGO_SPEC_VERSION=$(python3 - "$SPEC_FILE" <<'PY'
+          import sys, yaml
+          doc = yaml.safe_load(open(sys.argv[1]))
+          print(doc.get('info', {}).get('version', ''))
+          PY
+          )
+          MARGO_SPEC_VERSION=$(printf '%s' "$MARGO_SPEC_VERSION" | tr -d ' "\r\n')
 
           if [ -z "${MARGO_SPEC_VERSION}" ]; then
             echo "Failed to extract MARGO_SPEC_VERSION"
@@ -162,7 +95,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       # Build AMD64/ARM64 binaries, archives and container images,
-      # then publish the GitHub release.
+      # then publish the GitHub release. The Rust extension is compiled
+      # inside the Dockerfile, so no host Rust toolchain is needed.
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
