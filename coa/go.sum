@@ -151,8 +151,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
-github.com/margo/sandbox v1.0.0-rc.3.1.0.20261026102906-c206984e423b h1:lhNHALB34MhqxJZEdSRNynKOlnLgQGEKUP3QqG0ly10=
-github.com/margo/sandbox v1.0.0-rc.3.1.0.20261026102906-c206984e423b/go.mod h1:0IrH8TO9wXBjTPBYxC7LONUG/Y9cAKTowY1kcDjK+3M=
+github.com/margo/sandbox v1.0.0-rc.3.1.0.20261027063755-ed5976e92b37 h1:X05kwi0sqh9MM1122tN8VHutx5e/143T1v66nqC2LAY=
+github.com/margo/sandbox v1.0.0-rc.3.1.0.20261027063755-ed5976e92b37/go.mod h1:0IrH8TO9wXBjTPBYxC7LONUG/Y9cAKTowY1kcDjK+3M=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
