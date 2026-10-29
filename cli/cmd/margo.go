@@ -563,7 +563,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t.SetOutputMirror(os.Stdout)
 
 	tr := table.Row{
-		"ID", "SpiffeId", "Capabilities", "Deployment Type", "State", "CreatedAt",
+		"ID", "Client SpiffeId", "Capabilities", "Deployment Type", "State", "CreatedAt",
 	}
 
 	if eligibilityMarker {
@@ -619,6 +619,7 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 1, WidthMax: 70}, // ID
+		{Number: 2, WidthMax: 70}, // Client SpiffeId
 		{Number: 3, WidthMax: 28}, // Capabilities
 		{Number: 4, WidthMax: 28}, // Deployment Type
 		{Number: 5, WidthMax: 12}, // State
