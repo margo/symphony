@@ -554,7 +554,7 @@ func printServerInfo() {
 	fmt.Printf("├─────────────────────────────────────────┤\n")
 	fmt.Printf("│ Host:      %-28s │\n", margoServerHost)
 	fmt.Printf("│ Port:      %-28d │\n", margoServerPort)
-	fmt.Printf("│ Basepath:      %-28s │\n", northboundBaseURL)
+	fmt.Printf("│ Basepath:  %-28s │\n", northboundBaseURL)
 	fmt.Printf("└─────────────────────────────────────────┘\n")
 }
 
