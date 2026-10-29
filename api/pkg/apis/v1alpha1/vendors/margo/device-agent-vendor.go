@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -24,6 +25,8 @@ import (
 )
 
 var deviceVendorLogger = logger.NewLogger("coa.runtime")
+
+var validDeviceIdPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$`)
 
 type DeviceAgentVendor struct {
 	vendors.Vendor
@@ -139,6 +142,13 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
+			"/api/v1/capabilities/{deviceId}",
+		))
+	}
+
+	if !validDeviceIdPattern.MatchString(targetId) {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("deviceId must follow regex %s as defined in spec", validDeviceIdPattern.String()),
 			"/api/v1/capabilities/{deviceId}",
 		))
 	}
