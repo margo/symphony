@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -129,10 +130,21 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
 
 	// Extract targetId from URL parameters
-	targetId := request.Parameters["__deviceId"]
-	if targetId == "" {
+	targetIdRaw := request.Parameters["__deviceId"]
+	if targetIdRaw == "" {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			"deviceId path parameter is required",
+			"/api/v1/capabilities/{deviceId}",
+		))
+	}
+
+	targetId, err := url.PathUnescape(targetIdRaw)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(pCtx,
+			"V (MargoDeviceVendor): failed updateDeviceCapabilities, failed to parse deviceId from path, method: %s, err: %s",
+			request.Method, err.Error())
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"deviceId path parameter is malformed",
 			"/api/v1/capabilities/{deviceId}",
 		))
 	}
