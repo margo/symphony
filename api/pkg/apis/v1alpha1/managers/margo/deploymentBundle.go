@@ -21,9 +21,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	deploymentBundleLogger = logger.NewLogger("coa.runtime")
-)
+var deploymentBundleLogger = logger.NewLogger("coa.runtime")
 
 type DeploymentBundleManager struct {
 	managers.Manager
@@ -270,7 +268,7 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 				DeploymentId: *row.DesiredState.Id,
 				Digest:       yamlDigest,
 				SizeBytes:    pointers.Ptr(float32(len(data))),
-				Url:          fmt.Sprintf("/api/v1/clients/%s/deployments/%s/%s", deviceClientId, *row.DesiredState.Id, yamlDigest),
+				Url:          fmt.Sprintf("/api/v1/deployments/%s/%s", *row.DesiredState.Id, yamlDigest),
 			})
 		}
 
@@ -286,7 +284,7 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 
 		// Set the Bundle metadata
 		bundleMediaType := "application/vnd.margo.bundle.v1+tar+gzip"
-		bundleDownloadUrl := fmt.Sprintf("/api/v1/clients/%s/bundles/%s", deviceClientId, archiveDigest)
+		bundleDownloadUrl := fmt.Sprintf("/api/v1/bundles/%s", archiveDigest)
 
 		newBundleManifest.Bundle = &margoStdAPI.DeploymentBundleRef{
 			Digest:    &archiveDigest,

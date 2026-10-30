@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -24,6 +26,8 @@ import (
 )
 
 var deviceVendorLogger = logger.NewLogger("coa.runtime")
+
+var validDeviceIdPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$`)
 
 type DeviceAgentVendor struct {
 	vendors.Vendor
@@ -125,20 +129,38 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 
 	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
 
-	// Extract deviceId from URL parameters
-	deviceId := request.Parameters["__deviceId"]
-	if deviceId == "" {
+	// Extract targetId from URL parameters
+	targetIdRaw := request.Parameters["__deviceId"]
+	if targetIdRaw == "" {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			"deviceId path parameter is required",
 			"/api/v1/capabilities/{deviceId}",
 		))
 	}
 
-	deviceSpiffeId, err := ExtractPeerSpiffeID(request)
+	targetId, err := url.PathUnescape(targetIdRaw)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(pCtx,
+			"V (MargoDeviceVendor): failed updateDeviceCapabilities, failed to parse deviceId from path, method: %s, err: %s",
+			request.Method, err.Error())
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			"deviceId path parameter is malformed",
+			"/api/v1/capabilities/{deviceId}",
+		))
+	}
+
+	targetSpiffeId, err := ExtractPeerSpiffeID(request)
 	// 403 — WFM local policy check
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
+			"/api/v1/capabilities/{deviceId}",
+		))
+	}
+
+	if !validDeviceIdPattern.MatchString(targetId) {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("deviceId must follow regex %s as defined in spec", validDeviceIdPattern.String()),
 			"/api/v1/capabilities/{deviceId}",
 		))
 	}
@@ -156,7 +178,7 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	if capabilities.Properties.Id == "" {
 		return problemResponse(margoStdSbiAPI.NewSemanticError(
 			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
 			margoStdSbiAPI.FieldError{
 				Field:   "properties.id",
 				Message: "device ID in properties is required",
@@ -164,24 +186,24 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 		))
 	}
 
-	if capabilities.Properties.Id != deviceId {
+	if capabilities.Properties.Id != targetId {
 		return problemResponse(margoStdSbiAPI.NewSemanticError(
 			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
 			margoStdSbiAPI.FieldError{
 				Field:   "properties.id",
-				Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", deviceId, capabilities.Properties.Id),
+				Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", targetId, capabilities.Properties.Id),
 			},
 		))
 	}
 
 	// Call DeviceManager to update capabilities
-	// deviceid is just for residing in properties. For identity, MIAF related identity needs to be used.
-	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, deviceSpiffeId, capabilities)
+	// deviceid is same as id in properties. Related spiffeId is stored in deviceIdentityMetadata database.
+	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, targetSpiffeId, targetId, capabilities)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update device capabilities: %s", err.Error()),
-			fmt.Sprintf("/api/v1/capabilities/%s", deviceId),
+			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
 		))
 	}
 
@@ -239,7 +261,19 @@ func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequ
 		))
 	}
 
-	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, deploymentId, string(statusReq.Status.State), uint64(statusReq.AdoptedManifestVersion)); err != nil {
+	// deviceClientId is the SPIFFE ID of the device making the request.
+	targetID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			err.Error(),
+			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
+		))
+	}
+	if statusReq.DeviceId != nil && *statusReq.DeviceId != "" {
+		targetID = *statusReq.DeviceId
+	}
+
+	if err := self.DeviceManager.OnDeploymentStatus(pCtx, deviceClientId, targetID, deploymentId, string(statusReq.Status.State), uint64(statusReq.AdoptedManifestVersion)); err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update deployment status: %s", err.Error()),
 			fmt.Sprintf("/api/v1/deployments/%s/status", deploymentId),
@@ -291,7 +325,16 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	digest := headers["if-none-match"]
 	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
-	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, deviceClientId, &digest)
+	// deviceClientId is the SPIFFE ID of the device making the request.
+	targetDeviceID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			err.Error(),
+			"/api/v1/deployments",
+		))
+	}
+
+	shouldReplaceBundle, _, manifest, etag, err := self.DeviceManager.ShouldReplaceBundle(pCtx, targetDeviceID, &digest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to get desired states: %s", err.Error()),
@@ -300,45 +343,24 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	}
 
 	if manifest == nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", deviceClientId)
+		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", targetDeviceID)
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			"manifest is nil",
 			"/api/v1/deployments",
 		))
 	}
 
-	// SPEC-COMPLIANT: Compute ETag as digest of the manifest JSON
-	var etag string
 	manifestVersionInt := uint64(manifest.ManifestVersion)
 
-	if manifest.Bundle == nil {
-		// Empty bundle: Compute digest of the manifest JSON (per spec)
-		manifestJSON, err := json.Marshal(manifest)
-		if err != nil {
-			deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
-			return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to compute manifest digest: %s", err.Error()),
-				"/api/v1/deployments"))
-		}
-
-		// Compute SHA-256 digest of the manifest JSON
-		hash := sha256.Sum256(manifestJSON)
-		etag = fmt.Sprintf("\"sha256:%x\"", hash)
-
-		deviceVendorLogger.InfofCtx(pCtx, "Returning empty manifest for device %s - Version: %d, ETag: %s",
-			deviceClientId, manifestVersionInt, etag)
-	} else {
-		if manifest.Bundle.Digest == nil {
-			deviceVendorLogger.ErrorfCtx(pCtx, "Manifest bundle digest is nil for device %s", deviceClientId)
-			return problemResponse(margoStdSbiAPI.NewInternalError("manifest bundle digest is nil",
-				"/api/v1/deployments"))
-		}
-
-		// Bundle with deployments: Use bundle digest as ETag
-		etag = fmt.Sprintf("\"%s\"", *manifest.Bundle.Digest)
-
-		deviceVendorLogger.InfofCtx(pCtx, "Returning bundle manifest for device %s - Version: %d, Digest: %s, Deployments: %d",
-			deviceClientId, manifestVersionInt, *manifest.Bundle.Digest, len(manifest.Deployments))
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest for digest: %v", err)
+		return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to marshal manifest digest: %s", err.Error()),
+			"/api/v1/deployments"))
 	}
+
+	deviceVendorLogger.InfofCtx(pCtx, "Returning manifest for device %s - Version: %d, ETag: %s",
+		targetDeviceID, manifestVersionInt, etag)
 
 	// Set headers directly in fasthttp context
 	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
@@ -354,7 +376,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 
 	// Check if client already has this manifest (digest matches)
 	if !shouldReplaceBundle {
-		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", deviceClientId, etag)
+		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", targetDeviceID, etag)
 
 		// Return NotModified state - COA framework will convert to HTTP 304
 		response := v1alpha2.COAResponse{
@@ -369,15 +391,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		return response
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", deviceClientId, etag)
-
-	// Serialize manifest
-	manifestJSON, err := json.Marshal(manifest)
-	if err != nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Failed to marshal manifest: %v", err)
-		return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to marshal manifest: %s", err.Error()),
-			"/api/v1/deployments"))
-	}
+	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", targetDeviceID, etag)
 
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.OK,
@@ -430,6 +444,15 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		))
 	}
 
+	// deviceClientId is the SPIFFE ID of the device making the request.
+	targetDeviceID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
+	if err != nil {
+		return problemResponse(margoStdSbiAPI.NewInternalError(
+			err.Error(),
+			"/api/v1/bundles/{digest}",
+		))
+	}
+
 	requestedDigest := request.Parameters["__digest"]
 
 	if requestedDigest == "" {
@@ -443,7 +466,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	clientETag := headers["if-none-match"]
 
 	// Get bundle from database
-	path, manifest, err := self.DeviceManager.GetBundle(pCtx, deviceClientId, &requestedDigest)
+	path, manifest, err := self.DeviceManager.GetBundle(pCtx, targetDeviceID, &requestedDigest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidBundle(
 			fmt.Sprintf("bundle not found for digest %s", requestedDigest),
@@ -468,7 +491,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 		if clientETag != "" && clientETagClean == serverETagClean {
 			deviceVendorLogger.InfofCtx(pCtx,
 				"Bundle not modified for device %s (304) - ETag: %s",
-				deviceClientId, serverETag)
+				targetDeviceID, serverETag)
 
 			// Return 304 Not Modified
 			return v1alpha2.COAResponse{
@@ -495,7 +518,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 	if actualDigest != requestedDigest {
 		deviceVendorLogger.ErrorfCtx(pCtx,
 			"Bundle digest mismatch for device %s: requested=%s, actual=%s",
-			deviceClientId, requestedDigest, actualDigest)
+			targetDeviceID, requestedDigest, actualDigest)
 
 		// Per spec: "If the server cannot produce content whose digest matches this value
 		// it MUST return 404 Not Found"
@@ -507,7 +530,7 @@ func (self *DeviceAgentVendor) downloadBundle(request v1alpha2.COARequest) v1alp
 
 	deviceVendorLogger.InfofCtx(pCtx,
 		"Serving bundle for device %s with verified digest %s (%d bytes)",
-		deviceClientId, actualDigest, len(bundleData))
+		targetDeviceID, actualDigest, len(bundleData))
 
 	// Set headers directly in fasthttp context
 	setFastHTTPResponseHeaders(request.Context, "application/vnd.margo.bundle.v1+tar+gzip", actualDigest)
@@ -723,4 +746,20 @@ func ExtractPeerSpiffeID(request v1alpha2.COARequest) (string, error) {
 	}
 
 	return clientSpiffeID, nil
+}
+
+// Retrieves a target ID mapped to a SPIFFE ID.
+// Temporary implementation: assumes a 1:1 SPIFFE-to-target mapping.
+// This is not sufficient for full gateway/sub-device compliance.
+func (self *DeviceAgentVendor) retrieveTargetIdFromSpiffeId(ctx context.Context, tsid string) (string, error) {
+	// deviceClientId is the SPIFFE ID of the device making the request.
+	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(ctx, tsid)
+	if err != nil {
+		return "", fmt.Errorf("failed to get device identity: %s", err.Error())
+	}
+
+	if len(deviceIdentity.TargetIds) == 0 {
+		return "", fmt.Errorf("device identity has no target IDs for device %s", tsid)
+	}
+	return deviceIdentity.TargetIds[0], nil
 }
