@@ -373,7 +373,38 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 	return devices, nil
 }
 
-func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, error) {
+// ShouldReplaceBundle determines whether a device client should receive a new deployment bundle
+// by comparing the client's cached ETag against the server-computed ETag of the current bundle.
+//
+// If no bundle exists for the device, an initial empty bundle (ManifestVersion 1, no deployments)
+// is created and persisted before being returned.
+//
+// Parameters:
+//   - ctx           : Context for logging and database operations.
+//   - deviceClientId: Unique identifier of the device client requesting the bundle check.
+//   - clientETag    : Optional ETag previously received by the client (nil or empty string
+//     indicates a first-time sync with no cached state).
+//
+// Returns:
+//   - bool                              : true if the client should fetch/apply the bundle
+//     (new, updated, or first-time); false if the client's
+//     bundle is already up-to-date (ETags match).
+//   - string                            : File system path to the bundle archive. Empty string
+//     when no archive exists (e.g., initial empty bundle).
+//   - *margoStdAPI.UnsignedAppStateManifest: Pointer to the current deployment manifest.
+//     nil only on error paths.
+//   - string                            : Server-computed ETag (SHA-256 digest of the manifest
+//     JSON, formatted as "sha256:<hex>"). The client should
+//     store this for subsequent requests.
+//   - error                             : Non-nil if bundle retrieval, creation, or ETag
+//     computation fails.
+//
+// Behavior summary:
+//   - No existing bundle → creates initial bundle, returns (true, "", manifest, etag, nil)
+//   - ETags match        → returns (false, archivePath, manifest, etag, nil)  [304-equivalent]
+//   - ETags differ or
+//     no client ETag     → returns (true,  archivePath, manifest, etag, nil)  [200-equivalent]
+func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, string, error) {
 	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Processing request for device %s", deviceClientId)
 
 	// Log client's ETag if provided
@@ -404,21 +435,30 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 		// Store the initial bundle
 		if createErr := s.Database.UpsertDeploymentBundle(ctx, initialBundle, false); createErr != nil {
 			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to create initial bundle for device %s: %v", deviceClientId, createErr)
-			return false, "", nil, fmt.Errorf("failed to create initial bundle: %w", createErr)
+			return false, "", nil, "", fmt.Errorf("failed to create initial bundle: %w", createErr)
 		}
 
 		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Created initial empty bundle (version 1) for device %s", deviceClientId)
 
 		// Return the initial bundle (client needs to fetch it)
-		return true, "", &initialBundle.Manifest, nil
+
+		manifestJSON, err := json.Marshal(initialBundle.Manifest)
+		if err != nil {
+			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
+			return false, "", nil, "", fmt.Errorf("failed to compute manifest digest: %w", err)
+		}
+
+		hash := sha256.Sum256(manifestJSON)
+		serverETag := fmt.Sprintf("\"sha256:%x\"", hash)
+
+		return true, "", &initialBundle.Manifest, serverETag, nil
 
 	}
 
 	// Validate manifest
 	if bundleManifest == nil {
 		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: GetBundle returned nil manifest for device %s", deviceClientId)
-		return false, "", nil, fmt.Errorf("bundle manifest is nil for device %s", deviceClientId)
-
+		return false, "", nil, "", fmt.Errorf("bundle manifest is nil for device %s", deviceClientId)
 	}
 
 	bundleVersionInt := uint64(bundleManifest.ManifestVersion)
@@ -433,7 +473,7 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	manifestJSON, err := json.Marshal(bundleManifest)
 	if err != nil {
 		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to marshal manifest for digest: %v", err)
-		return false, "", nil, fmt.Errorf("failed to compute manifest digest: %w", err)
+		return false, "", nil, "", fmt.Errorf("failed to compute manifest digest: %w", err)
 	}
 
 	hash := sha256.Sum256(manifestJSON)
@@ -452,7 +492,7 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 
 			deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: RETURN - shouldReplace=false (304 Not Modified), version=%d, deployments=%d",
 				bundleVersionInt, len(bundleManifest.Deployments))
-			return false, bundleArchivePath, bundleManifest, nil
+			return false, bundleArchivePath, bundleManifest, serverETag, nil
 		}
 
 		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: ❌ ETags differ - Client: %s, Server: %s", *clientETag, serverETag)
@@ -465,7 +505,7 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: RETURN - shouldReplace=true, archivePath='%s', version=%d, deployments=%d",
 		bundleArchivePath, bundleVersionInt, len(bundleManifest.Deployments))
 
-	return true, bundleArchivePath, bundleManifest, nil
+	return true, bundleArchivePath, bundleManifest, serverETag, nil
 }
 
 func (s *DeviceManager) GetBundle(ctx context.Context, deviceClientId string, digest *string) (bundleArchivePath string, bundleManifest *margoStdAPI.UnsignedAppStateManifest, err error) {

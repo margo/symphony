@@ -334,7 +334,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		))
 	}
 
-	shouldReplaceBundle, _, manifest, err := self.DeviceManager.ShouldReplaceBundle(pCtx, targetDeviceID, &digest)
+	shouldReplaceBundle, _, manifest, etag, err := self.DeviceManager.ShouldReplaceBundle(pCtx, targetDeviceID, &digest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to get desired states: %s", err.Error()),
@@ -350,8 +350,6 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		))
 	}
 
-	// SPEC-COMPLIANT: Compute ETag as digest of the manifest JSON
-	var etag string
 	manifestVersionInt := uint64(manifest.ManifestVersion)
 
 	manifestJSON, err := json.Marshal(manifest)
@@ -360,10 +358,6 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		return problemResponse(margoStdSbiAPI.NewInternalError(fmt.Sprintf("failed to marshal manifest digest: %s", err.Error()),
 			"/api/v1/deployments"))
 	}
-
-	// Compute SHA-256 digest of the manifest JSON
-	hash := sha256.Sum256(manifestJSON)
-	etag = fmt.Sprintf("\"sha256:%x\"", hash)
 
 	deviceVendorLogger.InfofCtx(pCtx, "Returning manifest for device %s - Version: %d, ETag: %s",
 		targetDeviceID, manifestVersionInt, etag)
@@ -754,8 +748,9 @@ func ExtractPeerSpiffeID(request v1alpha2.COARequest) (string, error) {
 	return clientSpiffeID, nil
 }
 
-// helper function which retrives target id mapped to spiffe id. It assumes 1 target id is mapped to 1 spiffe id,
-// does not constitute to be gateway compliance.
+// Retrieves a target ID mapped to a SPIFFE ID.
+// Temporary implementation: assumes a 1:1 SPIFFE-to-target mapping.
+// This is not sufficient for full gateway/sub-device compliance.
 func (self *DeviceAgentVendor) retrieveTargetIdFromSpiffeId(ctx context.Context, tsid string) (string, error) {
 	// deviceClientId is the SPIFFE ID of the device making the request.
 	deviceIdentity, err := self.DeviceManager.Database.GetDeviceIdentity(ctx, tsid)
