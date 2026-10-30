@@ -1,0 +1,26 @@
+# Symphony container should be run using docker-compose.yaml file, instead of docker run command
+# Currently, symphony deployment via scripts is deployed using docker run command. This should be replaced with usage of docker-compose.yaml file in symphony, so that same can be used to deploy / undeploy symphony.
+
+# Symphony container mounts full symphony source code, which is not required. Cleanup of mounts should be done.
+# In the docker-compose.yaml mount only what is necessary. currently, complete symphony/api folder is mounted, which is unnecessary.
+
+# Container restarts (sandbox & symphony) should not be handled by systemd service, they should utilise docker compose restart option, with always or unless-stopped.
+# For reboot persistance, scripts deploy a systemd service with a single line command for - device-agent (docker) & symphony. They should be replaced with restart: always OR restart: unless-stopped in their respective docker-compose.yaml file. This removes a lot of overhead for reboot persistence, makes installation simple and easy to maintain.
+
+# All 3 stories are dependent. Hence must be accomplished by a single PR in symphony as well as sandbox repository.
+
+
+services:
+  symphony-api:
+    image: ${SYMPHONY_IMAGE_REF}
+    container_name: symphony-api-container
+    restart: always
+    network_mode: host
+    environment:
+      LOG_LEVEL: Debug
+      CONFIG: /symphony-api-margo.json
+    volumes:
+      # These are generated using installation scripts, they might not be present in source code.
+      - ./certificates:/certificates
+      - ./mis:/mis
+      - ./symphony-api-margo.json:/symphony-api-margo.json
