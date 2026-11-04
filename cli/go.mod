@@ -42,7 +42,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	helm.sh/helm/v3 v3.20.2 // indirect
-	k8s.io/apimachinery v0.35.1 // indirect
+	k8s.io/apimachinery v0.35.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
@@ -55,7 +55,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/eclipse-symphony/symphony/api v0.0.0-00010101000000-000000000000
 	github.com/ghodss/yaml v1.0.0
-	github.com/margo/sandbox v1.0.0-rc.3.1.0.20261027063755-ed5976e92b37
+	github.com/margo/sandbox v1.0.0-rc.3.1.0.20261104063737-64d7a7433e30
 	github.com/princjef/mageutil v1.0.0
 )
 
