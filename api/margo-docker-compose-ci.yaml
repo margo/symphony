@@ -1,0 +1,11 @@
+# This file is just for CI use case. This must be
+# paired with margo-docker-compose.yaml for running.
+
+services:
+  symphony-api:
+    environment:
+      NODE_EXTRA_CA_CERTS: /certificates/harbor-ca.crt
+    extra_hosts:
+      - "${EXPOSED_HARBOR_HOST}:${RUNNER_IP}"
+      - "${EXPOSED_SYMPHONY_HOST}:${RUNNER_IP}"
+      - "${EXPOSED_MIS_HOST}:${RUNNER_IP}"

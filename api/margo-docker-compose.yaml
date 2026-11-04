@@ -1,0 +1,15 @@
+
+services:
+  symphony-api:
+    image: ${SYMPHONY_IMAGE_REF}
+    container_name: symphony-api-container
+    restart: always
+    network_mode: host
+    environment:
+      LOG_LEVEL: Debug
+      CONFIG: /symphony-api-margo.json
+    volumes:
+      # These are generated using installation scripts, they might not be present in source code.
+      - ./certificates:/certificates
+      - ./mis:/mis
+      - ./symphony-api-margo.json:/symphony-api-margo.json
