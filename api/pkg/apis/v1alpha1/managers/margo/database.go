@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -80,11 +81,11 @@ type DeploymentDatabaseRow struct {
 // DeviceDatabaseRow represents a device record in the database.
 // It contains device identification, capabilities, and synchronization information.
 type DeviceDatabaseRow struct {
-	// DeviceClientId is the unique identifier for the device, MIAF compliant SPIFFE ID
-	DeviceClientId string
-
 	// This is same as device capabilities.properties.id
-	DeviceId string
+	TargetId string
+
+	// TargetSpiffeId is the unique identifier for the device, MIAF compliant SPIFFE ID
+	TargetSpiffeId string
 
 	// status of the onboarding
 	OnboardingStatus margoNonStdAPI.DeviceOnboardStatus
@@ -109,6 +110,13 @@ type DeploymentBundleRow struct {
 	UpdatedAt      time.Time                            `json:"updatedAt"`
 }
 
+// DeviceIdentityRow represents the mapping of a SPIFFE ID to gateway-compliant target IDs.
+// e.g. "spiffe://trustdomain/margo/wfm/wfmid/client/wfmclient" --> []string{"gateway1", "gateway1/device1"}
+type DeviceIdentityRow struct {
+	SpiffeId  string   `json:"spiffeId"`
+	TargetIds []string `json:"targetIds"`
+}
+
 // MargoDatabase provides a centralized database interface for all Margo entities.
 // It abstracts the underlying state provider and provides type-safe operations
 // for application packages, deployments, and devices.
@@ -126,6 +134,8 @@ type MargoDatabase struct {
 	deploymentMetadata map[string]interface{}
 	deviceMetadata     map[string]interface{}
 	bundleMetadata     map[string]interface{}
+	// This will map target's spiffeId with targetId in a gateway compliant manner.
+	deviceIdentityMetadata map[string]interface{} // "spiffe://trustdomain/margo/wfm/wfmid/client/wfmclient" --> []{"gateway1", "gateway1/device1"}
 }
 
 func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGroupName, stateProvider states.IStateProvider) *MargoDatabase {
@@ -160,6 +170,13 @@ func NewMargoDatabase(mgrCtx *contexts.ManagerContext, pubsubGroupName PublishGr
 			"resource":     "deploymentBundle",
 			"namespace":    "margo",
 			"kind":         "Bundle",
+		},
+		deviceIdentityMetadata: map[string]interface{}{
+			"version":      "v1",
+			"producerName": model.MargoGroup,
+			"resource":     "deviceIdentities",
+			"namespace":    "margo",
+			"kind":         "DeviceIdentity",
 		},
 	}
 }
@@ -554,7 +571,7 @@ func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId 
 func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabaseRow) error {
 	device.UpdatedAt = time.Now().UTC()
 
-	deviceId := device.DeviceClientId
+	deviceId := device.TargetId
 
 	// Add pre-upsert logging
 	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: About to store device '%s' with status '%s'", deviceId, device.OnboardingStatus)
@@ -587,10 +604,10 @@ func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabase
 	return nil
 }
 
-func (db *MargoDatabase) GetDevice(ctx context.Context, deviceClientId string) (*DeviceDatabaseRow, error) {
+func (db *MargoDatabase) GetDevice(ctx context.Context, targetId string) (*DeviceDatabaseRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.deviceMetadata,
-		ID:       deviceClientId,
+		ID:       targetId,
 	})
 	if err != nil {
 		// sending not found error separately to track it.
@@ -601,19 +618,19 @@ func (db *MargoDatabase) GetDevice(ctx context.Context, deviceClientId string) (
 			}
 		}
 
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to get device '%s': %v", deviceClientId, err)
-		return nil, fmt.Errorf("failed to get device '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to get device '%s': %v", targetId, err)
+		return nil, fmt.Errorf("failed to get device '%s': %w", targetId, err)
 	}
 
 	var device DeviceDatabaseRow
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &device)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to unmarshal device '%s': %v", deviceClientId, err)
-		return nil, fmt.Errorf("failed to unmarshal device '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDevice: Failed to unmarshal device '%s': %v", targetId, err)
+		return nil, fmt.Errorf("failed to unmarshal device '%s': %w", targetId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "GetDevice: device '%s' retrieved successfully", deviceClientId)
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDevice: device '%s' retrieved successfully", targetId)
 	return &device, nil
 }
 
@@ -695,9 +712,9 @@ func (db *MargoDatabase) DeviceExists(ctx context.Context, deviceId string) (boo
 	return true, nil
 }
 
-func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities *margoStdAPI.DeviceCapabilitiesManifest) error {
+func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, targetId string, capabilities *margoStdAPI.DeviceCapabilitiesManifest) error {
 	// Get existing device
-	device, err := db.GetDevice(ctx, deviceClientId)
+	device, err := db.GetDevice(ctx, targetId)
 	if err != nil {
 		// sending not found error separately to track it.
 		if verr, ok := err.(v1alpha2.COAError); ok {
@@ -706,8 +723,8 @@ func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceCli
 				return err
 			}
 		}
-		db.MgrContext.Logger.WarnfCtx(ctx, "UpdateDeviceCapabilities: Failed to get device '%s': %v", deviceClientId, err)
-		return fmt.Errorf("failed to get device '%s' for capabilities update: %w", deviceClientId, err)
+		db.MgrContext.Logger.WarnfCtx(ctx, "UpdateDeviceCapabilities: Failed to get device '%s': %v", targetId, err)
+		return fmt.Errorf("failed to get device '%s' for capabilities update: %w", targetId, err)
 	}
 
 	// Update the capabilities
@@ -717,11 +734,11 @@ func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, deviceCli
 	// Save updated device
 	err = db.UpsertDevice(ctx, *device)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to update device capabilities for '%s': %v", deviceClientId, err)
-		return fmt.Errorf("failed to update device capabilities for '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to update device capabilities for '%s': %v", targetId, err)
+		return fmt.Errorf("failed to update device capabilities for '%s': %w", targetId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceCapabilities: device '%s' capabilities updated successfully", deviceClientId)
+	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceCapabilities: device '%s' capabilities updated successfully", targetId)
 	return nil
 }
 
@@ -916,25 +933,25 @@ func (db *MargoDatabase) DebugListAllBundles(ctx context.Context) {
 	}
 }
 
-func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, deviceClientId string) (*DeploymentBundleRow, error) {
+func (db *MargoDatabase) GetDeploymentBundle(ctx context.Context, targetId string) (*DeploymentBundleRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.bundleMetadata,
-		ID:       deviceClientId,
+		ID:       targetId,
 	})
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle '%s': %v", deviceClientId, err)
-		return nil, fmt.Errorf("failed to get deployment bundle '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to get deployment bundle for '%s': %v", targetId, err)
+		return nil, fmt.Errorf("failed to get deployment bundle for '%s': %w", targetId, err)
 	}
 
 	var bundle DeploymentBundleRow
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &bundle)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal deployment bundle '%s': %v", deviceClientId, err)
-		return nil, fmt.Errorf("failed to unmarshal deployment bundle '%s': %w", deviceClientId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeploymentBundle: Failed to unmarshal deployment bundle for '%s': %v", targetId, err)
+		return nil, fmt.Errorf("failed to unmarshal deployment bundle for '%s': %w", targetId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle '%s' retrieved successfully", deviceClientId)
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeploymentBundle: deployment bundle for '%s' retrieved successfully", targetId)
 	return &bundle, nil
 }
 
@@ -989,3 +1006,129 @@ func (db *MargoDatabase) DeleteDeploymentBundle(ctx context.Context, deviceClien
 
 	return nil
 }
+
+func (db *MargoDatabase) UpsertDeviceIdentity(ctx context.Context, targetSpiffeId string, targetId string) error {
+	if targetSpiffeId == "" {
+		return fmt.Errorf("spiffeId cannot be empty")
+	}
+
+	if targetId == "" {
+		return fmt.Errorf("id cannot be empty")
+	}
+	targetIds := make([]string, 0)
+
+	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.deviceIdentityMetadata,
+		ID:       targetSpiffeId,
+	})
+
+	// record already exists, update the row
+	if err == nil {
+		var row DeviceIdentityRow
+		jData, _ := json.Marshal(entry.Body)
+		err = json.Unmarshal(jData, &row)
+		if err != nil {
+			db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDeviceIdentity: Failed to unmarshal device identity '%s': %v", targetSpiffeId, err)
+			return fmt.Errorf("failed to unmarshal device identity '%s': %w", targetSpiffeId, err)
+		}
+
+		// If device already exists, simple return. no update required.
+		if slices.Contains(row.TargetIds, targetId) {
+			return nil
+		}
+
+		targetIds = row.TargetIds
+	}
+
+	// append new targetId
+	targetIds = append(targetIds, targetId)
+
+	row := DeviceIdentityRow{
+		SpiffeId:  targetSpiffeId,
+		TargetIds: targetIds,
+	}
+
+	// insert in database
+	_, err = db.StateProvider.Upsert(ctx, states.UpsertRequest{
+		Options:  states.UpsertOption{},
+		Metadata: db.deviceIdentityMetadata,
+		Value: states.StateEntry{
+			ID:   targetSpiffeId,
+			Body: row,
+		},
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDeviceIdentity: Failed to upsert device identity '%s': %v", targetSpiffeId, err)
+		return fmt.Errorf("failed to upsert device identity '%s': %w", targetSpiffeId, err)
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeviceIdentity: device identity '%s' stored successfully with %d target(s)", targetSpiffeId, len(targetIds))
+	return nil
+}
+
+func (db *MargoDatabase) GetDeviceIdentity(ctx context.Context, spiffeId string) (*DeviceIdentityRow, error) {
+	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
+		Metadata: db.deviceIdentityMetadata,
+		ID:       spiffeId,
+	})
+	if err != nil {
+		if verr, ok := err.(v1alpha2.COAError); ok {
+			if verr.State == v1alpha2.NotFound {
+				return nil, err
+			}
+		}
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeviceIdentity: Failed to get device identity '%s': %v", spiffeId, err)
+		return nil, fmt.Errorf("failed to get device identity '%s': %w", spiffeId, err)
+	}
+
+	var row DeviceIdentityRow
+	jData, _ := json.Marshal(entry.Body)
+	err = json.Unmarshal(jData, &row)
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "GetDeviceIdentity: Failed to unmarshal device identity '%s': %v", spiffeId, err)
+		return nil, fmt.Errorf("failed to unmarshal device identity '%s': %w", spiffeId, err)
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "GetDeviceIdentity: device identity '%s' retrieved successfully", spiffeId)
+	return &row, nil
+}
+
+func (db *MargoDatabase) ListDeviceIdentities(ctx context.Context) ([]DeviceIdentityRow, error) {
+	var identities []DeviceIdentityRow
+	entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
+		Metadata: db.deviceIdentityMetadata,
+	})
+	if err != nil {
+		db.MgrContext.Logger.ErrorfCtx(ctx, "ListDeviceIdentities: Failed to list device identities: %v", err)
+		return nil, fmt.Errorf("failed to list device identities: %w", err)
+	}
+
+	for _, entry := range entries {
+		var row DeviceIdentityRow
+		jData, _ := json.Marshal(entry.Body)
+		err = json.Unmarshal(jData, &row)
+		if err == nil {
+			identities = append(identities, row)
+		} else {
+			db.MgrContext.Logger.WarnfCtx(ctx, "ListDeviceIdentities: Failed to unmarshal entry: %v", err)
+		}
+	}
+
+	db.MgrContext.Logger.InfofCtx(ctx, "ListDeviceIdentities: Listed %d device identities successfully", len(identities))
+	return identities, nil
+}
+
+// * Delete functionality is not defined, hence commenting it for now.
+// func (db *MargoDatabase) DeleteDeviceIdentity(ctx context.Context, spiffeId string) error {
+// 	err := db.StateProvider.Delete(ctx, states.DeleteRequest{
+// 		Metadata: db.deviceIdentityMetadata,
+// 		ID:       spiffeId,
+// 	})
+// 	if err != nil {
+// 		db.MgrContext.Logger.ErrorfCtx(ctx, "DeleteDeviceIdentity: Failed to delete device identity '%s': %v", spiffeId, err)
+// 		return fmt.Errorf("failed to delete device identity '%s': %w", spiffeId, err)
+// 	}
+
+// 	db.MgrContext.Logger.InfofCtx(ctx, "DeleteDeviceIdentity: device identity '%s' deleted successfully", spiffeId)
+// 	return nil
+// }
