@@ -166,6 +166,11 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 		return nil, fmt.Errorf("failed to process deployment profiles: %w", err)
 	}
 
+	s.logProfileCPURequirements(ctx, appPkg, deployment.Spec.DeploymentProfile.Type)
+	s.logProfileCacheRequirements(ctx, appPkg, deployment.Spec.DeploymentProfile.Type)
+	s.logProfileMemoryRequirements(ctx, appPkg, deployment.Spec.DeploymentProfile.Type)
+	s.logProfileWorkloadRequirements(ctx, appPkg, deployment.Spec.DeploymentProfile.Type)
+
 	// Store in database (single call)
 	if err := s.storeDeployment(ctx, *deployment, *deployment.Id, *appPkg.Description.Id, appPkg.Description.Metadata.Version); err != nil {
 		return nil, fmt.Errorf("failed to store deployment: %w", err)
@@ -389,4 +394,248 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 	}
 
 	return desiredState, nil
+}
+
+// TODO: method to help log/debug rt data model changes. it can be removed after PR is approved
+func (s *DeploymentManager) logProfileCPURequirements(ctx context.Context, appPkg ApplicationPackage, profileType margoNonStdAPI.DeploymentExecutionProfileType) {
+	if appPkg.Description == nil {
+		return
+	}
+
+	for _, profile := range appPkg.Description.DeploymentProfiles {
+		if profile.Type != margoNonStdAPI.AppDeploymentProfileType(profileType) {
+			continue
+		}
+		for componentIndex, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				deploymentLogger.WarnfCtx(ctx, "CreateDeployment CPU scaffolding: failed to decode component at index %d: %v", componentIndex, err)
+				continue
+			}
+
+			if appComponent.DeviceConstraints == nil || appComponent.DeviceConstraints.CapacityRequirements == nil || appComponent.DeviceConstraints.CapacityRequirements.Cpu == nil {
+				continue
+			}
+
+			for cpuIndex, cpu := range *appComponent.DeviceConstraints.CapacityRequirements.Cpu {
+				deploymentLogger.InfofCtx(ctx,
+					"CreateDeployment CPU scaffolding (component): profileType=%s componentIndex=%d component=%s cpuIndex=%d cores=%v class=%s type=%s",
+					profileType,
+					componentIndex,
+					appComponent.Name,
+					cpuIndex,
+					cpu.Cores,
+					cpuClassPtrToString(cpu.Class),
+					cpuTypePtrToString(cpu.Type),
+				)
+			}
+		}
+		return
+	}
+}
+
+// TODO: method to help log/debug rt data model changes. it can be removed after PR is approved
+func (s *DeploymentManager) logProfileCacheRequirements(ctx context.Context, appPkg ApplicationPackage, profileType margoNonStdAPI.DeploymentExecutionProfileType) {
+	if appPkg.Description == nil {
+		return
+	}
+
+	for _, profile := range appPkg.Description.DeploymentProfiles {
+		if profile.Type != margoNonStdAPI.AppDeploymentProfileType(profileType) {
+			continue
+		}
+		for componentIndex, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				deploymentLogger.WarnfCtx(ctx, "CreateDeployment cache scaffolding: failed to decode component at index %d: %v", componentIndex, err)
+				continue
+			}
+
+			if appComponent.DeviceConstraints == nil || appComponent.DeviceConstraints.CapacityRequirements == nil || appComponent.DeviceConstraints.CapacityRequirements.Cache == nil {
+				continue
+			}
+
+			for cacheIndex, cache := range *appComponent.DeviceConstraints.CapacityRequirements.Cache {
+				deploymentLogger.InfofCtx(ctx,
+					"CreateDeployment cache scaffolding (component): profileType=%s componentIndex=%d component=%s cacheIndex=%d level=%s allocation=%s size=%s",
+					profileType,
+					componentIndex,
+					appComponent.Name,
+					cacheIndex,
+					cache.Level,
+					cache.Allocation,
+					cache.Size,
+				)
+			}
+		}
+		return
+	}
+}
+
+// TODO: method to help log/debug rt data model changes. it can be removed after PR is approved
+func (s *DeploymentManager) logProfileMemoryRequirements(ctx context.Context, appPkg ApplicationPackage, profileType margoNonStdAPI.DeploymentExecutionProfileType) {
+	if appPkg.Description == nil {
+		return
+	}
+
+	for _, profile := range appPkg.Description.DeploymentProfiles {
+		if profile.Type != margoNonStdAPI.AppDeploymentProfileType(profileType) {
+			continue
+		}
+
+		for componentIndex, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				deploymentLogger.WarnfCtx(ctx, "CreateDeployment memory scaffolding: failed to decode component at index %d: %v", componentIndex, err)
+				continue
+			}
+
+			if appComponent.DeviceConstraints == nil || appComponent.DeviceConstraints.CapacityRequirements == nil || appComponent.DeviceConstraints.CapacityRequirements.Memory == nil {
+				continue
+			}
+
+			memoryJSON, err := json.Marshal(appComponent.DeviceConstraints.CapacityRequirements.Memory)
+			if err != nil {
+				deploymentLogger.WarnfCtx(ctx,
+					"CreateDeployment memory scaffolding: failed to marshal capacityRequirements.memory for profileType=%s componentIndex=%d: %v",
+					profileType,
+					componentIndex,
+					err,
+				)
+				continue
+			}
+
+			deploymentLogger.InfofCtx(ctx,
+				"CreateDeployment memory scaffolding (component): profileType=%s componentIndex=%d component=%s memory=%s",
+				profileType,
+				componentIndex,
+				appComponent.Name,
+				string(memoryJSON),
+			)
+		}
+		return
+	}
+}
+
+// TODO: method to help log/debug rt data model changes. it can be removed after PR is approved
+func (s *DeploymentManager) logProfileWorkloadRequirements(ctx context.Context, appPkg ApplicationPackage, profileType margoNonStdAPI.DeploymentExecutionProfileType) {
+	if appPkg.Description == nil {
+		return
+	}
+
+	for _, profile := range appPkg.Description.DeploymentProfiles {
+		if profile.Type != margoNonStdAPI.AppDeploymentProfileType(profileType) {
+			continue
+		}
+
+		for compIdx, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				deploymentLogger.WarnfCtx(ctx,
+					"CreateDeployment workload scaffolding: failed to decode component at index=%d for profileType=%s expectedProfileType=%s",
+					compIdx, profileType, profile.Type,
+				)
+				continue
+			}
+
+			switch profile.Type {
+			case margoNonStdAPI.AppDeploymentProfileTypeCompose:
+				deploymentLogger.InfofCtx(ctx,
+					"[COMPOSE]CreateDeployment workload scaffolding: profileType=%s component=%s",
+					profileType, appComponent.Name,
+				)
+				s.logComponentWorkload(ctx, profileType, "compose", compIdx, appComponent.Name, appComponent.Workload)
+			case margoNonStdAPI.AppDeploymentProfileTypeHelm:
+				deploymentLogger.InfofCtx(ctx,
+					"[HELM]CreateDeployment workload scaffolding: profileType=%s component=%s",
+					profileType, appComponent.Name,
+				)
+				s.logComponentWorkload(ctx, profileType, "helm", compIdx, appComponent.Name, appComponent.Workload)
+			default:
+				s.logComponentWorkload(ctx, profileType, string(profileType), compIdx, appComponent.Name, appComponent.Workload)
+			}
+		}
+		return
+	}
+}
+
+// TODO: method to help log/debug rt data model changes. it can be removed after PR is approved
+func (s *DeploymentManager) logComponentWorkload(
+	ctx context.Context,
+	profileType margoNonStdAPI.DeploymentExecutionProfileType,
+	componentKind string,
+	componentIndex int,
+	componentName string,
+	workload *margoNonStdAPI.Workload,
+) {
+	if workload == nil {
+		deploymentLogger.InfofCtx(ctx,
+			"CreateDeployment workload scaffolding (component): profileType=%s kind=%s componentIndex=%d componentName=%s hasWorkload=false",
+			profileType, componentKind, componentIndex, componentName,
+		)
+		return
+	}
+
+	scheduling := ""
+	if workload.Scheduling != nil {
+		scheduling = string(*workload.Scheduling)
+	}
+	priority := ""
+	if workload.Priority != nil {
+		priority = fmt.Sprintf("%d", *workload.Priority)
+	}
+	nice := ""
+	if workload.Nice != nil {
+		nice = fmt.Sprintf("%d", *workload.Nice)
+	}
+
+	deploymentLogger.InfofCtx(ctx,
+		"CreateDeployment workload scaffolding (component): profileType=%s kind=%s componentIndex=%d componentName=%s scheduling=%s priority=%s nice=%s",
+		profileType, componentKind, componentIndex, componentName, scheduling, priority, nice,
+	)
+
+	if workload.Deadline != nil {
+		deadline, period, runtime := "", "", ""
+		if workload.Deadline.Deadline != nil {
+			deadline = fmt.Sprintf("%d", *workload.Deadline.Deadline)
+		}
+		if workload.Deadline.Period != nil {
+			period = fmt.Sprintf("%d", *workload.Deadline.Period)
+		}
+		if workload.Deadline.Runtime != nil {
+			runtime = fmt.Sprintf("%d", *workload.Deadline.Runtime)
+		}
+		deploymentLogger.InfofCtx(ctx,
+			"CreateDeployment workload scaffolding (component deadline): profileType=%s kind=%s componentIndex=%d componentName=%s deadline=%s period=%s runtime=%s",
+			profileType, componentKind, componentIndex, componentName, deadline, period, runtime,
+		)
+	}
+}
+
+func float32PtrToString(value *float32) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", *value)
+}
+
+func cpuClassPtrToString(value *margoNonStdAPI.DeploymentCpuRequirementClass) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func cpuTypePtrToString(value *margoNonStdAPI.DeploymentCpuRequirementType) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func stringPtrToString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
