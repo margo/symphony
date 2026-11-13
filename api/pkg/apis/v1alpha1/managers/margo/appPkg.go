@@ -502,6 +502,10 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		)
 	}
 
+	s.logProfileCPURequirementsOnUpload(ctx, appDesc)
+	s.logProfileCacheRequirementsOnUpload(ctx, appDesc)
+	s.logProfileMemoryRequirementsOnUpload(ctx, appDesc)
+
 	// Phase 6: Validate application description
 	appPkgLogger.Debug(
 		"Phase 6: Validating application description",
@@ -815,6 +819,146 @@ func (s *AppPkgManager) validateApplicationDescription(
 		"deploymentProfilesCount", len(appDesc.DeploymentProfiles))
 
 	return nil
+}
+
+func (s *AppPkgManager) logProfileCPURequirementsOnUpload(
+	ctx context.Context,
+	appDesc *margoNonStdAPI.AppDescription,
+) {
+	if appDesc == nil {
+		return
+	}
+
+	for profileIdx, profile := range appDesc.DeploymentProfiles {
+		for componentIdx, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				appPkgLogger.WarnfCtx(ctx, "Package upload CPU requirements: failed to decode component at index %d: %v", componentIdx, err)
+				continue
+			}
+
+			if appComponent.DeviceConstraints == nil || appComponent.DeviceConstraints.CapacityRequirements == nil || appComponent.DeviceConstraints.CapacityRequirements.Cpu == nil {
+				continue
+			}
+
+			cpuJSON, err := json.Marshal(appComponent.DeviceConstraints.CapacityRequirements.Cpu)
+			if err != nil {
+				appPkgLogger.WarnfCtx(ctx,
+					"Package upload CPU requirements: failed to marshal capacityRequirements.cpu for appId=%s profileIndex=%d componentIndex=%d: %v",
+					*appDesc.Id,
+					profileIdx,
+					componentIdx,
+					err,
+				)
+				continue
+			}
+
+			appPkgLogger.InfofCtx(ctx,
+				"Package upload CPU requirements: appId=%s appVersion=%s profileIndex=%d profileType=%s component=%s componentIndex=%d cpu=%s",
+				*appDesc.Id,
+				appDesc.Metadata.Version,
+				profileIdx,
+				profile.Type,
+				appComponent.Name,
+				componentIdx,
+				string(cpuJSON),
+			)
+		}
+	}
+}
+
+// TODO: remove after implementation is added; just for logging purposes for now
+func (s *AppPkgManager) logProfileCacheRequirementsOnUpload(
+	ctx context.Context,
+	appDesc *margoNonStdAPI.AppDescription,
+) {
+	if appDesc == nil {
+		return
+	}
+
+	for profileIdx, profile := range appDesc.DeploymentProfiles {
+		for componentIdx, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				appPkgLogger.WarnfCtx(ctx, "Package upload cache requirements: failed to decode component at index %d: %v", componentIdx, err)
+				continue
+			}
+
+			if appComponent.DeviceConstraints == nil || appComponent.DeviceConstraints.CapacityRequirements == nil || appComponent.DeviceConstraints.CapacityRequirements.Cache == nil {
+				continue
+			}
+
+			cacheJSON, err := json.Marshal(appComponent.DeviceConstraints.CapacityRequirements.Cache)
+			if err != nil {
+				appPkgLogger.WarnfCtx(ctx,
+					"Package upload cache requirements: failed to marshal capacityRequirements.cache for appId=%s profileIndex=%d componentIndex=%d: %v",
+					*appDesc.Id,
+					profileIdx,
+					componentIdx,
+					err,
+				)
+				continue
+			}
+
+			appPkgLogger.InfofCtx(ctx,
+				"Package upload cache requirements: appId=%s appVersion=%s profileIndex=%d profileType=%s component=%s componentIndex=%d cache=%s",
+				*appDesc.Id,
+				appDesc.Metadata.Version,
+				profileIdx,
+				profile.Type,
+				appComponent.Name,
+				componentIdx,
+				string(cacheJSON),
+			)
+		}
+	}
+}
+
+// TODO: remove after implementation is added; just for logging purposes for now
+func (s *AppPkgManager) logProfileMemoryRequirementsOnUpload(
+	ctx context.Context,
+	appDesc *margoNonStdAPI.AppDescription,
+) {
+	if appDesc == nil {
+		return
+	}
+
+	for profileIdx, profile := range appDesc.DeploymentProfiles {
+		for componentIdx, component := range profile.Components {
+			appComponent, err := component.AsApplicationDeploymentProfileComponent()
+			if err != nil {
+				appPkgLogger.WarnfCtx(ctx, "Package upload memory requirements: failed to decode component at index %d: %v", componentIdx, err)
+				continue
+			}
+
+			if appComponent.DeviceConstraints == nil || appComponent.DeviceConstraints.CapacityRequirements == nil || appComponent.DeviceConstraints.CapacityRequirements.Memory == nil {
+				continue
+			}
+
+			memoryJSON, err := json.Marshal(appComponent.DeviceConstraints.CapacityRequirements.Memory)
+			if err != nil {
+				appPkgLogger.WarnfCtx(ctx,
+					"Package upload memory requirements: failed to marshal capacityRequirements.memory for appId=%s profileIndex=%d componentIndex=%d: %v",
+					*appDesc.Id,
+					profileIdx,
+					componentIdx,
+					err,
+				)
+				continue
+			}
+
+			appPkgLogger.InfofCtx(ctx,
+				"Package upload memory requirements: appId=%s appVersion=%s profileIndex=%d profileType=%s component=%s componentIndex=%d memory=%s",
+				*appDesc.Id,
+				appDesc.Metadata.Version,
+				profileIdx,
+				profile.Type,
+				appComponent.Name,
+				componentIdx,
+				string(memoryJSON),
+			)
+		}
+	}
 }
 
 // storeSymphonyObjects stores the converted Symphony objects in the appropriate systems
