@@ -12,6 +12,7 @@ FROM --platform=$BUILDPLATFORM ${BUILD_BASE_IMAGE} AS build
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG BUILDARCH
 ARG TARGETOS
 ARG TARGETARCH
 ARG FAULT_INJECTION_ENABLED=false
@@ -35,11 +36,13 @@ ARG BUILD_BASE_IMAGE
 RUN if echo "$BUILD_BASE_IMAGE" | grep -q "ubuntu"; then \
     apt-get update && apt-get install -y \
     gcc g++ make curl wget git cargo \
-    gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu \
+    gcc-arm-linux-gnueabihf \
     libssl-dev pkg-config protobuf-compiler \
-    && wget https://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz \
-    && rm go${GO_VERSION}.linux-amd64.tar.gz; \
+    # gcc-aarch64-linux-gnu only exists on non-arm64 hosts; native gcc already provides aarch64-linux-gnu-gcc
+    && if [ "$BUILDARCH" != "arm64" ]; then apt-get install -y gcc-aarch64-linux-gnu; fi \
+    && wget https://golang.org/dl/go${GO_VERSION}.linux-${BUILDARCH}.tar.gz \
+    && tar -C /usr/local -xzf go${GO_VERSION}.linux-${BUILDARCH}.tar.gz \
+    && rm go${GO_VERSION}.linux-${BUILDARCH}.tar.gz; \
 fi
 
 # Install Rust and rustup, overriding any existing Rust installation
