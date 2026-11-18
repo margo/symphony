@@ -225,13 +225,13 @@ func (t *MargoTransformer) convertDeploymentProfilesToComponents(
 			var symphonyComponent model.ComponentSpec
 			var err error
 
-			switch profile.Type {
-			case margoNonStdAPI.AppDeploymentProfileTypeHelm:
+			switch profile.Key {
+			case DeploymentProfileKeyHelm: 
 				symphonyComponent, err = t.convertHelmComponent(component, profile, parameters)
-			case margoNonStdAPI.AppDeploymentProfileTypeCompose:
+			case DeploymentProfileKeyCompose:
 				symphonyComponent, err = t.convertComposeComponent(component, profile, parameters)
 			default:
-				return nil, fmt.Errorf("unsupported profile type: %s", profile.Type)
+				return nil, fmt.Errorf("unsupported profile type: %s", profile.Key)
 			}
 
 			if err != nil {
@@ -485,9 +485,9 @@ func (t *MargoTransformer) convertConfigurationSchema(
 // ConvertDeploymentProfile converts the deployment profile cleanly
 func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) sbi.AppDeploymentProfile {
 	return sbi.AppDeploymentProfile{
-		Type:              sbi.AppDeploymentProfileType(profile.Type),
+		Type:              sbi.AppDeploymentProfileType(profile.Key),
 		Components:        t.convertComponents(profile.Components),
-		DeviceConstraints: t.convertDeviceConstraints(profile.DeviceConstraints),
+		//DeviceConstraints: t.convertDeviceConstraints(profile.DeviceConstraints), REPLACE WITH PROFILE CHARACTERISTICS
 	}
 }
 
@@ -500,18 +500,6 @@ func (t *MargoTransformer) convertComponents(components []margoNonStdAPI.Deploym
 	return result
 }
 
-func (t *MargoTransformer) convertDeviceConstraints(dc *margoNonStdAPI.DeviceConstraints) *sbi.DeviceConstraints {
-	// device constraints are not a required parameter, if not present, omit it.
-	if dc == nil {
-		return nil
-	}
-
-	result := sbi.DeviceConstraints{}
-	// TODO: do not supress errors
-	rawDc, _ := json.Marshal(*dc)
-	json.Unmarshal(rawDc, &result)
-	return &result
-}
 
 // convertComponent converts a single component
 func (t *MargoTransformer) convertComponent(comp margoNonStdAPI.DeploymentExecutionProfile_Components_Item) sbi.ApplicationDeploymentProfileComponent {
@@ -552,20 +540,15 @@ func (t *MargoTransformer) selectBoolPtr(preferred, fallback *bool) *bool {
 
 // MergeWithAppPackage handles profile merging with cleaner logic
 func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDeploymentManifestResp, appPkg ApplicationPackage) error {
-	targetProfile := t.findMatchingProfileInApp(req.Spec.DeploymentProfile.Type, appPkg.Description.DeploymentProfiles)
+	targetProfile := t.findMatchingProfileInApp(req.Spec.DeploymentProfile.Key, appPkg.Description.DeploymentProfiles)
 	if targetProfile == nil {
 		return nil // No matching profile found, continue without merging
-	}
-
-	// as device constraints are not a required field
-	if targetProfile.DeviceConstraints != nil {
-		req.Spec.DeploymentProfile.DeviceConstraints = targetProfile.DeviceConstraints
 	}
 
 	appComponents := t.buildComponentMap(*targetProfile)
 
 	for i := range req.Spec.DeploymentProfile.Components {
-		if err := t.mergeComponent(&req.Spec.DeploymentProfile.Components[i], appComponents, targetProfile.Type); err != nil {
+		if err := t.mergeComponent(&req.Spec.DeploymentProfile.Components[i], appComponents, targetProfile.Key); err != nil {
 			deploymentLogger.Warn("Failed to merge component", "index", i, "error", err)
 			return err
 		}
@@ -620,9 +603,9 @@ func (t *MargoTransformer) mergeParameters(overrides *margoNonStdAPI.DeploymentP
 }
 
 // findMatchingProfileInApp finds the deployment profile that matches the request
-func (t *MargoTransformer) findMatchingProfileInApp(reqType margoNonStdAPI.DeploymentExecutionProfileType, profiles []margoNonStdAPI.AppDeploymentProfile) *margoNonStdAPI.AppDeploymentProfile {
+func (t *MargoTransformer) findMatchingProfileInApp(reqKey string, profiles []margoNonStdAPI.AppDeploymentProfile) *margoNonStdAPI.AppDeploymentProfile {
 	for _, profile := range profiles {
-		if profile.Type == margoNonStdAPI.AppDeploymentProfileType(reqType) {
+		if profile.Key == reqKey {
 			return &profile
 		}
 	}
@@ -631,32 +614,37 @@ func (t *MargoTransformer) findMatchingProfileInApp(reqType margoNonStdAPI.Deplo
 
 // buildComponentMap creates a lookup map for app description components
 func (t *MargoTransformer) buildComponentMap(profile margoNonStdAPI.AppDeploymentProfile) map[string]interface{} {
-	components := make(map[string]interface{})
-	for _, component := range profile.Components {
-		switch profile.Type {
-		case margoNonStdAPI.AppDeploymentProfileTypeHelm:
-			if helmComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
-				components[helmComp.Name] = helmComp
-			}
-		case margoNonStdAPI.AppDeploymentProfileTypeCompose:
-			if composeComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
-				components[composeComp.Name] = composeComp
-			}
-		}
-	}
-	return components
+    components := make(map[string]interface{})
+    for _, component := range profile.Components {
+        switch profile.Key {
+        case DeploymentProfileKeyHelm:
+            if helmComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
+                components[helmComp.Name] = helmComp
+            }
+        case DeploymentProfileKeyCompose:
+            if composeComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
+                components[composeComp.Name] = composeComp
+            }
+        }
+    }
+    return components
 }
 
-func (t *MargoTransformer) mergeComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}, profileType margoNonStdAPI.AppDeploymentProfileType) error {
-	switch profileType {
-	case margoNonStdAPI.AppDeploymentProfileTypeHelm:
-		return t.mergeHelmComponent(reqComponent, appComponents)
-	case margoNonStdAPI.AppDeploymentProfileTypeCompose:
-		return t.mergeComposeComponent(reqComponent, appComponents)
-	default:
-		return fmt.Errorf("unsupported profile type: %s", profileType)
-	}
+func (t *MargoTransformer) mergeComponent(
+    reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item,
+    appComponents map[string]interface{},
+    profileKey string,
+) error {
+    switch profileKey {
+    case DeploymentProfileKeyHelm:
+        return t.mergeHelmComponent(reqComponent, appComponents)
+    case DeploymentProfileKeyCompose:
+        return t.mergeComposeComponent(reqComponent, appComponents)
+    default:
+        return fmt.Errorf("unsupported profile key: %s", profileKey)
+    }
 }
+
 
 func (t *MargoTransformer) mergeHelmComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}) error {
 	reqComp, err := reqComponent.AsDeploymentProfileComponent()

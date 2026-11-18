@@ -360,8 +360,10 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			Id:             &row.TargetId,
 			SpiffeIdentity: &row.TargetSpiffeId,
 			Spec: margoNonStdAPI.DeviceSpec{
-				Capabilities: row.Capabilities,
-			},
+    Profile: margoNonStdAPI.DeviceProfile{
+        Characteristics: []margoNonStdAPI.DeviceCharacteristic{},
+    },
+},
 			// setting unknown eligibility here, as it is not checked while fetching. after fetching, it should be checked for eligibility
 			Eligible: p.Ptr(margoNonStdAPI.Unknown),
 			State: margoNonStdAPI.DeviceState{

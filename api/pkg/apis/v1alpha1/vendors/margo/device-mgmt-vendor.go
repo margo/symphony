@@ -13,7 +13,7 @@ import (
 	"github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/sandbox/shared-lib/constraints"
 	"github.com/margo/sandbox/shared-lib/pointers"
-	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+	//"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 
 	"github.com/valyala/fasthttp"
 )
@@ -67,93 +67,75 @@ func (self *DeviceMgmtVendor) GetEndpoints() []v1alpha2.Endpoint {
 
 // Handler for GET /devices/
 func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo Device Mgmt Vendor",
-		request.Context,
-		&map[string]string{
-			"method": "listDevices",
-			"route":  request.Route,
-			"verb":   request.Method,
-		})
-	defer span.End()
+    pCtx, span := observability.StartSpan("Margo Device Mgmt Vendor",
+        request.Context,
+        &map[string]string{
+            "method": "listDevices",
+            "route":  request.Route,
+            "verb":   request.Method,
+        })
+    defer span.End()
 
-	deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): listDevices, method: %s", request.Method)
+    deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): listDevices, method: %s", request.Method)
 
-	appPkgId := request.Parameters["appPackageId"]
-	// Call DeviceManager to list the devices
-	devices, err := self.DeviceManager.ListDevices(pCtx)
-	if err != nil {
-		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to report device capabilities", v1alpha2.InternalError)
-	}
+    appPkgId := request.Parameters["appPackageId"]
+    devices, err := self.DeviceManager.ListDevices(pCtx)
+    if err != nil {
+        return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to list devices", v1alpha2.InternalError)
+    }
 
-	if appPkgId == "" {
-		deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): appPkgId is empty, returning all devices")
-		return createSuccessResponse(span, v1alpha2.OK, &devices)
-	}
+    if appPkgId == "" {
+        deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): appPkgId is empty, returning all devices")
+        return createSuccessResponse(span, v1alpha2.OK, &devices)
+    }
 
-	deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): marking devices for appPkgId: %s", appPkgId)
+    deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): marking devices for appPkgId: %s", appPkgId)
 
-	// getting app package here by appId
-	appPkgRow, err := self.DeviceManager.Database.GetAppPackage(pCtx, appPkgId)
-	if err != nil {
-		deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to get app package by appPkgId: %s, err: %s", appPkgId, err.Error())
-		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to get application package for checking eligible devices", v1alpha2.InternalError)
-	}
+    appPkgRow, err := self.DeviceManager.Database.GetAppPackage(pCtx, appPkgId)
+    if err != nil {
+        deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to get app package by appPkgId: %s, err: %s", appPkgId, err.Error())
+        return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to get application package for checking eligible devices", v1alpha2.InternalError)
+    }
 
-	dc := constraints.New()
-	for i, d := range devices.Items {
-		devCap, err := ConvertAtoB[any, sbi.DeviceCapabilitiesManifest](d.Spec.Capabilities)
-		if err != nil {
-			deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to convert device capabilities, err: %s, rawCapabilities: %s", err.Error(), pretty.Sprint(d.Spec.Capabilities))
-			return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to convert device capabilities for checking eligible devices", v1alpha2.InternalError)
+    dc := constraints.New()
+    for i, d := range devices.Items {
+        // Capabilities are stored in the DB (SBI layer), not in NBI DeviceSpec
+        devCapPtr, err := self.DeviceManager.GetDeviceCapabilities(pCtx, *d.Id)
+        if err != nil || devCapPtr == nil {
+            deviceMgmtVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to get capabilities for device %s, marking unknown: %v", *d.Id, err)
+            devices.Items[i].Eligible = pointers.Ptr(nbi.Unknown)
+            continue
+        }
+        devCap := *devCapPtr
+
+        deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): device capabilities: %s", pretty.Sprint(devCap))
+
+        eligible := true
+        unknown := true
+
+        if len(appPkgRow.AppDescription.DeploymentProfiles) > 0 {
+			// DeviceConstraints removed from AppDeploymentProfile in new NBI spec.
+			// Eligibility based on characteristics matching is not yet implemented.
+			// Mark as unknown until characteristics-based eligibility is supported.
+			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): DeviceConstraints removed from NBI spec, skipping constraint check")
+			_ = dc
+			_ = eligible
 		}
 
-		deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): printing converted device Capabilities here, : %s", pretty.Sprint(devCap))
-		eligible := true
-		unknown := true
-		for _, dp := range appPkgRow.AppDescription.DeploymentProfiles {
 
-			if dp.DeviceConstraints == nil {
-				// Deployment profile does not have device constraints present
-				// no need to check anything
-				deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): app deployment profile is nil, no need to check")
-				continue
-			}
-			unknown = false
+        if unknown {
+            deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): device eligibility unknown (no constraints to evaluate)")
+            devices.Items[i].Eligible = pointers.Ptr(nbi.Unknown)
+            continue
+        }
 
-			devCons, err := ConvertAtoB[nbi.DeviceConstraints, sbi.DeviceConstraints](*dp.DeviceConstraints)
-			if err != nil {
-				deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to convert device constraints, err: %s, rawDeviceConstraints: %s", err.Error(), pretty.Sprint(*dp.DeviceConstraints))
-				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to convert device constraints for checking eligible devices", v1alpha2.InternalError)
-			}
-			deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): printing converted device constraints here, : %s", pretty.Sprint(devCons))
+        if eligible {
+            devices.Items[i].Eligible = pointers.Ptr(nbi.True)
+            continue
+        }
+        devices.Items[i].Eligible = pointers.Ptr(nbi.False)
+    }
 
-			ok, reason, err := dc.IsDeviceEligible(devCap, devCons)
-			if err != nil {
-				deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to check device eligibility, err: %s", err.Error())
-				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to check for eligible devices", v1alpha2.InternalError)
-			}
-
-			if !ok {
-				eligible = false
-				deviceMgmtVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceMgmtVendor): device is not eligible, checking for next, deviceId : %s, reason: %s", *d.Id, reason)
-				break
-			}
-
-		}
-
-		// Eligibility is unknown due to missing device constraints in application, hence marking it as unknown.
-		if unknown {
-			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): device eligibility check is not possible, probably due to missing device constraints")
-			devices.Items[i].Eligible = pointers.Ptr(nbi.Unknown)
-			continue
-		}
-
-		if eligible {
-			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): device is eligible, checking for next, deviceId : %s", *d.Id)
-			devices.Items[i].Eligible = pointers.Ptr(nbi.True)
-			continue
-		}
-		devices.Items[i].Eligible = pointers.Ptr(nbi.False)
-	}
-	return createSuccessResponse(span, v1alpha2.OK, &devices)
+    return createSuccessResponse(span, v1alpha2.OK, &devices)
 }
+
