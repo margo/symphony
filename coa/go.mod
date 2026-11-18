@@ -15,7 +15,7 @@ require (
 	github.com/fasthttp/router v1.4.20
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
-	github.com/margo/sandbox v1.0.0-rc.3.1.0.20261104063737-64d7a7433e30
+	github.com/margo/sandbox v1.0.0-rc.3.2.0.20261118093951-3c6b14cda7cf
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.7.3
