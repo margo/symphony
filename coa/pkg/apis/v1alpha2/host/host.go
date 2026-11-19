@@ -364,7 +364,7 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 	endpoints = nme // by default, all non margo endpoints
 
 	// MTLS is specifically for MARGO (MIAF Compliant)
-	if httpConfig.MTLS == true {
+	if httpConfig.MTLS {
 		// This will only contain MARGO SBI Endpoint in case of mTLS
 		if len(me) == 0 {
 			return nil, fmt.Errorf("margo management interface missing, cannot serve margo interface")

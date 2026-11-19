@@ -28,6 +28,10 @@ type TrustMaterialCacherConfig struct {
 	// when connecting to the MIS endpoint.
 	MISCAPem []byte
 
+	// TrustPins holds SPKI SHA-256 pins (RFC 7469 §2.4)
+	// for authenticating the MIS HTTPS server. Optional to MISCAPem
+	TrustPins []string
+
 	// TrustBundleURI is an optional well-known URI path
 	// (e.g. "/.well-known/spiffe/bundle.json"). May be empty.
 	TrustBundleURI string
@@ -177,14 +181,17 @@ func (c *TrustMaterialCacher) Start() error {
 		" interval: ", c.interval,
 	)
 
+	cfg := trustbundle.TrustBundleGetterConfig{
+		MISEndpoint:    c.cfg.MISEndpoint,
+		MISRootCA:      c.cfg.MISCAPem,
+		MISTrustPins:   c.cfg.TrustPins,
+		TrustBundleURI: c.cfg.TrustBundleURI,
+		StaticBundle:   c.cfg.TrustBundleJSON,
+		TrustDomain:    c.cfg.TrustDomain,
+	}
+
 	// ── Build the trustbundle.Getter ─────────────────────────────────────────
-	getter, err := trustbundle.New(
-		c.cfg.MISEndpoint,
-		c.cfg.MISCAPem,
-		c.cfg.TrustBundleURI,
-		c.cfg.TrustBundleJSON,
-		c.cfg.TrustDomain,
-	)
+	getter, err := trustbundle.New(cfg)
 	if err != nil {
 		return fmt.Errorf("TrustMaterialCacher: failed to create trust-bundle getter: %w", err)
 	}

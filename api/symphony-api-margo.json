@@ -796,6 +796,9 @@
           "mis": {
             "endpoint": "https://mis.margo.org:9443",
             "caPath": "./mis/https-ca.crt",
+            "trustPins": [
+              "sha256/6DtZYsyT+9vuAwfAKHCLpjQv2pQHCc9n7nnZsltwEU4="
+            ],
             "cacheInterval": 60
           },
           "authzPath": "./mis/authorized-clients.json"

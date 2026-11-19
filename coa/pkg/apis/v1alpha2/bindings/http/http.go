@@ -66,6 +66,7 @@ type TrustBundle struct {
 type MIS struct {
 	Endpoint      string      `json:"endpoint"`
 	CAPath        string      `json:"caPath"`
+	TrustPins     []string    `json:"trustPins"`
 	CacheInterval int         `json:"cacheInterval"`
 	TrustDomain   string      `json:"trustDomain"`
 	TrustBundle   TrustBundle `json:"trustBundle"`
@@ -99,6 +100,7 @@ func (miaf *MIAF) ToMIAFInput() parser.MIAFInput {
 			CAPath:      mis.CAPath,
 			TrustDomain: mis.TrustDomain,
 			TrustBundle: trustBundle,
+			TrustPins:   mis.TrustPins,
 		},
 		AuthzPath: miaf.AuthzPath,
 	}
@@ -117,12 +119,13 @@ type HttpBinding struct {
 
 // ValidateMIAFConfig validates the MIAF configuration based on the following rules:
 //  1. MIS must not be nil.
-//  2. mis.endpoint and mis.caPath must be present together (both or neither).
-//  3. if trustBundle.uri is present, mis.endpoint & mis.caPath must be present.
-//  4. if neither trustBundle.path nor endpoint is configured, fail.
-//     (trustBundle.path makes endpoint+caPath+trustBundle.uri optional;
-//     without it, endpoint+caPath are required and trustBundle.uri is optional)
-//  5. trustDomain is required when endpoint+caPath are absent (static trust bundle mode).
+//  2. mis.endpoint requires a trust anchor (caPath or trustPins), and vice versa.
+//     caPath takes precedence over trustPins when both are present.
+//  3. if trustBundle.uri is present, mis.endpoint & a trust anchor must be present.
+//  4. if neither trustBundle.path nor endpoint+trustAnchor is configured, fail.
+//     (trustBundle.path makes endpoint+trustAnchor+trustBundle.uri optional;
+//     without it, endpoint+trustAnchor are required and trustBundle.uri is optional)
+//  5. trustDomain is required when endpoint+trustAnchor are absent (static trust bundle mode).
 func ValidateMIAFConfig(miaf *MIAF) error {
 	if miaf == nil {
 		return v1alpha2.NewCOAError(nil, "MIAF config is required but missing", v1alpha2.BadConfig)
@@ -135,27 +138,42 @@ func ValidateMIAFConfig(miaf *MIAF) error {
 
 	hasEndpoint := mis.Endpoint != ""
 	hasCAPath := mis.CAPath != ""
+	hasTrustPins := len(mis.TrustPins) > 0
+	hasTrustAnchor := hasCAPath || hasTrustPins
 	hasTrustBundlePath := mis.TrustBundle.Path != ""
 	hasTrustBundleURI := mis.TrustBundle.URI != ""
 
-	// Rule 2: endpoint and caPath must be present together
-	if hasEndpoint != hasCAPath {
-		return v1alpha2.NewCOAError(nil, "MIS endpoint and caPath must be configured together", v1alpha2.BadConfig)
+	// Rule 2: endpoint and a trust anchor (caPath or trustPins) must be present together.
+	// caPath takes precedence over trustPins when both are present.
+	if hasEndpoint != hasTrustAnchor {
+		return v1alpha2.NewCOAError(nil,
+			"MIS endpoint requires a trust anchor: configure caPath or trustPins alongside it",
+			v1alpha2.BadConfig,
+		)
 	}
 
-	// Rule 3: if trustBundle.uri is present, endpoint & caPath must be present
-	if hasTrustBundleURI && (!hasEndpoint || !hasCAPath) {
-		return v1alpha2.NewCOAError(nil, "MIS endpoint and caPath are required when trustBundle.uri is specified", v1alpha2.BadConfig)
+	// Rule 3: if trustBundle.uri is present, endpoint & a trust anchor must be present
+	if hasTrustBundleURI && (!hasEndpoint || !hasTrustAnchor) {
+		return v1alpha2.NewCOAError(nil,
+			"MIS endpoint and a trust anchor (caPath or trustPins) are required when trustBundle.uri is specified",
+			v1alpha2.BadConfig,
+		)
 	}
 
-	// Rule 4: if neither trustBundle.path nor endpoint is configured, fail
+	// Rule 4: if neither trustBundle.path nor endpoint+trustAnchor is configured, fail
 	if !hasTrustBundlePath && !hasEndpoint {
-		return v1alpha2.NewCOAError(nil, "either trustBundle.path or MIS endpoint+caPath must be configured", v1alpha2.BadConfig)
+		return v1alpha2.NewCOAError(nil,
+			"either trustBundle.path or MIS endpoint with a trust anchor (caPath or trustPins) must be configured",
+			v1alpha2.BadConfig,
+		)
 	}
 
-	// Rule 5: trustDomain is required in static trust bundle mode (no endpoint+caPath)
-	if hasTrustBundlePath && !hasEndpoint && mis.TrustDomain == "" {
-		return v1alpha2.NewCOAError(nil, "MIS trustDomain is required when using static trust bundle (trustBundle.path) without endpoint+caPath", v1alpha2.BadConfig)
+	// Rule 5: trustDomain is required in static trust bundle mode (no endpoint+trustAnchor)
+	if hasTrustBundlePath && !hasEndpoint && !hasTrustAnchor && mis.TrustDomain == "" {
+		return v1alpha2.NewCOAError(nil,
+			"MIS trustDomain is required when using static trust bundle (trustBundle.path) without endpoint and a trust anchor",
+			v1alpha2.BadConfig,
+		)
 	}
 
 	return nil
@@ -216,6 +234,11 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 		if err := validators.ValidatePrivateKey(key); err != nil {
 			return fmt.Errorf("failed to validate private key, err: %w", err)
 		}
+
+		if err := validators.ValidateCertKeyPair(cert, key); err != nil {
+			return fmt.Errorf("failed to verify certificate against provided key, err: %w", err)
+		}
+
 		// assign validated items here
 		h.ParsedMIAFConfig.X509.CertPEM = cert
 		h.ParsedMIAFConfig.X509.KeyPEM = key
@@ -223,6 +246,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 		// Now setup ways to obtain trustbundle, and a cache which can be accessed here
 		ccfg := cacher.TrustMaterialCacherConfig{
 			MISEndpoint: h.ParsedMIAFConfig.MIS.Endpoint,
+			TrustPins:   h.ParsedMIAFConfig.MIS.TrustPins,
 			MISCAPem:    h.ParsedMIAFConfig.MIS.CAPEM,
 			TrustDomain: h.ParsedMIAFConfig.MIS.TrustDomain,
 			Interval:    config.MIAF.MIS.CacheInterval,
