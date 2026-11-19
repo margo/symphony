@@ -188,8 +188,8 @@ func (s *DeviceManager) upsertObjectInCache(topic string, event v1alpha2.Event) 
 		err = s.Database.UpsertAppPackage(context.Background(), event.Body.(AppPackageDatabaseRow))
 	case DeploymentDatabaseRow:
 		err = s.Database.UpsertDeployment(context.Background(), event.Body.(DeploymentDatabaseRow), false)
-	case DeviceDatabaseRow:
-		err = s.Database.UpsertDevice(context.Background(), event.Body.(DeviceDatabaseRow))
+	case WorkloadTargetDatabaseRow:
+		err = s.Database.UpsertWorkloadTarget(context.Background(), event.Body.(WorkloadTargetDatabaseRow))
 	case DeploymentBundleRow:
 		err = s.Database.UpsertDeploymentBundle(context.Background(), event.Body.(DeploymentBundleRow), false)
 	default:
@@ -216,8 +216,8 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 		err = s.Database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Id)
 	case DeploymentDatabaseRow:
 		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
-	case DeviceDatabaseRow:
-		err = s.Database.DeleteDevice(context.Background(), event.Body.(DeviceDatabaseRow).Capabilities.Properties.Id)
+	case WorkloadTargetDatabaseRow:
+		err = s.Database.DeleteDevice(context.Background(), event.Body.(WorkloadTargetDatabaseRow).TargetId)
 	case DeploymentBundleRow:
 		//err = s.Database.DeleteDeploymentBundle(context.Background(), event.Body.(DeploymentBundleRow).DeviceClientId, false)
 	default:
@@ -322,21 +322,21 @@ func (dm *DeviceManager) GetToken(ctx context.Context, clientId, clientSecret st
 	}, nil
 }
 
-func (dm *DeviceManager) OnboardDevice(ctx context.Context, targetSpiffeId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
-	if err := dm.Database.UpsertDevice(ctx, DeviceDatabaseRow{
-		TargetId:         capabilities.Properties.Id,
+func (dm *DeviceManager) OnboardWorkloadTarget(ctx context.Context, targetSpiffeId, workloadTargetID string, profile margoStdAPI.Profile) error {
+	if err := dm.Database.UpsertWorkloadTarget(ctx, WorkloadTargetDatabaseRow{
+		TargetId:         workloadTargetID,
 		TargetSpiffeId:   targetSpiffeId,
 		OnboardingStatus: margoNonStdAPI.DeviceOnboardStatusONBOARDED,
-		Capabilities:     &capabilities,
+		Profile:          &profile,
 		LastStateSync:    time.Now().UTC(),
 		CreatedAt:        time.Now().UTC(),
 		UpdatedAt:        time.Now().UTC(),
 	}); err != nil {
-		return fmt.Errorf("failed to save device details: %w", err)
+		return fmt.Errorf("failed to save workloadTarget details: %w", err)
 	}
 
 	// Log successful onboarding
-	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded device", "deviceid", capabilities.Properties.Id)
+	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded workload target", "workloadTargetId", workloadTargetID)
 
 	return nil
 }
@@ -359,9 +359,11 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			},
 			Id:             &row.TargetId,
 			SpiffeIdentity: &row.TargetSpiffeId,
-			Spec: margoNonStdAPI.DeviceSpec{
-				Capabilities: row.Capabilities,
-			},
+			// Spec: margoNonStdAPI.DeviceSpec{
+			// 	Profile: margoNonStdAPI.DeviceProfile{
+			// 		Characteristics: []margoNonStdAPI.DeviceCharacteristic{},
+			// 	},
+			// },
 			// setting unknown eligibility here, as it is not checked while fetching. after fetching, it should be checked for eligibility
 			Eligible: p.Ptr(margoNonStdAPI.Unknown),
 			State: margoNonStdAPI.DeviceState{
@@ -574,30 +576,30 @@ func ConvertNBIAppDeploymentToSBIAppDeployment(appDeployment *margoNonStdAPI.App
 	return &appDeploymentOnSBI, nil
 }
 
-func (s *DeviceManager) SaveDeviceCapabilities(ctx context.Context, deviceClientId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
-	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Saving capabilities for device '%s'", deviceClientId)
+func (s *DeviceManager) SaveWorkloadTargetProfile(ctx context.Context, workloadTargetId string, profile margoStdAPI.Profile) error {
+	deviceLogger.InfofCtx(ctx, "SaveWorkloadTargetProfile: Saving profile for workload target '%s'", workloadTargetId)
 
-	if deviceClientId == "" {
-		return fmt.Errorf("device ID is required")
+	if workloadTargetId == "" {
+		return fmt.Errorf("workloadTargetId is required")
 	}
 
 	// Check if device already exists
-	err := s.Database.UpdateDeviceCapabilities(ctx, deviceClientId, &capabilities)
+	err := s.Database.UpdateWorkloadTargetProfile(ctx, workloadTargetId, &profile)
 	if err != nil {
-		return fmt.Errorf("failed to save device capabilities: %w", err)
+		return fmt.Errorf("failed to save workload target profile: %w", err)
 	}
 
-	deviceLogger.InfofCtx(ctx, "SaveDeviceCapabilities: Successfully saved capabilities for device '%s'", deviceClientId)
+	deviceLogger.InfofCtx(ctx, "SaveWorkloadTargetProfile: successfully saved profile for workload target '%s'", workloadTargetId)
 	return nil
 }
 
-func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, targetSpiffeId string, targetId string, capabilities margoStdAPI.DeviceCapabilitiesManifest) error {
+func (s *DeviceManager) UpdateWorkloadTargetProfile(ctx context.Context, targetSpiffeId string, targetId string, profile margoStdAPI.Profile) error {
 	err := s.Database.UpsertDeviceIdentity(ctx, targetSpiffeId, targetId)
 	if err != nil {
 		return err
 	}
 
-	err = s.Database.UpdateDeviceCapabilities(ctx, targetId, &capabilities)
+	err = s.Database.UpdateWorkloadTargetProfile(ctx, targetId, &profile)
 	if err == nil {
 		return nil
 	}
@@ -612,28 +614,28 @@ func (s *DeviceManager) UpdateDeviceCapabilities(ctx context.Context, targetSpif
 	}
 
 	// NOT FOUND ERROR HERE -- enroll it.
-	return s.OnboardDevice(ctx, targetSpiffeId, capabilities)
+	return s.OnboardWorkloadTarget(ctx, targetSpiffeId, targetId, profile)
 }
 
-func (s *DeviceManager) GetDeviceCapabilities(ctx context.Context, deviceClientId string) (*margoStdAPI.DeviceCapabilitiesManifest, error) {
-	device, err := s.Database.GetDevice(ctx, deviceClientId)
+func (s *DeviceManager) GetWorkloadTargetProfile(ctx context.Context, workloadTargetId string) (*margoStdAPI.Profile, error) {
+	workloadTarget, err := s.Database.GetWorkloadTarget(ctx, workloadTargetId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device capabilities: %w", err)
 	}
-	return device.Capabilities, nil
+	return workloadTarget.Profile, nil
 }
 
-func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, clientId string) (*DeviceDatabaseRow, error) {
-	device, err := s.Database.GetDevice(ctx, clientId)
+func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, workloadTargetId string) (*WorkloadTargetDatabaseRow, error) {
+	workloadTarget, err := s.Database.GetWorkloadTarget(ctx, workloadTargetId)
 	if err != nil {
-		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Failed to get device %s: %v", clientId, err)
+		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Failed to get workloadTarget %s: %v", workloadTarget, err)
 		return nil, err
 	}
 
-	if device == nil {
-		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: Device %s not found", clientId)
-		return nil, fmt.Errorf("device %s not found", clientId)
+	if workloadTarget == nil {
+		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: workloadTarget %s not found", workloadTarget)
+		return nil, fmt.Errorf("workloadTarget %s not found", workloadTarget)
 	}
 
-	return device, nil
+	return workloadTarget, nil
 }

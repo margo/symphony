@@ -18,6 +18,7 @@
 piccolo/target
 
 go.work
+go.work.sum
 *.log
 
 docs-site/node_modules
