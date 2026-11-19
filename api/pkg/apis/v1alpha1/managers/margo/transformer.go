@@ -226,7 +226,7 @@ func (t *MargoTransformer) convertDeploymentProfilesToComponents(
 			var err error
 
 			switch profile.Key {
-			case DeploymentProfileKeyHelm: 
+			case DeploymentProfileKeyHelm:
 				symphonyComponent, err = t.convertHelmComponent(component, profile, parameters)
 			case DeploymentProfileKeyCompose:
 				symphonyComponent, err = t.convertComposeComponent(component, profile, parameters)
@@ -483,11 +483,72 @@ func (t *MargoTransformer) convertConfigurationSchema(
 }
 
 // ConvertDeploymentProfile converts the deployment profile cleanly
-func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) sbi.AppDeploymentProfile {
+func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) (sbi.AppDeploymentProfile, error) {
+	characteristics, err := t.convertProfileCharacteristics(profile.Characteristics)
+	if err != nil {
+		transformerLogger.Error("Failed to convert profile characteristics", "error", err)
+		return sbi.AppDeploymentProfile{}, fmt.Errorf("failed to convert profile characteristics: %w", err)
+	}
+
 	return sbi.AppDeploymentProfile{
-		Type:              sbi.AppDeploymentProfileType(profile.Key),
-		Components:        t.convertComponents(profile.Components),
-		//DeviceConstraints: t.convertDeviceConstraints(profile.DeviceConstraints), REPLACE WITH PROFILE CHARACTERISTICS
+		Key:             profile.Key,
+		Components:      t.convertComponents(profile.Components),
+		Characteristics: characteristics,
+	}, nil
+}
+
+func (t *MargoTransformer) convertProfileCharacteristics(characteristics *[]margoNonStdAPI.Characteristics) (*[]sbi.Characteristics, error) {
+	if characteristics == nil {
+		return nil, nil
+	}
+
+	result := make([]sbi.Characteristics, len(*characteristics))
+	for i, c := range *characteristics {
+		matchExpressions := make([]sbi.MatchExpression, len(c.MatchExpressions))
+		for i, me := range c.MatchExpressions {
+			operator, err := toSbiMatchExpressionOperator(me.Operator)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert match expression operator: %w", err)
+			}
+
+			matchExpressions[i] = sbi.MatchExpression{
+				Key:      me.Key,
+				Operator: operator,
+				Values:   me.Values,
+			}
+		}
+
+		result[i] = sbi.Characteristics{
+			MatchExpressions: matchExpressions,
+		}
+	}
+	return &result, nil
+}
+
+func toSbiMatchExpressionOperator(operator margoNonStdAPI.CharacteristicMatchExpressionOperator) (sbi.MatchExpressionOperator, error) {
+	switch operator {
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorDoesNotExist:
+		return sbi.MatchExpressionOperatorDoesNotExist, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorExists:
+		return sbi.MatchExpressionOperatorExists, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorGt:
+		return sbi.MatchExpressionOperatorGt, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorGtEq:
+		return sbi.MatchExpressionOperatorGtEq, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorLt:
+		return sbi.MatchExpressionOperatorLt, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorLtEq:
+		return sbi.MatchExpressionOperatorLtEq, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorNotIn:
+		return sbi.MatchExpressionOperatorNotIn, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorContainsAll:
+		return sbi.MatchExpressionOperatorContainsAll, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorContainsAny:
+		return sbi.MatchExpressionOperatorContainsAny, nil
+	case margoNonStdAPI.CharacteristicMatchExpressionOperatorIn:
+		return sbi.MatchExpressionOperatorIn, nil
+	default:
+		return sbi.MatchExpressionOperatorIn, fmt.Errorf("unknown match expression operator: %s", operator)
 	}
 }
 
@@ -499,7 +560,6 @@ func (t *MargoTransformer) convertComponents(components []margoNonStdAPI.Deploym
 	}
 	return result
 }
-
 
 // convertComponent converts a single component
 func (t *MargoTransformer) convertComponent(comp margoNonStdAPI.DeploymentExecutionProfile_Components_Item) sbi.ApplicationDeploymentProfileComponent {
@@ -614,37 +674,36 @@ func (t *MargoTransformer) findMatchingProfileInApp(reqKey string, profiles []ma
 
 // buildComponentMap creates a lookup map for app description components
 func (t *MargoTransformer) buildComponentMap(profile margoNonStdAPI.AppDeploymentProfile) map[string]interface{} {
-    components := make(map[string]interface{})
-    for _, component := range profile.Components {
-        switch profile.Key {
-        case DeploymentProfileKeyHelm:
-            if helmComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
-                components[helmComp.Name] = helmComp
-            }
-        case DeploymentProfileKeyCompose:
-            if composeComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
-                components[composeComp.Name] = composeComp
-            }
-        }
-    }
-    return components
+	components := make(map[string]interface{})
+	for _, component := range profile.Components {
+		switch profile.Key {
+		case DeploymentProfileKeyHelm:
+			if helmComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
+				components[helmComp.Name] = helmComp
+			}
+		case DeploymentProfileKeyCompose:
+			if composeComp, err := component.AsApplicationDeploymentProfileComponent(); err == nil {
+				components[composeComp.Name] = composeComp
+			}
+		}
+	}
+	return components
 }
 
 func (t *MargoTransformer) mergeComponent(
-    reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item,
-    appComponents map[string]interface{},
-    profileKey string,
+	reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item,
+	appComponents map[string]interface{},
+	profileKey string,
 ) error {
-    switch profileKey {
-    case DeploymentProfileKeyHelm:
-        return t.mergeHelmComponent(reqComponent, appComponents)
-    case DeploymentProfileKeyCompose:
-        return t.mergeComposeComponent(reqComponent, appComponents)
-    default:
-        return fmt.Errorf("unsupported profile key: %s", profileKey)
-    }
+	switch profileKey {
+	case DeploymentProfileKeyHelm:
+		return t.mergeHelmComponent(reqComponent, appComponents)
+	case DeploymentProfileKeyCompose:
+		return t.mergeComposeComponent(reqComponent, appComponents)
+	default:
+		return fmt.Errorf("unsupported profile key: %s", profileKey)
+	}
 }
-
 
 func (t *MargoTransformer) mergeHelmComponent(reqComponent *margoNonStdAPI.DeploymentExecutionProfile_Components_Item, appComponents map[string]interface{}) error {
 	reqComp, err := reqComponent.AsDeploymentProfileComponent()

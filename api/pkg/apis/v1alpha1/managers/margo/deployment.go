@@ -134,8 +134,8 @@ func (s *DeploymentManager) deleteObjectFromCache(topic string, event v1alpha2.E
 		err = s.database.DeleteAppPackage(context.Background(), *event.Body.(AppPackageDatabaseRow).PackageRequest.Id)
 	case DeploymentDatabaseRow:
 		err = s.database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
-	case DeviceDatabaseRow:
-		err = s.database.DeleteDevice(context.Background(), event.Body.(DeviceDatabaseRow).Capabilities.Properties.Id)
+	case WorkloadTargetDatabaseRow:
+		err = s.database.DeleteDevice(context.Background(), event.Body.(WorkloadTargetDatabaseRow).TargetId)
 	default:
 		deploymentLogger.ErrorfCtx(context.Background(), "deleteObjectFromCache: Invalid event body: known object is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")
@@ -344,6 +344,11 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 		namespace = *deployment.Metadata.Namespace
 	}
 
+	deploymentProfile, err := s.tranformer.ConvertDeploymentProfile(deployment.Spec.DeploymentProfile)
+	if err != nil {
+		return AppDeploymentState{}, fmt.Errorf("failed to convert deployment profile: %w", err)
+	}
+
 	desiredState := AppDeploymentState{
 		AppDeploymentManifest: sbi.AppDeploymentManifest{
 			Metadata: sbi.AppDeploymentMetadata{
@@ -356,7 +361,7 @@ func (s *DeploymentManager) buildDesiredState(deployment margoNonStdAPI.Applicat
 			Id: deployment.Id,
 			Spec: sbi.AppDeploymentSpec{
 				ApplicationId:     appId,
-				DeploymentProfile: s.tranformer.ConvertDeploymentProfile(deployment.Spec.DeploymentProfile),
+				DeploymentProfile: deploymentProfile,
 				Parameters:        &sbi.AppDeploymentParams{},
 			},
 		},

@@ -563,43 +563,26 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 	t.SetOutputMirror(os.Stdout)
 
 	tr := table.Row{
-		"ID", "Client SpiffeId", "Capabilities", "Deployment Type", "State", "CreatedAt",
+		"ID", "Client SpiffeId", "Characteristics", "Deployment Type", "State", "CreatedAt",
 	}
-
 	if eligibilityMarker {
 		tr = append(tr, "Eligible")
 	}
-
-	// Set headers
 	t.AppendHeader(tr)
 
-	// Add data rows
 	for _, device := range resp.Items {
 		if device.Id == nil || *device.Id == "" {
 			continue
 		}
 
-		var deploymentTypes interface{}
-		deploymentTypes = []string{}
-		capMap, exists := device.Spec.Capabilities.(map[string]interface{})
-		if exists {
-			properties, exists := capMap["properties"].(map[string]interface{})
-			if exists {
-				deploymentTypes, exists = properties["supportedDeploymentTypes"]
-				if !exists {
-					deploymentTypes = []string{}
-				}
-			}
-		}
+		deploymentType := extractDeploymentTypesFromProfile(device.Spec.Profile)
+		charCount := len(device.Spec.Profile.Characteristics)
 
-		deploymentTypeStr := strings.Trim(fmt.Sprint(deploymentTypes), "[]")
-
-		cap, _ := json.Marshal(device.Spec.Capabilities)
 		row := table.Row{
-			*device.Id, // deliberately not truncating device Id
+			*device.Id,
 			extractLastPartOfTargetSpiffeId(*device.SpiffeIdentity),
-			truncateString(string(cap), 28),
-			deploymentTypeStr,
+			fmt.Sprintf("%d", charCount),
+			deploymentType,
 			string(device.State.Onboard),
 			formatTime(*device.Metadata.CreationTimestamp),
 		}
@@ -609,24 +592,57 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 		t.AppendRow(row)
 	}
 
-	// Add footer with pagination
 	t.AppendFooter(table.Row{
-		"", "", "",
+		"", "", "", "",
 		fmt.Sprintf("Page %d/%d", 1, 1),
-		fmt.Sprintf("Total: %d", 1), // resp.Metadata.TotalItems),
+		fmt.Sprintf("Total: %d", len(resp.Items)),
 	})
 
-	// Configure column settings
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{Number: 1, WidthMax: 70}, // ID
 		{Number: 2, WidthMax: 70}, // Client SpiffeId
-		{Number: 3, WidthMax: 28}, // Capabilities
+		{Number: 3, WidthMax: 28}, // Characteristics
 		{Number: 4, WidthMax: 28}, // Deployment Type
 		{Number: 5, WidthMax: 12}, // State
 		{Number: 6, WidthMax: 16}, // CreatedAt
 	})
 
 	t.Render()
+}
+
+// extractDeploymentTypesFromProfile extracts deployment types from DeviceProfile characteristics.
+// Matches characteristic keys against known deployment profile keys:
+//   - "margo.org/deployment/helm"    → "helm"
+//   - "margo.org/deployment/compose" → "compose"
+func extractDeploymentTypesFromProfile(profile nbi.DeviceProfile) string {
+	const (
+		deploymentKeyHelm    = "margo.org/deployment/helm"
+		deploymentKeyCompose = "margo.org/deployment/compose"
+	)
+
+	var types []string
+	seen := make(map[string]struct{})
+
+	for _, char := range profile.Characteristics {
+		var label string
+		switch char.Key {
+		case deploymentKeyHelm:
+			label = "helm"
+		case deploymentKeyCompose:
+			label = "compose"
+		default:
+			continue
+		}
+		if _, exists := seen[label]; !exists {
+			seen[label] = struct{}{}
+			types = append(types, label)
+		}
+	}
+
+	if len(types) == 0 {
+		return "unknown"
+	}
+	return strings.Join(types, ", ")
 }
 
 func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {

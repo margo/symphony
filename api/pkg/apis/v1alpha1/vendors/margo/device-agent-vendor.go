@@ -20,13 +20,17 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2/vendors"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	"github.com/margo/sandbox/shared-lib/mis/parser"
+
 	margoStdSbiAPI "github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
+
 	"github.com/valyala/fasthttp"
 	"gopkg.in/yaml.v2"
 )
 
-var deviceVendorLogger = logger.NewLogger("coa.runtime")
-
+var (
+	deviceVendorLogger         = logger.NewLogger("coa.runtime")
+	workloadTargetVendorLogger = logger.NewLogger("coa.runtime")
+)
 var validDeviceIdPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$`)
 
 type DeviceAgentVendor struct {
@@ -97,13 +101,13 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 			// Handler:    self.deleteDevice, //TODO: Update delete flow here
 			Parameters: []string{"deviceId?"},
 		},
-		// PUT /api/v1/capabilities/{deviceId}
+		// PUT /api/v1/profile/{workloadTargetId}
 		{
 			Methods:    []string{fasthttp.MethodPut},
-			Route:      route + "/capabilities/{deviceId}",
+			Route:      route + "/profile/{workloadTargetId}",
 			Version:    self.Version,
-			Handler:    self.updateDeviceCapabilities,
-			Parameters: []string{"deviceId?"},
+			Handler:    self.updateWorkloadTargetProfile,
+			Parameters: []string{"workloadTargetId?"},
 		},
 		// POST /api/v1/deployments/{deploymentId}/status
 		{
@@ -116,36 +120,36 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 	}
 }
 
-// Handler for PUT /device/{deviceId}/capabilities
-func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo Device Vendor",
+// Handler for PUT /profile/{workloadTargetId}
+func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COARequest) v1alpha2.COAResponse {
+	pCtx, span := observability.StartSpan("Margo workload target Vendor",
 		request.Context,
 		&map[string]string{
-			"method": "updateDeviceCapabilities",
+			"method": "updateWorkloadTargetProfile",
 			"route":  request.Route,
 			"verb":   request.Method,
 		})
 	defer span.End()
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): updateDeviceCapabilities, method: %s", request.Method)
+	workloadTargetVendorLogger.InfofCtx(pCtx, "V (MargoWorkloadTargetVendor): updateWorkloadTargetProfile, method: %s", request.Method)
 
 	// Extract targetId from URL parameters
-	targetIdRaw := request.Parameters["__deviceId"]
+	targetIdRaw := request.Parameters["__workloadTargetId"]
 	if targetIdRaw == "" {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
-			"deviceId path parameter is required",
-			"/api/v1/capabilities/{deviceId}",
+			"workloadTargetId path parameter is required",
+			"/api/v1/profile/{workloadTargetId}",
 		))
 	}
 
 	targetId, err := url.PathUnescape(targetIdRaw)
 	if err != nil {
-		deviceVendorLogger.ErrorfCtx(pCtx,
-			"V (MargoDeviceVendor): failed updateDeviceCapabilities, failed to parse deviceId from path, method: %s, err: %s",
+		workloadTargetVendorLogger.ErrorfCtx(pCtx,
+			"V (MargoWorkloadTargetVendor): failed updateWorkloadTargetProfile, failed to parse workloadTargetId from path, method: %s, err: %s",
 			request.Method, err.Error())
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
-			"deviceId path parameter is malformed",
-			"/api/v1/capabilities/{deviceId}",
+			"workloadTargetId path parameter is malformed",
+			"/api/v1/profile/{workloadTargetId}",
 		))
 	}
 
@@ -153,65 +157,82 @@ func (self *DeviceAgentVendor) updateDeviceCapabilities(request v1alpha2.COARequ
 	// 403 — WFM local policy check
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
-			fmt.Sprintf("failed to extract device spiffeId: %s", err.Error()),
-			"/api/v1/capabilities/{deviceId}",
+			fmt.Sprintf("failed to extract workload target spiffeId: %s", err.Error()),
+			"/api/v1/profile/{workloadTargetId}",
 		))
 	}
 
 	if !validDeviceIdPattern.MatchString(targetId) {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
-			fmt.Sprintf("deviceId must follow regex %s as defined in spec", validDeviceIdPattern.String()),
-			"/api/v1/capabilities/{deviceId}",
+			fmt.Sprintf("workloadTargetId must follow regex %s as defined in spec", validDeviceIdPattern.String()),
+			"/api/v1/profile/{workloadTargetId}",
 		))
 	}
 
-	// Parse request body using the correct DeviceCapabilities type
-	var capabilities margoStdSbiAPI.DeviceCapabilitiesManifest
-	if err := json.Unmarshal(request.Body, &capabilities); err != nil {
+	// Parse request body using the correct profile type
+	var profile margoStdSbiAPI.Profile
+	if err := json.Unmarshal(request.Body, &profile); err != nil {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
-			fmt.Sprintf("failed to parse device capabilities: %s", err.Error()),
-			"/api/v1/capabilities/{deviceId}",
+			fmt.Sprintf("failed to parse workload profile: %s", err.Error()),
+			"/api/v1/profile/{workloadTargetId}",
 		))
 	}
 
-	// Validate required fields
-	if capabilities.Properties.Id == "" {
+	if len(profile.Characteristics) == 0 {
+		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
+			fmt.Sprintf("profile characteristics are required"),
+			"/api/v1/profile/{workloadTargetId}",
+		))
+	}
+
+	if err := validateProfileCharacteristics(profile); err != nil {
 		return problemResponse(margoStdSbiAPI.NewSemanticError(
 			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
+			fmt.Sprintf("/api/v1/profile/%s", targetId),
 			margoStdSbiAPI.FieldError{
-				Field:   "properties.id",
-				Message: "device ID in properties is required",
+				Field:   "characteristics",
+				Message: err.Error(),
 			},
 		))
 	}
 
-	if capabilities.Properties.Id != targetId {
-		return problemResponse(margoStdSbiAPI.NewSemanticError(
-			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
-			margoStdSbiAPI.FieldError{
-				Field:   "properties.id",
-				Message: fmt.Sprintf("device ID mismatch: path=%q body=%q", targetId, capabilities.Properties.Id),
-			},
-		))
-	}
-
-	// Call DeviceManager to update capabilities
-	// deviceid is same as id in properties. Related spiffeId is stored in deviceIdentityMetadata database.
-	err = self.DeviceManager.UpdateDeviceCapabilities(pCtx, targetSpiffeId, targetId, capabilities)
+	// Call DeviceManager to update workload target profile
+	// Related spiffeId is stored in deviceIdentityMetadata database.
+	err = self.DeviceManager.UpdateWorkloadTargetProfile(pCtx, targetSpiffeId, targetId, profile)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
-			fmt.Sprintf("failed to update device capabilities: %s", err.Error()),
-			fmt.Sprintf("/api/v1/capabilities/%s", targetId),
+			fmt.Sprintf("failed to update workload target profile: %s", err.Error()),
+			fmt.Sprintf("/api/v1/profile/{workloadTargetId}%s", targetId),
 		))
 	}
 
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.Created,
-		Body:        []byte(`{"message": "Device capabilities updated successfully"}`),
+		Body:        []byte(`{"message": "workload target profile updated successfully"}`),
 		ContentType: "application/json",
 	}
+}
+
+func validateProfileCharacteristics(profile margoStdSbiAPI.Profile) error {
+	// List of characteristic entries composing the workload target's profile.
+	// Each key MUST occur at most once in the array.
+	characteristicKeys := make(map[string]struct{}, len(profile.Characteristics))
+	for i, characteristic := range profile.Characteristics {
+		key := strings.TrimSpace(characteristic.Key)
+		if _, exists := characteristicKeys[key]; exists {
+			return fmt.Errorf("duplicate characteristic key %q", key)
+		}
+		characteristicKeys[key] = struct{}{}
+
+		if characteristic.Properties != nil {
+			// Properties may be any JSON value, so only verify that the value is JSON-encodable.
+			if _, err := json.Marshal(characteristic.Properties); err != nil {
+				return fmt.Errorf("characteristics[%d].properties is not a valid JSON value: %w", i, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (self *DeviceAgentVendor) onDeploymentStatusUpdate(request v1alpha2.COARequest) v1alpha2.COAResponse {
