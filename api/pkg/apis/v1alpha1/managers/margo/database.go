@@ -78,9 +78,9 @@ type DeploymentDatabaseRow struct {
 	LastStatusUpdate time.Time
 }
 
-// DeviceDatabaseRow represents a device record in the database.
-// It contains device identification, capabilities, and synchronization information.
-type DeviceDatabaseRow struct {
+// WorkloadTargetRow represents a workloadTarget record in the database.
+// It contains workload target profile.
+type WorkloadTargetDatabaseRow struct {
 	// This is same as device capabilities.properties.id
 	TargetId string
 
@@ -90,8 +90,8 @@ type DeviceDatabaseRow struct {
 	// status of the onboarding
 	OnboardingStatus margoNonStdAPI.DeviceOnboardStatus
 
-	// Capabilities contains the device's reported capabilities and properties
-	Capabilities *margoStdAPI.DeviceCapabilitiesManifest
+	// Profile contains the device's reported characteristics and keys
+	Profile *margoStdAPI.Profile
 
 	// LastStateSync tracks when the device last synchronized its state with the orchestrator
 	LastStateSync time.Time
@@ -568,43 +568,43 @@ func (db *MargoDatabase) GetDeploymentsByPackage(ctx context.Context, packageId 
 	return packageDeployments, nil
 }
 
-func (db *MargoDatabase) UpsertDevice(ctx context.Context, device DeviceDatabaseRow) error {
-	device.UpdatedAt = time.Now().UTC()
+func (db *MargoDatabase) UpsertWorkloadTarget(ctx context.Context, workloadTarget WorkloadTargetDatabaseRow) error {
+	workloadTarget.UpdatedAt = time.Now().UTC()
 
-	deviceId := device.TargetId
+	workloadTargetId := workloadTarget.TargetId
 
 	// Add pre-upsert logging
-	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: About to store device '%s' with status '%s'", deviceId, device.OnboardingStatus)
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertWorkloadTarget: About to store workload target '%s' with status '%s'", workloadTargetId, workloadTarget.OnboardingStatus)
 
 	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
 		Options:  states.UpsertOption{},
 		Metadata: db.deviceMetadata,
 		Value: states.StateEntry{
-			ID:   deviceId,
-			Body: device,
+			ID:   workloadTargetId,
+			Body: workloadTarget,
 		},
 	})
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDevice: Failed to upsert device '%s': %v", deviceId, err)
-		return fmt.Errorf("failed to upsert device '%s': %w", deviceId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertWorkloadTarget: Failed to upsert workload target '%s': %v", workloadTargetId, err)
+		return fmt.Errorf("failed to upsert workload target '%s': %w", workloadTargetId, err)
 	}
 
 	// Add verification immediately after storage
 	_, verifyErr := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.deviceMetadata,
-		ID:       deviceId,
+		ID:       workloadTargetId,
 	})
 	if verifyErr != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertDevice: CRITICAL - Device '%s' not found immediately after storage: %v", deviceId, verifyErr)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpsertWorkloadTarget: CRITICAL - workloadTargetId '%s' not found immediately after storage: %v", workloadTargetId, verifyErr)
 	} else {
-		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: VERIFIED - Device '%s' successfully stored and retrievable", deviceId)
+		db.MgrContext.Logger.InfofCtx(ctx, "UpsertWorkloadTarget: VERIFIED - workloadTargetId '%s' successfully stored and retrievable", workloadTargetId)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDevice: device '%s' stored successfully", deviceId)
+	db.MgrContext.Logger.InfofCtx(ctx, "UpsertWorkloadTarget: workloadTargetId '%s' stored successfully", workloadTargetId)
 	return nil
 }
 
-func (db *MargoDatabase) GetDevice(ctx context.Context, targetId string) (*DeviceDatabaseRow, error) {
+func (db *MargoDatabase) GetWorkloadTarget(ctx context.Context, targetId string) (*WorkloadTargetDatabaseRow, error) {
 	entry, err := db.StateProvider.Get(ctx, states.GetRequest{
 		Metadata: db.deviceMetadata,
 		ID:       targetId,
@@ -622,7 +622,7 @@ func (db *MargoDatabase) GetDevice(ctx context.Context, targetId string) (*Devic
 		return nil, fmt.Errorf("failed to get device '%s': %w", targetId, err)
 	}
 
-	var device DeviceDatabaseRow
+	var device WorkloadTargetDatabaseRow
 	jData, _ := json.Marshal(entry.Body)
 	err = json.Unmarshal(jData, &device)
 	if err != nil {
@@ -660,7 +660,7 @@ func (db *MargoDatabase) DebugListAllDevices(ctx context.Context) {
 
 	db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Found %d device entries in database", len(entries))
 	for i, entry := range entries {
-		var device DeviceDatabaseRow
+		var device WorkloadTargetDatabaseRow
 		jData, _ := json.Marshal(entry.Body)
 		if err := json.Unmarshal(jData, &device); err == nil {
 			db.MgrContext.Logger.InfofCtx(ctx, "DEBUG: Device %d - ID: %s, Status: %s, Created: %s",
@@ -671,8 +671,8 @@ func (db *MargoDatabase) DebugListAllDevices(ctx context.Context) {
 	}
 }
 
-func (db *MargoDatabase) ListDevices(ctx context.Context) ([]DeviceDatabaseRow, error) {
-	var devices []DeviceDatabaseRow
+func (db *MargoDatabase) ListDevices(ctx context.Context) ([]WorkloadTargetDatabaseRow, error) {
+	var devices []WorkloadTargetDatabaseRow
 	entries, _, err := db.StateProvider.List(ctx, states.ListRequest{
 		Metadata: db.deviceMetadata,
 	})
@@ -682,7 +682,7 @@ func (db *MargoDatabase) ListDevices(ctx context.Context) ([]DeviceDatabaseRow, 
 	}
 
 	for _, entry := range entries {
-		var device DeviceDatabaseRow
+		var device WorkloadTargetDatabaseRow
 		jData, _ := json.Marshal(entry.Body)
 		err = json.Unmarshal(jData, &device)
 		if err == nil {
@@ -712,9 +712,9 @@ func (db *MargoDatabase) DeviceExists(ctx context.Context, deviceId string) (boo
 	return true, nil
 }
 
-func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, targetId string, capabilities *margoStdAPI.DeviceCapabilitiesManifest) error {
-	// Get existing device
-	device, err := db.GetDevice(ctx, targetId)
+func (db *MargoDatabase) UpdateWorkloadTargetProfile(ctx context.Context, targetId string, profile *margoStdAPI.Profile) error {
+	// Get existing workloadTarget
+	workloadTarget, err := db.GetWorkloadTarget(ctx, targetId)
 	if err != nil {
 		// sending not found error separately to track it.
 		if verr, ok := err.(v1alpha2.COAError); ok {
@@ -723,45 +723,45 @@ func (db *MargoDatabase) UpdateDeviceCapabilities(ctx context.Context, targetId 
 				return err
 			}
 		}
-		db.MgrContext.Logger.WarnfCtx(ctx, "UpdateDeviceCapabilities: Failed to get device '%s': %v", targetId, err)
-		return fmt.Errorf("failed to get device '%s' for capabilities update: %w", targetId, err)
+		db.MgrContext.Logger.WarnfCtx(ctx, "UpdateWorkloadTargetProfile: Failed to get workload target '%s': %v", targetId, err)
+		return fmt.Errorf("failed to get workload target '%s' for profile update: %w", targetId, err)
 	}
 
-	// Update the capabilities
-	device.Capabilities = capabilities
-	device.UpdatedAt = time.Now().UTC()
+	// Update workload target profile
+	workloadTarget.Profile = profile
+	workloadTarget.UpdatedAt = time.Now().UTC()
 
 	// Save updated device
-	err = db.UpsertDevice(ctx, *device)
+	err = db.UpsertWorkloadTarget(ctx, *workloadTarget)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceCapabilities: Failed to update device capabilities for '%s': %v", targetId, err)
-		return fmt.Errorf("failed to update device capabilities for '%s': %w", targetId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateWorkloadTargetProfile: Failed to update workload target profile for '%s': %v", targetId, err)
+		return fmt.Errorf("failed to update workload target profile for '%s': %w", targetId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceCapabilities: device '%s' capabilities updated successfully", targetId)
+	db.MgrContext.Logger.InfofCtx(ctx, "UpdateWorkloadTargetProfile: workloadTarget '%s' profile updated successfully", targetId)
 	return nil
 }
 
-func (db *MargoDatabase) UpdateDeviceLastSync(ctx context.Context, deviceId string, syncTime time.Time) error {
+func (db *MargoDatabase) UpdateDeviceLastSync(ctx context.Context, workloadTargetId string, syncTime time.Time) error {
 	// Get existing device
-	device, err := db.GetDevice(ctx, deviceId)
+	workloadTarget, err := db.GetWorkloadTarget(ctx, workloadTargetId)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceLastSync: Failed to get device '%s': %v", deviceId, err)
-		return fmt.Errorf("failed to get device '%s' for sync time update: %w", deviceId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceLastSync: Failed to get workload target '%s': %v", workloadTargetId, err)
+		return fmt.Errorf("failed to get workload target '%s' for sync time update: %w", workloadTargetId, err)
 	}
 
 	// Update the last sync time
-	device.LastStateSync = syncTime
-	device.UpdatedAt = time.Now().UTC()
+	workloadTarget.LastStateSync = syncTime
+	workloadTarget.UpdatedAt = time.Now().UTC()
 
 	// Save updated device
-	err = db.UpsertDevice(ctx, *device)
+	err = db.UpsertWorkloadTarget(ctx, *workloadTarget)
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceLastSync: Failed to update device last sync time for '%s': %v", deviceId, err)
-		return fmt.Errorf("failed to update device last sync time for '%s': %w", deviceId, err)
+		db.MgrContext.Logger.ErrorfCtx(ctx, "UpdateDeviceLastSync: Failed to update workload target last sync time for '%s': %v", workloadTargetId, err)
+		return fmt.Errorf("failed to update workload target last sync time for '%s': %w", workloadTargetId, err)
 	}
 
-	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceLastSync: device '%s' last sync time updated to '%s' successfully", deviceId, syncTime.Format(time.RFC3339))
+	db.MgrContext.Logger.InfofCtx(ctx, "UpdateDeviceLastSync: workloadTarget '%s' last sync time updated to '%s' successfully", workloadTargetId, syncTime.Format(time.RFC3339))
 	return nil
 }
 
