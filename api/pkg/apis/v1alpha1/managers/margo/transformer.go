@@ -484,72 +484,20 @@ func (t *MargoTransformer) convertConfigurationSchema(
 
 // ConvertDeploymentProfile converts the deployment profile cleanly
 func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) (sbi.AppDeploymentProfile, error) {
-	characteristics, err := t.convertProfileCharacteristics(profile.Characteristics)
+	var output sbi.AppDeploymentProfile
+
+	rawJson, err := json.Marshal(profile)
 	if err != nil {
-		transformerLogger.Error("Failed to convert profile characteristics", "error", err)
-		return sbi.AppDeploymentProfile{}, fmt.Errorf("failed to convert profile characteristics: %w", err)
+		return output, fmt.Errorf("ConvertDeploymentProfile: failed to marshal %w", err)
 	}
 
-	return sbi.AppDeploymentProfile{
-		Key:             profile.Key,
-		Components:      t.convertComponents(profile.Components),
-		Characteristics: characteristics,
-	}, nil
-}
-
-func (t *MargoTransformer) convertProfileCharacteristics(characteristics *[]margoNonStdAPI.Characteristics) (*[]sbi.Characteristics, error) {
-	if characteristics == nil {
-		return nil, nil
+	err = json.Unmarshal(rawJson, &output)
+	if err != nil {
+		return output, fmt.Errorf("ConvertDeploymentProfile: failed to unmarshal into output %w", err)
 	}
 
-	result := make([]sbi.Characteristics, len(*characteristics))
-	for i, c := range *characteristics {
-		matchExpressions := make([]sbi.MatchExpression, len(c.MatchExpressions))
-		for i, me := range c.MatchExpressions {
-			operator, err := toSbiMatchExpressionOperator(me.Operator)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert match expression operator: %w", err)
-			}
+	return output, nil
 
-			matchExpressions[i] = sbi.MatchExpression{
-				Key:      me.Key,
-				Operator: operator,
-				Values:   me.Values,
-			}
-		}
-
-		result[i] = sbi.Characteristics{
-			MatchExpressions: matchExpressions,
-		}
-	}
-	return &result, nil
-}
-
-func toSbiMatchExpressionOperator(operator margoNonStdAPI.CharacteristicMatchExpressionOperator) (sbi.MatchExpressionOperator, error) {
-	switch operator {
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorDoesNotExist:
-		return sbi.MatchExpressionOperatorDoesNotExist, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorExists:
-		return sbi.MatchExpressionOperatorExists, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorGt:
-		return sbi.MatchExpressionOperatorGt, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorGtEq:
-		return sbi.MatchExpressionOperatorGtEq, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorLt:
-		return sbi.MatchExpressionOperatorLt, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorLtEq:
-		return sbi.MatchExpressionOperatorLtEq, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorNotIn:
-		return sbi.MatchExpressionOperatorNotIn, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorContainsAll:
-		return sbi.MatchExpressionOperatorContainsAll, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorContainsAny:
-		return sbi.MatchExpressionOperatorContainsAny, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorIn:
-		return sbi.MatchExpressionOperatorIn, nil
-	default:
-		return sbi.MatchExpressionOperatorIn, fmt.Errorf("unknown match expression operator: %s", operator)
-	}
 }
 
 // convertComponents converts deployment profile components

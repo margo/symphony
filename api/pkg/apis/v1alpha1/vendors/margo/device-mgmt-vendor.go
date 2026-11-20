@@ -11,8 +11,9 @@ import (
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	"github.com/kr/pretty"
 	"github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
+	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
 
-	// "github.com/margo/sandbox/shared-lib/constraints"
+	"github.com/margo/sandbox/shared-lib/matcher"
 	"github.com/margo/sandbox/shared-lib/pointers"
 
 	//"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
@@ -99,29 +100,45 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to get application package for checking eligible devices", v1alpha2.InternalError)
 	}
 
-	// dc := constraints.New()
+	matcher := matcher.New()
 	for i, d := range devices.Items {
-		// Capabilities are stored in the DB (SBI layer), not in NBI DeviceSpec
-		devCapPtr, err := self.DeviceManager.GetWorkloadTargetProfile(pCtx, *d.Id)
-		if err != nil || devCapPtr == nil {
-			deviceMgmtVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to get capabilities for device %s, marking unknown: %v", *d.Id, err)
-			devices.Items[i].Eligible = pointers.Ptr(nbi.Unknown)
-			continue
+		workloadTargetProfile, err := ConvertAtoB[nbi.DeviceProfile, sbi.Profile](d.Spec.Profile)
+		if err != nil {
+			deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to convert nbi workload profile to sbi profile, err: %s, raw nbi workload profile: %s", err.Error(), pretty.Sprint(d.Spec.Profile))
+			return createErrorResponse2(deviceMgmtVendorLogger, span, err, "failed to convert workload target profile for checking eligible workloads targets", v1alpha2.InternalError)
 		}
-		devCap := *devCapPtr
 
-		deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): device capabilities: %s", pretty.Sprint(devCap))
+		deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): workload target profile: %s", pretty.Sprint(workloadTargetProfile))
 
 		eligible := true
 		unknown := true
 
-		if len(appPkgRow.AppDescription.DeploymentProfiles) > 0 {
-			// DeviceConstraints removed from AppDeploymentProfile in new NBI spec.
-			// Eligibility based on characteristics matching is not yet implemented.
-			// Mark as unknown until characteristics-based eligibility is supported.
-			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): DeviceConstraints removed from NBI spec, skipping constraint check")
-			// _ = dc
-			_ = eligible
+		for _, dp := range appPkgRow.AppDescription.DeploymentProfiles {
+			if dp.PlacementConstraints == nil {
+				// Deployment profile does not have any characteristics, so we cannot determine eligibility based on characteristics matching.
+				// no need to check anything
+				deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): app deployment profile is nil, no need to check")
+				continue
+			}
+			unknown = false
+
+			sbiPlacementConstraints, err := convertToSbiPlacementConstraints(*dp.PlacementConstraints)
+			if err != nil {
+				deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to convert workload placement constraints, err: %s, rawWorkloadPlacementConstraints: %s", err.Error(), pretty.Sprint(*dp.PlacementConstraints))
+				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to convert workload placement constraints for checking eligible devices", v1alpha2.InternalError)
+			}
+			deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): printing converted device constraints here, : %s", pretty.Sprint(sbiPlacementConstraints))
+
+			ok, reason, err := matcher.IsTargetEligible(workloadTargetProfile, sbiPlacementConstraints)
+			if err != nil {
+				deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to check workload target eligibility, err: %s", err.Error())
+				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "failed to check for eligible workload targets", v1alpha2.InternalError)
+			}
+			if !ok {
+				eligible = false
+				deviceMgmtVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceMgmtVendor): device is not eligible, checking for next, deviceId : %s, reason: %s", *d.Id, reason)
+				break
+			}
 		}
 
 		if unknown {
@@ -138,4 +155,17 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 	}
 
 	return createSuccessResponse(span, v1alpha2.OK, &devices)
+}
+
+func convertToSbiPlacementConstraints(nbiCharacteristics []nbi.PlacementConstraints) ([]sbi.PlacementConstraints, error) {
+	sbiCharacteristics := make([]sbi.PlacementConstraints, len(nbiCharacteristics))
+	for i, nbiChar := range nbiCharacteristics {
+		sbiChar, err := ConvertAtoB[nbi.PlacementConstraints, sbi.PlacementConstraints](nbiChar)
+		if err != nil {
+			return nil, err
+		}
+		sbiCharacteristics[i] = *sbiChar
+	}
+
+	return sbiCharacteristics, nil
 }

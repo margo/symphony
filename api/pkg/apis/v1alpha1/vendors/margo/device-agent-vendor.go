@@ -180,7 +180,7 @@ func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COAR
 
 	if len(profile.Characteristics) == 0 {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
-			fmt.Sprintf("profile characteristics are required"),
+			"profile characteristics are required",
 			"/api/v1/profile/{workloadTargetId}",
 		))
 	}

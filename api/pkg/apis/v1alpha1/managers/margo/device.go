@@ -359,11 +359,12 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			},
 			Id:             &row.TargetId,
 			SpiffeIdentity: &row.TargetSpiffeId,
-			// Spec: margoNonStdAPI.DeviceSpec{
-			// 	Profile: margoNonStdAPI.DeviceProfile{
-			// 		Characteristics: []margoNonStdAPI.DeviceCharacteristic{},
-			// 	},
-			// },
+			Spec: margoNonStdAPI.DeviceSpec{
+				// convert SBI profile to nbi profile
+				Profile: margoNonStdAPI.DeviceProfile{
+					Characteristics: convertMargoSbiCharacteristicsToNbiCharacteristics(row.Profile.Characteristics),
+				},
+			},
 			// setting unknown eligibility here, as it is not checked while fetching. after fetching, it should be checked for eligibility
 			Eligible: p.Ptr(margoNonStdAPI.Unknown),
 			State: margoNonStdAPI.DeviceState{
@@ -373,6 +374,21 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 	}
 	deviceLogger.DebugfCtx(ctx, "Devices: ", len(devices.Items))
 	return devices, nil
+}
+
+func convertMargoSbiCharacteristicsToNbiCharacteristics(sbiCharacteristics []margoStdAPI.Characteristic) []margoNonStdAPI.DeviceCharacteristic {
+	if sbiCharacteristics == nil {
+		return nil
+	}
+
+	nbiCharacteristics := make([]margoNonStdAPI.DeviceCharacteristic, len(sbiCharacteristics))
+	for i, sbiChar := range sbiCharacteristics {
+		nbiCharacteristics[i] = margoNonStdAPI.DeviceCharacteristic{
+			Key:        sbiChar.Key,
+			Properties: sbiChar.Properties,
+		}
+	}
+	return nbiCharacteristics
 }
 
 // ShouldReplaceBundle determines whether a device client should receive a new deployment bundle
@@ -634,7 +650,7 @@ func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, workloadTarg
 
 	if workloadTarget == nil {
 		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: workloadTarget %s not found", workloadTarget)
-		return nil, fmt.Errorf("workloadTarget %s not found", workloadTarget)
+		return nil, fmt.Errorf("workloadTarget %s not found", workloadTarget.TargetId)
 	}
 
 	return workloadTarget, nil
