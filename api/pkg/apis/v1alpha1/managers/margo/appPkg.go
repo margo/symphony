@@ -24,7 +24,7 @@ import (
 	margoUtils "github.com/margo/sandbox/non-standard/pkg/utils"
 )
 
-var appPkgLogger = logger.NewLogger("coa.runtime")
+var appPkgLogger = newKVLogger("coa.runtime")
 
 type ApplicationPackage struct {
 	Package     margoNonStdAPI.ApplicationPackageManifestResp
