@@ -256,7 +256,7 @@ func (self *WorkloadMgmtVendor) createDeployment(request v1alpha2.COARequest) v1
 	// Onboard app package
 	appPkg, err := self.DeploymentManager.CreateDeployment(pCtx, deploymentReq, *existingAppPkg)
 	if err != nil {
-		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to create the app deployment", v1alpha2.InternalError)
+		return createErrorResponse(workloadMgmtVendorLogger, span, err, "Failed to create the app deployment", v1alpha2.GetErrorState(err))
 	}
 
 	// Create success response
