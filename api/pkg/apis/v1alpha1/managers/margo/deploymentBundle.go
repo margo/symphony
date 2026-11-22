@@ -152,6 +152,12 @@ func (s *DeploymentBundleManager) deleteObjectFromCache(topic string, event v1al
 }
 
 func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context, deviceClientId string) error {
+	// Keep version allocation, snapshot construction and publication together.
+	// Initialization through the SBI uses the same lock.
+	lock := &bundleLocks[bundleLockIndex(deviceClientId)].generation
+	lock.Lock()
+	defer lock.Unlock()
+
 	deploymentBundleLogger.InfofCtx(ctx, "rebuildTheBundleForDevice: Starting bundle rebuild for device %s", deviceClientId)
 
 	// Use uint64 for all version calculations
@@ -160,6 +166,9 @@ func (s *DeploymentBundleManager) rebuildTheBundleForDevice(ctx context.Context,
 
 	// Check for existing bundle to increment version
 	existingBundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
+	if err != nil && !bundleNotFound(err) {
+		return fmt.Errorf("failed to read bundle before rebuild: %w", err)
+	}
 	if err == nil && existingBundle != nil {
 		// CAST: float32 to uint64 for increment operation
 		manifestVersionInt = uint64(existingBundle.Manifest.ManifestVersion) + 1

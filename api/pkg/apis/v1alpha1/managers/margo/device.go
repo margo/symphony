@@ -405,6 +405,10 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 //   - ETags differ or
 //     no client ETag     → returns (true,  archivePath, manifest, etag, nil)  [200-equivalent]
 func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, string, error) {
+	lock := &bundleLocks[bundleLockIndex(deviceClientId)].generation
+	lock.Lock()
+	defer lock.Unlock()
+
 	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Processing request for device %s", deviceClientId)
 
 	// Log client's ETag if provided
@@ -418,6 +422,9 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	bundleArchivePath, bundleManifest, err := s.GetBundle(ctx, deviceClientId, nil)
 	// Log the return values from GetBundle
 	if err != nil {
+		if !bundleNotFound(err) {
+			return false, "", nil, "", fmt.Errorf("failed to read deployment bundle: %w", err)
+		}
 		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: GetBundle returned error: %v", err)
 		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No bundle found for device %s, creating initial empty bundle", deviceClientId)
 

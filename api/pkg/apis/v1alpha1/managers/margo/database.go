@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -783,118 +784,88 @@ func (db *MargoDatabase) UpsertDeploymentBundle(ctx context.Context, bundleRow D
 		return fmt.Errorf("invalid manifest version: %v", bundleRow.Manifest.ManifestVersion)
 	}
 
-	// Force delete with verification
-	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Force deleting old bundle for device %s", deviceClientId)
-
-	// Try to delete up to 3 times
-	deleteSuccess := false
-	for attempt := 1; attempt <= 3; attempt++ {
-		deleteErr := db.StateProvider.Delete(ctx, states.DeleteRequest{
-			Metadata: db.bundleMetadata,
-			ID:       deviceClientId,
-		})
-
-		if deleteErr != nil {
-			if strings.Contains(deleteErr.Error(), "not found") || strings.Contains(deleteErr.Error(), "Not Found") {
-				db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: No old bundle to delete (attempt %d)", attempt)
-				deleteSuccess = true
-				break
-			} else {
-				db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: Delete attempt %d failed: %v", attempt, deleteErr)
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-		} else {
-			db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Deleted old bundle successfully (attempt %d)", attempt)
-			deleteSuccess = true
-			break
+	err := func() error {
+		// Replace in one provider operation: readers must see the old or new row,
+		// never a transient NotFound that would trigger version-one initialization.
+		lock := &bundleLocks[bundleLockIndex(deviceClientId)].write
+		lock.Lock()
+		defer lock.Unlock()
+		existing, readErr := db.GetDeploymentBundle(ctx, deviceClientId)
+		if readErr != nil && !bundleNotFound(readErr) {
+			return fmt.Errorf("failed to read existing deployment bundle: %w", readErr)
 		}
-	}
+		if readErr == nil {
+			oldVersion := uint64(existing.Manifest.ManifestVersion)
+			if manifestVersionInt < oldVersion {
+				return fmt.Errorf("refusing bundle version regression: %d < %d", manifestVersionInt, oldVersion)
+			}
+			if manifestVersionInt == oldVersion {
+				if reflect.DeepEqual(existing.Manifest, bundleRow.Manifest) && existing.ArchivePath == bundleRow.ArchivePath {
+					return nil // Idempotent cache/event delivery, not a new revision.
+				}
+				return fmt.Errorf("bundle version %d already identifies different content", oldVersion)
+			}
+		}
 
-	if !deleteSuccess {
-		db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: Failed to delete old bundle after 3 attempts, continuing anyway")
-	}
-
-	//  Wait longer for MemoryStateProvider to complete delete
-	time.Sleep(500 * time.Millisecond)
-
-	// : Check that old entry is actually gone
-	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying old bundle is deleted for device %s", deviceClientId)
-	_, verifyErr := db.StateProvider.Get(ctx, states.GetRequest{
-		Metadata: db.bundleMetadata,
-		ID:       deviceClientId,
-	})
-
-	if verifyErr == nil { // Entry still exists if no error
-		db.MgrContext.Logger.WarnfCtx(ctx, "UpsertDeploymentBundle: WARNING - Old bundle still exists after delete! Forcing another delete...")
-
-		// Force delete again
-		db.StateProvider.Delete(ctx, states.DeleteRequest{
+		_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
+			Options:  states.UpsertOption{},
 			Metadata: db.bundleMetadata,
-			ID:       deviceClientId,
+			Value: states.StateEntry{
+				ID:   bundleRow.DeviceClientId,
+				Body: bundleRow,
+			},
 		})
+		if err != nil {
+			db.MgrContext.Logger.ErrorfCtx(ctx,
+				"UpsertDeploymentBundle: Failed to store bundle: %v", err)
+			return fmt.Errorf("failed to upsert deployment bundle '%s': %w", deviceClientId, err)
+		}
 
-		time.Sleep(500 * time.Millisecond)
-	} else {
-		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verified - old bundle is deleted")
-	}
+		//  Verify the bundle was stored correctly
+		db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying bundle storage for device %s", deviceClientId)
 
-	// Now insert the new bundle
-	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Inserting new bundle for device %s", deviceClientId)
+		verifyBundle, verifyErr := db.GetDeploymentBundle(ctx, deviceClientId)
+		if verifyErr != nil {
+			db.MgrContext.Logger.ErrorfCtx(ctx,
+				"UpsertDeploymentBundle: CRITICAL - Bundle not found after storage: %v", verifyErr)
+			return fmt.Errorf("bundle verification failed: %w", verifyErr)
+		}
 
-	_, err := db.StateProvider.Upsert(ctx, states.UpsertRequest{
-		Options:  states.UpsertOption{},
-		Metadata: db.bundleMetadata,
-		Value: states.StateEntry{
-			ID:   bundleRow.DeviceClientId,
-			Body: bundleRow,
-		},
-	})
+		// Verify version
+		verifyVersionInt := uint64(verifyBundle.Manifest.ManifestVersion)
+		if verifyVersionInt != manifestVersionInt {
+			db.MgrContext.Logger.ErrorfCtx(ctx,
+				"UpsertDeploymentBundle: CRITICAL - Version mismatch: expected %d, got %d",
+				manifestVersionInt, verifyVersionInt)
+			return fmt.Errorf("bundle version mismatch after storage")
+		}
+
+		// Verify deployment count
+		if len(verifyBundle.Manifest.Deployments) != len(bundleRow.Manifest.Deployments) {
+			db.MgrContext.Logger.ErrorfCtx(ctx,
+				"UpsertDeploymentBundle: CRITICAL - Deployment count mismatch: expected %d, got %d",
+				len(bundleRow.Manifest.Deployments), len(verifyBundle.Manifest.Deployments))
+			return fmt.Errorf("bundle deployment count mismatch")
+		}
+
+		//  Verify timestamp is recent (not stale)
+		timeSinceUpdate := time.Since(verifyBundle.UpdatedAt)
+		if timeSinceUpdate > 10*time.Second {
+			db.MgrContext.Logger.ErrorfCtx(ctx,
+				"UpsertDeploymentBundle: CRITICAL - Bundle timestamp is STALE: %v old (expected < 10s)",
+				timeSinceUpdate)
+			return fmt.Errorf("bundle timestamp is stale: %v old", timeSinceUpdate)
+		}
+
+		db.MgrContext.Logger.InfofCtx(ctx,
+			"UpsertDeploymentBundle:  VERIFIED - Bundle correct: %d deployments, version %d, age %v",
+			len(verifyBundle.Manifest.Deployments), verifyVersionInt, timeSinceUpdate)
+
+		return nil
+	}()
 	if err != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx,
-			"UpsertDeploymentBundle: Failed to store bundle: %v", err)
-		return fmt.Errorf("failed to upsert deployment bundle '%s': %w", deviceClientId, err)
+		return err
 	}
-
-	//  Verify the bundle was stored correctly
-	db.MgrContext.Logger.InfofCtx(ctx, "UpsertDeploymentBundle: Verifying bundle storage for device %s", deviceClientId)
-
-	verifyBundle, verifyErr := db.GetDeploymentBundle(ctx, deviceClientId)
-	if verifyErr != nil {
-		db.MgrContext.Logger.ErrorfCtx(ctx,
-			"UpsertDeploymentBundle: CRITICAL - Bundle not found after storage: %v", verifyErr)
-		return fmt.Errorf("bundle verification failed: %w", verifyErr)
-	}
-
-	// Verify version
-	verifyVersionInt := uint64(verifyBundle.Manifest.ManifestVersion)
-	if verifyVersionInt != manifestVersionInt {
-		db.MgrContext.Logger.ErrorfCtx(ctx,
-			"UpsertDeploymentBundle: CRITICAL - Version mismatch: expected %d, got %d",
-			manifestVersionInt, verifyVersionInt)
-		return fmt.Errorf("bundle version mismatch after storage")
-	}
-
-	// Verify deployment count
-	if len(verifyBundle.Manifest.Deployments) != len(bundleRow.Manifest.Deployments) {
-		db.MgrContext.Logger.ErrorfCtx(ctx,
-			"UpsertDeploymentBundle: CRITICAL - Deployment count mismatch: expected %d, got %d",
-			len(bundleRow.Manifest.Deployments), len(verifyBundle.Manifest.Deployments))
-		return fmt.Errorf("bundle deployment count mismatch")
-	}
-
-	//  Verify timestamp is recent (not stale)
-	timeSinceUpdate := time.Since(verifyBundle.UpdatedAt)
-	if timeSinceUpdate > 10*time.Second {
-		db.MgrContext.Logger.ErrorfCtx(ctx,
-			"UpsertDeploymentBundle: CRITICAL - Bundle timestamp is STALE: %v old (expected < 10s)",
-			timeSinceUpdate)
-		return fmt.Errorf("bundle timestamp is stale: %v old", timeSinceUpdate)
-	}
-
-	db.MgrContext.Logger.InfofCtx(ctx,
-		"UpsertDeploymentBundle:  VERIFIED - Bundle correct: %d deployments, version %d, age %v",
-		len(verifyBundle.Manifest.Deployments), verifyVersionInt, timeSinceUpdate)
 
 	if publishEvent {
 		db.MgrContext.Publish(string(upsertDeploymentBundleFeed), v1alpha2.Event{
