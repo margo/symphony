@@ -267,6 +267,15 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 
 		h.trustBundleCacher = tbc
 
+		// validate spiffe Id against trustdomain obtained
+		spid, err := parser.ParseSpiffeIdFromX509Svid(cert)
+		if err != nil {
+			return fmt.Errorf("failed to parse spiffeId from certificate provided, err: %w", err)
+		}
+		err = validators.ValidateSpiffeIDWithTrustDomain(spid, tbc.GetTrustDomain(), validators.PrincipalWFMClient)
+		if err != nil {
+			return fmt.Errorf("failed to validate spiffeId with trust domain, err: %w", err)
+		}
 		acc, err := cacher.NewAuthClientCacher(config.MIAF.AuthzPath, httpLogger)
 		if err != nil {
 			return fmt.Errorf("failed to get auth client cacher, err: %w", err)
