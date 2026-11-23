@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/model"
+	"github.com/eclipse-symphony/symphony/coa/pkg/apis/v1alpha2"
 	"github.com/eclipse-symphony/symphony/coa/pkg/logger"
 	margoNonStdAPI "github.com/margo/sandbox/non-standard/generatedCode/wfm/nbi"
 	"github.com/margo/sandbox/standard/generatedCode/wfm/sbi"
@@ -33,11 +34,6 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	dbRow AppPackageDatabaseRow,
 	resources map[string][]byte,
 ) (*model.CatalogState, *model.SolutionState, *model.SolutionContainerState, error) {
-	transformerLogger.Info("Starting Symphony transformation",
-		"appId", dbRow.AppDescription.Id,
-		"appName", dbRow.AppDescription.Metadata.Name,
-		"packageId", *dbRow.PackageRequest.Id)
-
 	// Validate required data
 	if dbRow.AppDescription == nil {
 		return nil, nil, nil, fmt.Errorf("app description is required for transformation")
@@ -45,6 +41,13 @@ func (t *MargoTransformer) AppPackageToSymphonyObjects(
 	if dbRow.PackageRequest.Id == nil {
 		return nil, nil, nil, fmt.Errorf("package ID is required for transformation")
 	}
+	if dbRow.AppDescription.Id == nil || *dbRow.AppDescription.Id == "" {
+		return nil, nil, nil, fmt.Errorf("application ID is required for transformation")
+	}
+	transformerLogger.Info("Starting Symphony transformation",
+		"appId", dbRow.AppDescription.Id,
+		"appName", dbRow.AppDescription.Metadata.Name,
+		"packageId", *dbRow.PackageRequest.Id)
 
 	appDesc := *dbRow.AppDescription
 
@@ -164,8 +167,11 @@ func (t *MargoTransformer) convertToSolution(
 		Spec: &model.SolutionSpec{
 			Version:      appDesc.Metadata.Version,
 			RootResource: *appDesc.Id,
-			DisplayName:  appDesc.Metadata.Name,
-			Components:   components,
+			// Symphony requires a globally unique solution display name. Margo's
+			// human-readable app name need not be unique across apps or versions;
+			// retain it in the catalog metadata and use the versioned identity here.
+			DisplayName: solutionId,
+			Components:  components,
 			Metadata: map[string]string{
 				"description":   *appDesc.Metadata.Description,
 				"applicationId": *appDesc.Id,
@@ -552,9 +558,12 @@ func (t *MargoTransformer) selectBoolPtr(preferred, fallback *bool) *bool {
 
 // MergeWithAppPackage handles profile merging with cleaner logic
 func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDeploymentManifestResp, appPkg ApplicationPackage) error {
+	if req == nil || appPkg.Description == nil {
+		return v1alpha2.NewCOAError(nil, "deployment and application description are required", v1alpha2.BadRequest)
+	}
 	targetProfile := t.findMatchingProfileInApp(req.Spec.DeploymentProfile.Type, appPkg.Description.DeploymentProfiles)
 	if targetProfile == nil {
-		return nil // No matching profile found, continue without merging
+		return v1alpha2.NewCOAError(nil, "requested deployment profile is not supplied by the application package", v1alpha2.BadRequest)
 	}
 
 	// as device constraints are not a required field

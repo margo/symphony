@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/eclipse-symphony/symphony/api/pkg/apis/v1alpha1/validation"
@@ -155,7 +156,18 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Starting deployment process for '%s'", req.Metadata.Name)
 
 	if req.Metadata.Name == "" {
-		return nil, fmt.Errorf("deployment name is required")
+		return nil, v1alpha2.NewCOAError(nil, "deployment name is required", v1alpha2.BadRequest)
+	}
+
+	// Onboarding is asynchronous. Failed/incomplete packages can have no
+	// description; reject them before profile merging or any deployment writes.
+	if appPkg.Package.Status == nil || appPkg.Package.Status.State == nil ||
+		*appPkg.Package.Status.State != margoNonStdAPI.ApplicationPackageStatusStateONBOARDED {
+		return nil, v1alpha2.NewCOAError(nil, "referenced application package is not onboarded", v1alpha2.Conflict)
+	}
+	if appPkg.Description == nil || appPkg.Description.Id == nil ||
+		strings.TrimSpace(*appPkg.Description.Id) == "" || strings.TrimSpace(appPkg.Description.Metadata.Version) == "" {
+		return nil, v1alpha2.NewCOAError(nil, "referenced application package has an incomplete description", v1alpha2.Conflict)
 	}
 
 	// Create deployment response with clean builder
@@ -163,7 +175,7 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 
 	// Process deployment profiles
 	if err := s.tranformer.MergeWithAppPackage(deployment, appPkg); err != nil {
-		return nil, fmt.Errorf("failed to process deployment profiles: %w", err)
+		return nil, err
 	}
 
 	// Store in database (single call)

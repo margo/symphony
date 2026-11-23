@@ -1,0 +1,61 @@
+name: Margo package regression
+
+on:
+  push:
+    paths:
+      - 'api/pkg/apis/v1alpha1/managers/margo/**'
+      - 'api/pkg/apis/v1alpha1/vendors/margo/**'
+      - 'api/pkg/apis/v1alpha1/managers/solutions/**'
+      - 'api/pkg/apis/v1alpha1/validation/**'
+      - 'api/go.*'
+      - 'coa/**'
+      - '.github/workflows/margo-package-regression.yml'
+  pull_request:
+    paths:
+      - 'api/pkg/apis/v1alpha1/managers/margo/**'
+      - 'api/pkg/apis/v1alpha1/vendors/margo/**'
+      - 'api/pkg/apis/v1alpha1/managers/solutions/**'
+      - 'api/pkg/apis/v1alpha1/validation/**'
+      - 'api/go.*'
+      - 'coa/**'
+      - '.github/workflows/margo-package-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Same commit as api/go.mod; an exact checkout avoids pseudo-version
+      # resolution differences without changing the committed module files.
+      - uses: actions/checkout@v4
+        with:
+          repository: margo/sandbox
+          ref: 64d7a7433e304f1694b2f72d9bf3af288de5e368
+          path: .ci/sandbox
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.10'
+          cache-dependency-path: |
+            api/go.sum
+            coa/go.sum
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l api/pkg/apis/v1alpha1/managers/margo/package_*test.go api/pkg/apis/v1alpha1/vendors/margo/package_readiness_test.go api/pkg/apis/v1alpha1/managers/margo/transformer.go api/pkg/apis/v1alpha1/managers/margo/deployment.go api/pkg/apis/v1alpha1/vendors/margo/workload-mgmt-vendor.go)"
+          test -z "$files" || { printf '%s\n' "$files"; exit 1; }
+      - name: Prepare pinned test dependency
+        working-directory: api
+        run: |
+          cp go.mod go.ci.mod
+          cp go.sum go.ci.sum
+          go mod edit -modfile=go.ci.mod -replace=github.com/margo/sandbox="$GITHUB_WORKSPACE/.ci/sandbox"
+      - name: Regression and race tests
+        working-directory: api
+        run: go test -modfile=go.ci.mod -race -count=1 ./pkg/apis/v1alpha1/managers/margo ./pkg/apis/v1alpha1/vendors/margo ./pkg/apis/v1alpha1/managers/solutions ./pkg/apis/v1alpha1/validation
+      - name: Vet
+        working-directory: api
+        run: go vet -modfile=go.ci.mod ./pkg/apis/v1alpha1/managers/margo ./pkg/apis/v1alpha1/vendors/margo ./pkg/apis/v1alpha1/managers/solutions ./pkg/apis/v1alpha1/validation
