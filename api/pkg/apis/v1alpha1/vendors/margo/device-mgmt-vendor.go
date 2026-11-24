@@ -82,7 +82,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 	deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): listDevices, method: %s", request.Method)
 
 	appPkgId := request.Parameters["appPackageId"]
-	devices, err := self.DeviceManager.ListDevices(pCtx)
+	devices, err := self.DeviceManager.ListWorkloadTargets(pCtx)
 	if err != nil {
 		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to list devices", v1alpha2.InternalError)
 	}

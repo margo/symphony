@@ -559,55 +559,55 @@ func printServerInfo() {
 }
 
 func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
-    t := table.NewWriter()
-    t.SetOutputMirror(os.Stdout)
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
 
-    tr := table.Row{
-        "ID", "Client SpiffeId", "Characteristics","Deployment Type",  "State", "CreatedAt",
-    }
-    if eligibilityMarker {
-        tr = append(tr, "Eligible")
-    }
-    t.AppendHeader(tr)
+	tr := table.Row{
+		"ID", "Client SpiffeId", "Characteristics", "Deployment Type", "State", "CreatedAt",
+	}
+	if eligibilityMarker {
+		tr = append(tr, "Eligible")
+	}
+	t.AppendHeader(tr)
 
-    for _, device := range resp.Items {
-        if device.Id == nil || *device.Id == "" {
-            continue
-        }
+	for _, device := range resp.Items {
+		if device.Id == nil || *device.Id == "" {
+			continue
+		}
 
-        deploymentType := extractDeploymentTypesFromProfile(device.Spec.Profile)
-        charCount := len(device.Spec.Profile.Characteristics)
+		deploymentType := extractDeploymentTypesFromProfile(device.Spec.Profile)
+		char := device.Spec.Profile.Characteristics
 
-        row := table.Row{
-            *device.Id,
-            extractLastPartOfTargetSpiffeId(*device.SpiffeIdentity),
-            fmt.Sprintf("%d", charCount),
-            deploymentType,
-            string(device.State.Onboard),
-            formatTime(*device.Metadata.CreationTimestamp),
-        }
-        if eligibilityMarker && device.Eligible != nil {
-            row = append(row, *device.Eligible)
-        }
-        t.AppendRow(row)
-    }
+		row := table.Row{
+			*device.Id,
+			extractLastPartOfTargetSpiffeId(*device.SpiffeIdentity),
+			char,
+			deploymentType,
+			string(device.State.Onboard),
+			formatTime(*device.Metadata.CreationTimestamp),
+		}
+		if eligibilityMarker && device.Eligible != nil {
+			row = append(row, *device.Eligible)
+		}
+		t.AppendRow(row)
+	}
 
-    t.AppendFooter(table.Row{
-        "", "", "", "",
-        fmt.Sprintf("Page %d/%d", 1, 1),
-        fmt.Sprintf("Total: %d", len(resp.Items)),
-    })
+	t.AppendFooter(table.Row{
+		"", "", "", "",
+		fmt.Sprintf("Page %d/%d", 1, 1),
+		fmt.Sprintf("Total: %d", len(resp.Items)),
+	})
 
-    t.SetColumnConfigs([]table.ColumnConfig{
-        {Number: 1, WidthMax: 70}, // ID
-        {Number: 2, WidthMax: 70}, // Client SpiffeId        
-        {Number: 3, WidthMax: 28}, // Characteristics
+	t.SetColumnConfigs([]table.ColumnConfig{
+		{Number: 1, WidthMax: 70}, // ID
+		{Number: 2, WidthMax: 70}, // Client SpiffeId
+		{Number: 3, WidthMax: 28}, // Characteristics
 		{Number: 4, WidthMax: 28}, // Deployment Type
-        {Number: 5, WidthMax: 12}, // State
-        {Number: 6, WidthMax: 16}, // CreatedAt
-    })
+		{Number: 5, WidthMax: 12}, // State
+		{Number: 6, WidthMax: 16}, // CreatedAt
+	})
 
-    t.Render()
+	t.Render()
 }
 
 // extractDeploymentTypesFromProfile extracts deployment types from DeviceProfile characteristics.
@@ -615,36 +615,35 @@ func displayDevicesTable(resp nbi.DeviceListResp, eligibilityMarker bool) {
 //   - "margo.org/deployment/helm"    → "helm"
 //   - "margo.org/deployment/compose" → "compose"
 func extractDeploymentTypesFromProfile(profile nbi.DeviceProfile) string {
-    const (
-        deploymentKeyHelm    = "margo.org/deployment/helm"
-        deploymentKeyCompose = "margo.org/deployment/compose"
-    )
+	const (
+		deploymentKeyHelm    = "margo.org/deployment/helm"
+		deploymentKeyCompose = "margo.org/deployment/compose"
+	)
 
-    var types []string
-    seen := make(map[string]struct{})
+	var types []string
+	seen := make(map[string]struct{})
 
-    for _, char := range profile.Characteristics {
-        var label string
-        switch char.Key {
-        case deploymentKeyHelm:
-            label = "helm"
-        case deploymentKeyCompose:
-            label = "compose"
-        default:
-            continue
-        }
-        if _, exists := seen[label]; !exists {
-            seen[label] = struct{}{}
-            types = append(types, label)
-        }
-    }
+	for _, char := range profile.Characteristics {
+		var label string
+		switch char.Key {
+		case deploymentKeyHelm:
+			label = deploymentKeyHelm
+		case deploymentKeyCompose:
+			label = deploymentKeyCompose
+		default:
+			continue
+		}
+		if _, exists := seen[label]; !exists {
+			seen[label] = struct{}{}
+			types = append(types, label)
+		}
+	}
 
-    if len(types) == 0 {
-        return "unknown"
-    }
-    return strings.Join(types, ", ")
+	if len(types) == 0 {
+		return "unknown"
+	}
+	return strings.Join(types, ", ")
 }
-
 
 func displayAppPackagesTable(resp nbi.ApplicationPackageListResp) {
 	t := table.NewWriter()

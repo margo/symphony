@@ -10,13 +10,14 @@ spec:
   deviceRef:
     id: {{DEVICE_ID}}
   deploymentProfile:
-    type: helm
+    key: margo.org/deployment/helm
     components:
       - name: nginx
         properties:  
           repository: {{REPOSITORY}}
           revision: "2.2.2"
           wait: true
+          timeout: 5m0s
   parameters:
     serviceType:
       value: "NodePort"

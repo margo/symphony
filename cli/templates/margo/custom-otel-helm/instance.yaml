@@ -8,14 +8,14 @@ spec:
   deviceRef:
     id: {{DEVICE_ID}}
   deploymentProfile:
-    type: helm
+    key: margo.org/deployment/helm
     components:
       - name: otel-demo
         properties:  
           repository: {{REPOSITORY}}
           revision: 0.1.0
           wait: true
-          timeout: 5m
+          timeout: 5m0s
   parameters:
     otlpEndpoint:
       value: "http://otel-collector-opentelemetry-collector.observability:4318"

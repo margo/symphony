@@ -122,7 +122,7 @@ func (self *DeviceAgentVendor) GetEndpoints() []v1alpha2.Endpoint {
 
 // Handler for PUT /profile/{workloadTargetId}
 func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COARequest) v1alpha2.COAResponse {
-	pCtx, span := observability.StartSpan("Margo workload target Vendor",
+	pCtx, span := observability.StartSpan("margo workload target vendor",
 		request.Context,
 		&map[string]string{
 			"method": "updateWorkloadTargetProfile",
@@ -134,15 +134,15 @@ func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COAR
 	workloadTargetVendorLogger.InfofCtx(pCtx, "V (MargoWorkloadTargetVendor): updateWorkloadTargetProfile, method: %s", request.Method)
 
 	// Extract targetId from URL parameters
-	targetIdRaw := request.Parameters["__workloadTargetId"]
-	if targetIdRaw == "" {
+	workloadTargetIdRaw := request.Parameters["__workloadTargetId"]
+	if workloadTargetIdRaw == "" {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			"workloadTargetId path parameter is required",
 			"/api/v1/profile/{workloadTargetId}",
 		))
 	}
 
-	targetId, err := url.PathUnescape(targetIdRaw)
+	workloadTargetId, err := url.PathUnescape(workloadTargetIdRaw)
 	if err != nil {
 		workloadTargetVendorLogger.ErrorfCtx(pCtx,
 			"V (MargoWorkloadTargetVendor): failed updateWorkloadTargetProfile, failed to parse workloadTargetId from path, method: %s, err: %s",
@@ -162,7 +162,7 @@ func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COAR
 		))
 	}
 
-	if !validDeviceIdPattern.MatchString(targetId) {
+	if !validDeviceIdPattern.MatchString(workloadTargetId) {
 		return problemResponse(margoStdSbiAPI.NewInvalidRequest(
 			fmt.Sprintf("workloadTargetId must follow regex %s as defined in spec", validDeviceIdPattern.String()),
 			"/api/v1/profile/{workloadTargetId}",
@@ -188,7 +188,7 @@ func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COAR
 	if err := validateProfileCharacteristics(profile); err != nil {
 		return problemResponse(margoStdSbiAPI.NewSemanticError(
 			"Request body includes a semantic error.",
-			fmt.Sprintf("/api/v1/profile/%s", targetId),
+			fmt.Sprintf("/api/v1/profile/%s", workloadTargetId),
 			margoStdSbiAPI.FieldError{
 				Field:   "characteristics",
 				Message: err.Error(),
@@ -198,11 +198,11 @@ func (self *DeviceAgentVendor) updateWorkloadTargetProfile(request v1alpha2.COAR
 
 	// Call DeviceManager to update workload target profile
 	// Related spiffeId is stored in deviceIdentityMetadata database.
-	err = self.DeviceManager.UpdateWorkloadTargetProfile(pCtx, targetSpiffeId, targetId, profile)
+	err = self.DeviceManager.UpdateWorkloadTargetProfile(pCtx, targetSpiffeId, workloadTargetId, profile)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to update workload target profile: %s", err.Error()),
-			fmt.Sprintf("/api/v1/profile/{workloadTargetId}%s", targetId),
+			fmt.Sprintf("/api/v1/profile/{workloadTargetId} %s", workloadTargetId),
 		))
 	}
 
@@ -323,7 +323,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		))
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getDesiredManifest, parsedHeaders, method: sign(%v)", headers)
+	deviceVendorLogger.InfofCtx(pCtx, "V (MargoDeviceVendor): getDesiredManifest, parsedHeaders, method: sign(%v) ", headers)
 
 	if accept := headers["accept"]; accept != "application/vnd.margo.manifest.v1+json" {
 		return problemResponse(margoStdSbiAPI.NewServerCannotGenerateResponse(
@@ -347,7 +347,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	deviceVendorLogger.DebugfCtx(pCtx, "If-None-Match digest: %s", digest)
 
 	// deviceClientId is the SPIFFE ID of the device making the request.
-	targetDeviceID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
+	workloadTargetID, err := self.retrieveTargetIdFromSpiffeId(pCtx, deviceClientId)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			err.Error(),
@@ -355,7 +355,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		))
 	}
 
-	shouldReplaceBundle, _, manifest, etag, err := self.DeviceManager.ShouldReplaceBundle(pCtx, targetDeviceID, &digest)
+	shouldReplaceBundle, _, manifest, etag, err := self.DeviceManager.ShouldReplaceBundle(pCtx, workloadTargetID, &digest)
 	if err != nil {
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			fmt.Sprintf("failed to get desired states: %s", err.Error()),
@@ -364,7 +364,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 	}
 
 	if manifest == nil {
-		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for device %s", targetDeviceID)
+		deviceVendorLogger.ErrorfCtx(pCtx, "Manifest is nil for workloadTarget %s", workloadTargetID)
 		return problemResponse(margoStdSbiAPI.NewInternalError(
 			"manifest is nil",
 			"/api/v1/deployments",
@@ -380,8 +380,8 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 			"/api/v1/deployments"))
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Returning manifest for device %s - Version: %d, ETag: %s",
-		targetDeviceID, manifestVersionInt, etag)
+	deviceVendorLogger.InfofCtx(pCtx, "Returning manifest for workloadTarget %s - Version: %d, ETag: %s",
+		workloadTargetID, manifestVersionInt, etag)
 
 	// Set headers directly in fasthttp context
 	if fhCtx, ok := request.Context.Value(v1alpha2.COAFastHTTPContextKey).(*fasthttp.RequestCtx); ok {
@@ -397,7 +397,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 
 	// Check if client already has this manifest (digest matches)
 	if !shouldReplaceBundle {
-		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for device %s, returning 304 - ETag: %s", targetDeviceID, etag)
+		deviceVendorLogger.InfofCtx(pCtx, "Bundle not modified for workloadTarget %s, returning 304 - ETag: %s", workloadTargetID, etag)
 
 		// Return NotModified state - COA framework will convert to HTTP 304
 		response := v1alpha2.COAResponse{
@@ -412,7 +412,7 @@ func (self *DeviceAgentVendor) getDesiredManifest(request v1alpha2.COARequest) v
 		return response
 	}
 
-	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for device %s - ETag: %s", targetDeviceID, etag)
+	deviceVendorLogger.InfofCtx(pCtx, "Returning new manifest for workloadTarget %s - ETag: %s", workloadTargetID, etag)
 
 	return v1alpha2.COAResponse{
 		State:       v1alpha2.OK,

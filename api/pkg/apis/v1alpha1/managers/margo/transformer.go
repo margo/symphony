@@ -484,20 +484,16 @@ func (t *MargoTransformer) convertConfigurationSchema(
 
 // ConvertDeploymentProfile converts the deployment profile cleanly
 func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) (sbi.AppDeploymentProfile, error) {
-	var output sbi.AppDeploymentProfile
-
-	rawJson, err := json.Marshal(profile)
+	pc, err := t.convertPlacementConstraints(profile.PlacementConstraints)
 	if err != nil {
-		return output, fmt.Errorf("ConvertDeploymentProfile: failed to marshal %w", err)
+		return sbi.AppDeploymentProfile{}, fmt.Errorf("failed to convert nbi placement constraints to sbi placement constraints: %w", err)
 	}
-
-	err = json.Unmarshal(rawJson, &output)
-	if err != nil {
-		return output, fmt.Errorf("ConvertDeploymentProfile: failed to unmarshal into output %w", err)
+	deploymentProfile := sbi.AppDeploymentProfile{
+		Components:           t.convertComponents(profile.Components),
+		Key:                  profile.Key,
+		PlacementConstraints: pc,
 	}
-
-	return output, nil
-
+	return deploymentProfile, nil
 }
 
 // convertComponents converts deployment profile components
@@ -507,6 +503,29 @@ func (t *MargoTransformer) convertComponents(components []margoNonStdAPI.Deploym
 		result[i] = t.convertComponent(comp)
 	}
 	return result
+}
+
+func (t *MargoTransformer) convertPlacementConstraints(pc *[]margoNonStdAPI.PlacementConstraints) (*[]sbi.PlacementConstraints, error) {
+	// placement constraints are not a required parameter, if not present, omit it.
+	if pc == nil {
+		return nil, nil
+	}
+
+	placementConstraints := make([]sbi.PlacementConstraints, len(*pc))
+
+	for i, constraint := range *pc {
+		rawJson, err := json.Marshal(constraint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal nbi placement constraints: %w", err)
+		}
+		var sbiPlacementConstraint sbi.PlacementConstraints
+		err = json.Unmarshal(rawJson, &sbiPlacementConstraint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal into sbi placement constraints: %w", err)
+		}
+		placementConstraints[i] = sbiPlacementConstraint
+	}
+	return &placementConstraints, nil
 }
 
 // convertComponent converts a single component
@@ -551,6 +570,11 @@ func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDe
 	targetProfile := t.findMatchingProfileInApp(req.Spec.DeploymentProfile.Key, appPkg.Description.DeploymentProfiles)
 	if targetProfile == nil {
 		return nil // No matching profile found, continue without merging
+	}
+
+	// as placement constraints are not a required field
+	if targetProfile.PlacementConstraints != nil {
+		req.Spec.DeploymentProfile.PlacementConstraints = targetProfile.PlacementConstraints
 	}
 
 	appComponents := t.buildComponentMap(*targetProfile)
