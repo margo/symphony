@@ -117,12 +117,10 @@ type HttpBinding struct {
 
 // ValidateMIAFConfig validates the MIAF configuration based on the following rules:
 //  1. MIS must not be nil.
-//  2. mis.endpoint requires a trust anchor (caPath or trustPins), and vice versa.
+//  2. trustBundle.path is always required.
+//  3. mis.endpoint requires a trust anchor (caPath or trustPins), and vice versa.
 //     caPath takes precedence over trustPins when both are present.
-//  3. if trustBundle.uri is present, mis.endpoint & a trust anchor must be present.
-//  4. if neither trustBundle.path nor endpoint+trustAnchor is configured, fail.
-//     (trustBundle.path makes endpoint+trustAnchor+trustBundle.uri optional;
-//     without it, endpoint+trustAnchor are required and trustBundle.uri is optional)
+//  4. if trustBundle.uri is present, mis.endpoint & a trust anchor must be present.
 //  5. trustDomain is required when endpoint+trustAnchor are absent (static trust bundle mode).
 func ValidateMIAFConfig(miaf *MIAF) error {
 	if miaf == nil {
@@ -141,7 +139,15 @@ func ValidateMIAFConfig(miaf *MIAF) error {
 	hasTrustBundlePath := mis.TrustBundle.Path != ""
 	hasTrustBundleURI := mis.TrustBundle.URI != ""
 
-	// Rule 2: endpoint and a trust anchor (caPath or trustPins) must be present together.
+	// Rule 2: trustBundle.path is always required.
+	if !hasTrustBundlePath {
+		return v1alpha2.NewCOAError(nil,
+			"trustBundle.path must always be configured",
+			v1alpha2.BadConfig,
+		)
+	}
+
+	// Rule 3: endpoint and a trust anchor (caPath or trustPins) must be present together.
 	// caPath takes precedence over trustPins when both are present.
 	if hasEndpoint != hasTrustAnchor {
 		return v1alpha2.NewCOAError(nil,
@@ -150,18 +156,10 @@ func ValidateMIAFConfig(miaf *MIAF) error {
 		)
 	}
 
-	// Rule 3: if trustBundle.uri is present, endpoint & a trust anchor must be present
+	// Rule 4: if trustBundle.uri is present, endpoint & a trust anchor must be present.
 	if hasTrustBundleURI && (!hasEndpoint || !hasTrustAnchor) {
 		return v1alpha2.NewCOAError(nil,
 			"MIS endpoint and a trust anchor (caPath or trustPins) are required when trustBundle.uri is specified",
-			v1alpha2.BadConfig,
-		)
-	}
-
-	// Rule 4: if neither trustBundle.path nor endpoint+trustAnchor is configured, fail
-	if !hasTrustBundlePath && !hasEndpoint {
-		return v1alpha2.NewCOAError(nil,
-			"either trustBundle.path or MIS endpoint with a trust anchor (caPath or trustPins) must be configured",
 			v1alpha2.BadConfig,
 		)
 	}
