@@ -98,7 +98,6 @@ func (miaf *MIAF) ToMIAFInput() parser.MIAFInput {
 		MIS: parser.MISInput{
 			Endpoint:    mis.Endpoint,
 			CAPath:      mis.CAPath,
-			TrustDomain: mis.TrustDomain,
 			TrustBundle: trustBundle,
 			TrustPins:   mis.TrustPins,
 		},
@@ -226,8 +225,8 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			return err
 		}
 
-		// Validate Cert And Key
-		if ok, err := validators.ValidateX509SVID(cert, validators.PrincipalWFM); !ok {
+		spiffeId, err := validators.ValidateX509SVID(cert, validators.PrincipalWFM)
+		if err != nil {
 			return fmt.Errorf("failed to validate SVID, err: %w", err)
 		}
 
@@ -235,13 +234,21 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			return fmt.Errorf("failed to validate private key, err: %w", err)
 		}
 
+		// Validate Cert And Key
 		if err := validators.ValidateCertKeyPair(cert, key); err != nil {
 			return fmt.Errorf("failed to verify certificate against provided key, err: %w", err)
+		}
+
+		td, err := parser.ParseTrustDomain(spiffeId)
+		if err != nil {
+			return fmt.Errorf("failed to parse trust domain from spiffeId, err: %w", err)
 		}
 
 		// assign validated items here
 		h.ParsedMIAFConfig.X509.CertPEM = cert
 		h.ParsedMIAFConfig.X509.KeyPEM = key
+		h.ParsedMIAFConfig.X509.SpiffeID = spiffeId
+		h.ParsedMIAFConfig.MIS.TrustDomain = td
 
 		// Now setup ways to obtain trustbundle, and a cache which can be accessed here
 		ccfg := cacher.TrustMaterialCacherConfig{
@@ -267,12 +274,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 
 		h.trustBundleCacher = tbc
 
-		// validate spiffe Id against trustdomain obtained
-		spid, err := parser.ParseSpiffeIdFromX509Svid(cert)
-		if err != nil {
-			return fmt.Errorf("failed to parse spiffeId from certificate provided, err: %w", err)
-		}
-		err = validators.ValidateSpiffeIDWithTrustDomain(spid, tbc.GetTrustDomain(), validators.PrincipalWFMClient)
+		err = validators.ValidateSpiffeIDWithTrustDomain(spiffeId, tbc.GetTrustDomain(), validators.PrincipalWFMClient)
 		if err != nil {
 			return fmt.Errorf("failed to validate spiffeId with trust domain, err: %w", err)
 		}
