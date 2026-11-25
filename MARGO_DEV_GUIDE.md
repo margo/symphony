@@ -1,8 +1,8 @@
 # Developer Guide — Margo Integration on Top of Symphony
 
-This repository is a fork of [Symphony](https://github.com/eclipse-symphony/symphony) and has been adapted to support an end-to-end Proof of Concept (PoC) for the Margo ecosystem.
+This repository is a fork of `[Symphony](https://github.com/eclipse-symphony/symphony)` and has been adapted to support an end-to-end Proof of Concept (PoC) for the Margo ecosystem.
 
-The repository demonstrates how the [Margo Specification](https://github.com/margo/specification) can be implemented on top of Symphony while also introducing additional APIs and workflows needed for real-world orchestration and user interaction.
+The repository demonstrates how the `[Margo Specification](https://github.com/margo/specification)` can be implemented on top of Symphony while also introducing additional APIs and workflows needed for real-world orchestration and user interaction.
 
 This document explains:
 
@@ -15,18 +15,18 @@ This document explains:
 
 ---
 
-**NOTE:** All development tasks will be branched out from `development` only. The branches, `main` and `development` are protected and hence you can't make any contributions directly let alone a PR is allowed. We follow the same branching and git philosophy as mentioned [here in sandbox repo](https://github.com/margo/sandbox/blob/main/CONTRIBUTING.md) . 
+**NOTE:** All development tasks will be branched out from `development` only. The branches, `main` and `development` are protected and hence you can't make any contributions directly let alone a PR is allowed. We follow the same branching and git philosophy as mentioned `[here in sandbox repo](https://github.com/margo/sandbox/blob/main/CONTRIBUTING.md)`.
 
 # Required Background Reading
 
 Before contributing, review the following repositories and documents.
 
-| Resource                                                                                                                   | Purpose                                                     |
-| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| [Margo Specification](https://github.com/margo/specification)                                       | Defines the official Margo APIs and behavior                |
-| [Sandbox Repository](https://github.com/margo/sandbox)                                              | Shared specs, generated models, SDKs, integration workflows |
-| [Symphony Internals Discussion](https://github.com/margo/sandbox/issues/12#issuecomment-2969577828) | Explains Symphony internals and extension limitations       |
-| Extension Pattern                                                                                   | Explains how Margo integrates into Symphony                 |
+| Resource | Purpose |
+| -------- | ------- |
+| `[Margo Specification](https://github.com/margo/specification)` | Defines the official Margo APIs and behavior |
+| `[Sandbox Repository](https://github.com/margo/sandbox)` | Shared specs, generated models, SDKs, integration workflows |
+| `[Symphony Internals Discussion](https://github.com/margo/sandbox/issues/12#issuecomment-2969577828)` | Explains Symphony internals and extension limitations |
+| Extension Pattern | Explains how Margo integrates into Symphony |
 
 ---
 
@@ -82,10 +82,10 @@ This structure is referred to as the:
 
 # Component Responsibilities
 
-| Component    | Responsibility                      |
-| ------------ | ----------------------------------- |
-| Manager (M)  | Business logic and orchestration    |
-| Vendor (V)   | API controllers and extension layer |
+| Component | Responsibility |
+| --------- | -------------- |
+| Manager (M) | Business logic and orchestration |
+| Vendor (V) | API controllers and extension layer |
 | Provider (P) | Communication with external systems |
 
 Examples of Providers include:
@@ -153,22 +153,22 @@ The fields have the following meanings:
 | `miaf.mis.endpoint` | MIS endpoint used to obtain identity/trust information. It is optional only when a static trust bundle is supplied. |
 | `miaf.mis.caPath` | CA certificate used to establish TLS trust when connecting to MIS. It must be provided together with `endpoint`; supplying only one of the two is invalid. |
 | `miaf.mis.cacheInterval` | Refresh interval, in seconds, for the MIS/trust-material cacher. The COA HTTP binding passes this value to the cacher. |
-| `miaf.mis.trustDomain` | SPIFFE trust domain. It is required when using a static `trustBundle.path` without an MIS `endpoint` and `caPath`. |
 | `miaf.mis.trustBundle.uri` | URI used to obtain a trust bundle through MIS. If present, `endpoint` and `caPath` are also required. |
-| `miaf.mis.trustBundle.path` | Local static trust-bundle JSON file. It can be used instead of MIS endpoint access, but `trustDomain` is then required. |
+| `miaf.mis.trustBundle.path` | **Required.** Path to a local static trust bundle JSON file in **JWK set format**. The file must be a valid JSON document conforming to the JWK Set specification (RFC 7517). This trust bundle is always loaded at startup and used as the authoritative source of trust material for SPIFFE identity verification. |
 | `miaf.authzPath` | Local JSON file containing the SPIFFE IDs of clients authorized to call standard Margo APIs. The listed IDs must be WFM-client identities. |
 
-The configuration may omit optional fields when the deployment does not use them. The current validation rules require `miaf` and `miaf.mis`; require `endpoint` and `caPath` together; require either MIS access or a static trust-bundle path; and require `trustDomain` for static trust-bundle-only mode. The `certProvider` on an mTLS binding is separate from the MIS trust configuration: it supplies the WFM's own SVID certificate and private key, and currently must use `certs.localfile`.
+The configuration may omit optional fields when the deployment does not use them. The current validation rules require `miaf` and `miaf.mis`; require `endpoint` and `caPath` together; require `miaf.mis.trustBundle.path` as a mandatory field pointing to a valid JWK set JSON file; and require `endpoint` and `caPath` when `trustBundle.uri` is also configured. The `certProvider` on an mTLS binding is separate from the MIS trust configuration: it supplies the WFM's own SVID certificate and private key, and currently must use `certs.localfile`.
 
 ### How MIAF mTLS Works in Symphony
 
 At startup, the COA host selects only the standard Margo API endpoints for an mTLS binding, validates and parses the MIAF configuration, and validates every configured authorized client SPIFFE ID. The HTTP binding then:
 
 1. Loads and validates the WFM's own X.509 SVID and private key.
-2. Starts a trust-material cacher backed by MIS and/or the configured trust bundle.
-3. Starts an authorization cacher backed by `miaf.authzPath`.
-4. Builds an mTLS server configuration that verifies client certificates against the current trust bundle and trust domain.
-5. For each request, extracts the peer certificate's SPIFFE ID and checks it against the authorized-client list before invoking the endpoint handler.
+2. Loads the static trust bundle from `miaf.mis.trustBundle.path` (a JWK set JSON file) as the authoritative trust material.
+3. Starts a trust-material cacher backed by MIS and/or the configured trust bundle.
+4. Starts an authorization cacher backed by `miaf.authzPath`.
+5. Builds an mTLS server configuration that verifies client certificates against the current trust bundle.
+6. For each request, extracts the peer certificate's SPIFFE ID and checks it against the authorized-client list before invoking the endpoint handler.
 
 Requests without a TLS connection, without a peer certificate, with an invalid SPIFFE ID, or with a SPIFFE ID absent from the authorization file receive HTTP `401 Unauthorized`. The mTLS binding therefore provides both mutual certificate authentication and an explicit local client allow-list; possession of a certificate trusted by the trust bundle alone is not sufficient.
 
@@ -223,7 +223,7 @@ The non-standard APIs are intentionally because they serve as:
 This allows:
 
 * other workflow frameworks to borrow ideas,
-* API reuse if a vendor likes it,
+* API reuse if a vendor likes it.
 
 ---
 
@@ -300,7 +300,7 @@ NOTE: A web UI exists in the repository, but it had some issues in displaying So
 
 # Relationship Between Symphony and Sandbox
 
-The [Sandbox Repository](https://github.com/margo/sandbox) plays a central role in the architecture.
+The `[Sandbox Repository](https://github.com/margo/sandbox)` plays a central role in the architecture.
 
 It contains:
 
@@ -537,9 +537,10 @@ Before starting Symphony with `symphony-api-margo.json`, the following files mus
 | `certificates/payload-key.pem` | Private key matching the WFM SVID. It must be a valid private key. |
 | `mis/https-ca.crt` | CA certificate used to verify the TLS connection from the WFM to the MIS endpoint. |
 | `mis/authorized-clients.json` | Authorized WFM-client SPIFFE IDs. The file must contain at least one valid WFM-client ID. |
+| `mis/trust-bundle.json` | **Required.** Static trust bundle in JWK set format (RFC 7517). Must be a valid JWK set JSON file and is always loaded at startup as the authoritative trust material for SPIFFE identity verification. |
 | `libsymphony.so` | Rust provider shared library. It must be installed in a system library directory or available through `LD_LIBRARY_PATH`; it is not embedded in `symphony-api`. |
 
-The active configuration obtains the SPIFFE trust bundle from `https://mis.margo.org:9443` using the configured MIS endpoint and `mis/https-ca.crt`. Therefore, a local `trustBundle.path` file is not required for the active configuration. A static trust bundle can be used instead by setting `miaf.mis.trustBundle.path`; in that mode, the file must exist, `miaf.mis.trustDomain` must be provided, and MIS endpoint access can be omitted according to the MIAF validation rules. When `trustBundle.uri` is configured, the MIS endpoint and CA path are required.
+The active configuration obtains the SPIFFE trust bundle from `https://mis.margo.org:9443` using the configured MIS endpoint and `mis/https-ca.crt`. The static trust bundle at `miaf.mis.trustBundle.path` is always required and must be a valid JWK set JSON file; it is loaded at startup regardless of whether MIS endpoint access is also configured. When `trustBundle.uri` is configured, the MIS endpoint and CA path are required.
 
 The Rust provider shared library must also be available at runtime. It is not part of the Go binary. After building it, either copy `libsymphony.so` to a system library directory such as `/usr/local/lib` and run `ldconfig`, or expose its directory through `LD_LIBRARY_PATH`.
 
@@ -555,8 +556,9 @@ api/
 │   ├── payload-cert.pem
 │   └── payload-key.pem
 └── mis/
-        ├── https-ca.crt
-        └── authorized-clients.json
+    ├── https-ca.crt
+    ├── authorized-clients.json
+    └── trust-bundle.json
 ```
 
 The shared library may be outside this directory when it is installed system-wide or referenced through `LD_LIBRARY_PATH`.
@@ -570,7 +572,7 @@ pushd .
 cd pkg/apis/v1alpha1/providers/target/rust
 cargo build --release
 popd #back to the api folder
-export LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release  
+export LIBDIR=$(pwd)/pkg/apis/v1alpha1/providers/target/rust/target/release
 CGO_ENABLED=1 GOARCH=amd64 GOOS=linux CC=gcc CGO_LDFLAGS="-L$LIBDIR" go build -o symphony-api
 # copy libsymphony.so to /usr/local/lib folder
 sudo cp $LIBDIR/libsymphony.so /usr/local/lib
@@ -591,12 +593,14 @@ LD_LIBRARY_PATH="$PWD/pkg/apis/v1alpha1/providers/target/rust/target/release" ./
 ```
 
 To build Maestro locally you can use the following commands:
+
 ```bash
 cd cli
 go build -o maestro
 ```
 
-# then run it:
+Then run it:
+
 ```bash
 ./maestro wfm --help
 ```
@@ -605,17 +609,17 @@ go build -o maestro
 
 # Testing
 
-There is no internal unit tests extended here, but integration tests are available and are managed from the Sandbox repository. You can use it to verify if your changes have broken anything. If you have written something new, then extend the sanity test case in the workflow [here](https://github.com/margo/sandbox/blob/main/.github/workflows/sandbox-sanity-test.yml) .
+There is no internal unit tests extended here, but integration tests are available and are managed from the Sandbox repository. You can use it to verify if your changes have broken anything. If you have written something new, then extend the sanity test case in the workflow `[here](https://github.com/margo/sandbox/blob/main/.github/workflows/sandbox-sanity-test.yml)`.
 
 The primary workflow is:
 
-| Workflow              | Purpose                           |
-| --------------------- | --------------------------------- |
+| Workflow | Purpose |
+| -------- | ------- |
 | `sandbox-sanity-test` | End-to-end integration validation |
 
 Workflow URL:
 
-[Sandbox GitHub Actions Workflows](https://github.com/margo/sandbox/actions)
+`[Sandbox GitHub Actions Workflows](https://github.com/margo/sandbox/actions)`
 
 The workflow is intended to be triggered manually through GitHub Actions workflow dispatch. Mention your current symphony branch and corresponding sandbox branch in workflow env.
 
@@ -625,10 +629,10 @@ The workflow is intended to be triggered manually through GitHub Actions workflo
 
 When implementing new functionality:
 
-| Recommendation          | Guidance                                                   |
-| ----------------------- | ---------------------------------------------------------- |
+| Recommendation | Guidance |
+| -------------- | -------- |
 | Extend existing Vendors | Preferred if functionality belongs to an existing category |
-| Create new Vendors      | Only when introducing an entirely new category/domain      |
+| Create new Vendors | Only when introducing an entirely new category/domain |
 
 This helps avoid unnecessary API fragmentation.
 
@@ -654,12 +658,12 @@ That philosophy continues to shape:
 
 # Required Toolchain
 
-| Tool                    | Required | Purpose                      |
-| ----------------------- | -------- | ---------------------------- |
-| Rust                    | Yes      | Runtime/toolchain components |
-| Go                      | Yes      | Symphony and CLI development |
-| Docker                  | Optional | Containerized workflows      |
-| Kubernetes Distribution | Optional | Local orchestration/testing  |
+| Tool | Required | Purpose |
+| ---- | -------- | ------- |
+| Rust | Yes | Runtime/toolchain components |
+| Go | Yes | Symphony and CLI development |
+| Docker | Optional | Containerized workflows |
+| Kubernetes Distribution | Optional | Local orchestration/testing |
 
 ---
 
@@ -685,13 +689,13 @@ Providers/External Systems
 
 A modification at each layer affects different parts of the system:
 
-| Layer         | Typical Impact               |
-| ------------- | ---------------------------- |
+| Layer | Typical Impact |
+| ----- | -------------- |
 | Specification | Regenerates contracts/models |
-| SDK/Models    | Client compatibility         |
-| Vendor        | API behavior                 |
-| Manager       | Business/orchestration logic |
-| Provider      | External integrations        |
+| SDK/Models | Client compatibility |
+| Vendor | API behavior |
+| Manager | Business/orchestration logic |
+| Provider | External integrations |
 
 ---
 

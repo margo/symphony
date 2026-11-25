@@ -799,6 +799,9 @@
             "trustPins": [
               "sha256/6DtZYsyT+9vuAwfAKHCLpjQv2pQHCc9n7nnZsltwEU4="
             ],
+            "trustBundle": {
+              "path": "./mis/trust-bundle.json"
+            },
             "cacheInterval": 60
           },
           "authzPath": "./mis/authorized-clients.json"
