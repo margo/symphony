@@ -68,7 +68,6 @@ type MIS struct {
 	CAPath        string      `json:"caPath"`
 	TrustPins     []string    `json:"trustPins"`
 	CacheInterval int         `json:"cacheInterval"`
-	TrustDomain   string      `json:"trustDomain"`
 	TrustBundle   TrustBundle `json:"trustBundle"`
 }
 
@@ -163,14 +162,6 @@ func ValidateMIAFConfig(miaf *MIAF) error {
 	if !hasTrustBundlePath && !hasEndpoint {
 		return v1alpha2.NewCOAError(nil,
 			"either trustBundle.path or MIS endpoint with a trust anchor (caPath or trustPins) must be configured",
-			v1alpha2.BadConfig,
-		)
-	}
-
-	// Rule 5: trustDomain is required in static trust bundle mode (no endpoint+trustAnchor)
-	if hasTrustBundlePath && !hasEndpoint && !hasTrustAnchor && mis.TrustDomain == "" {
-		return v1alpha2.NewCOAError(nil,
-			"MIS trustDomain is required when using static trust bundle (trustBundle.path) without endpoint and a trust anchor",
 			v1alpha2.BadConfig,
 		)
 	}
