@@ -158,6 +158,11 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 		return nil, fmt.Errorf("deployment name is required")
 	}
 
+	if appPkg.Description == nil || appPkg.Description.Id == nil {
+		deploymentLogger.ErrorfCtx(ctx, "CreateDeployment: application package has no valid description (onboarding failed or still pending)")
+		return nil, fmt.Errorf("application package is not ready for deployment: missing application description (onboarding may have failed or still be in progress)")
+	}
+
 	// Create deployment response with clean builder
 	deployment := s.buildInitialDeployment(req)
 

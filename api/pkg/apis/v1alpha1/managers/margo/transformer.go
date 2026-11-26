@@ -164,7 +164,7 @@ func (t *MargoTransformer) convertToSolution(
 		Spec: &model.SolutionSpec{
 			Version:      appDesc.Metadata.Version,
 			RootResource: *appDesc.Id,
-			DisplayName:  appDesc.Metadata.Name,
+			DisplayName:  solutionId, // Use version-qualified identity as display name as symphony internal display name The original human-readable name is still preserved in the Margo database and catalog. 
 			Components:   components,
 			Metadata: map[string]string{
 				"description":   *appDesc.Metadata.Description,
