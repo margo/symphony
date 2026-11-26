@@ -129,7 +129,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 			}
 			deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): printing converted device constraints here, : %s", pretty.Sprint(sbiPlacementConstraints))
 
-			ok, reason, err := matcher.IsTargetEligible(workloadTargetProfile, sbiPlacementConstraints)
+			ok, reason, err := matcher.IsTargetEligible(workloadTargetProfile, &sbiPlacementConstraints)
 			if err != nil {
 				deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to check workload target eligibility, err: %s", err.Error())
 				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "failed to check for eligible workload targets", v1alpha2.InternalError)
