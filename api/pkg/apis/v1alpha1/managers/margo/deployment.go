@@ -159,13 +159,13 @@ func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonSt
 		appPkg.Description.Metadata.Name,
 		appPkg.Description.Metadata.Version)
 
-	if req.Metadata.Name == "" {
-		return nil, fmt.Errorf("deployment name is required")
-	}
-
-	if appPkg.Description == nil || appPkg.Description.Id == nil {
+    if appPkg.Description == nil || appPkg.Description.Id == nil {
 		deploymentLogger.ErrorfCtx(ctx, "CreateDeployment: application package has no valid description")
 		return nil, fmt.Errorf("application package is not ready for deployment: missing application description")
+	}
+
+	if req.Metadata.Name == "" {
+		return nil, fmt.Errorf("deployment name is required")
 	}
 
 	// Create deployment response with clean builder
