@@ -153,6 +153,11 @@ func (s *DeploymentManager) deleteObjectFromCache(topic string, event v1alpha2.E
 // CreateDeployment handles the deployment of an application deployment.
 func (s *DeploymentManager) CreateDeployment(ctx context.Context, req margoNonStdAPI.ApplicationDeploymentManifestRequest, appPkg ApplicationPackage) (*margoNonStdAPI.ApplicationDeploymentManifestResp, error) {
 	deploymentLogger.InfofCtx(ctx, "CreateDeployment: Starting deployment process for '%s'", req.Metadata.Name)
+	deploymentLogger.InfofCtx(ctx, "CreateDeployment: packageId=%s appId=%s appName=%s version=%s",
+		*appPkg.Package.Id,
+		*appPkg.Description.Id,
+		appPkg.Description.Metadata.Name,
+		appPkg.Description.Metadata.Version)
 
 	if req.Metadata.Name == "" {
 		return nil, fmt.Errorf("deployment name is required")
