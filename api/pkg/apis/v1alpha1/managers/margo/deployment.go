@@ -135,7 +135,7 @@ func (s *DeploymentManager) deleteObjectFromCache(topic string, event v1alpha2.E
 	case DeploymentDatabaseRow:
 		err = s.database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
 	case WorkloadTargetDatabaseRow:
-		err = s.database.DeleteDevice(context.Background(), event.Body.(WorkloadTargetDatabaseRow).TargetId)
+		err = s.database.DeleteWorkloadTarget(context.Background(), event.Body.(WorkloadTargetDatabaseRow).TargetId)
 	default:
 		deploymentLogger.ErrorfCtx(context.Background(), "deleteObjectFromCache: Invalid event body: known object is missing or not of the correct type")
 		return fmt.Errorf("invalid event body: deployment is missing or not of the correct type")

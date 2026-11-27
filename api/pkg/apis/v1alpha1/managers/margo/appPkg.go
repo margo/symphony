@@ -509,7 +509,7 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		packageId,
 	)
 	if err := s.validateApplicationDescription(appDesc); err != nil {
-		appPkgLogger.Error("Application description validation failed",
+		appPkgLogger.Error("Application description validation failed ",
 			"packageId", packageId,
 			"appId", appDesc.Id,
 			"error", err)
@@ -628,7 +628,7 @@ func (s *AppPkgManager) parseApplicationDescription(
 		}
 	}
 
-	appPkgLogger.Debug("Found application description file",
+	appPkgLogger.Debug("Found application description file ",
 		"descriptionFile", descriptionFile)
 
 	// Read and parse YAML file

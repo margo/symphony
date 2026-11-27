@@ -217,7 +217,7 @@ func (s *DeviceManager) deleteObjectFromCache(topic string, event v1alpha2.Event
 	case DeploymentDatabaseRow:
 		err = s.Database.DeleteDeployment(context.Background(), *event.Body.(DeploymentDatabaseRow).DeploymentRequest.Id, false)
 	case WorkloadTargetDatabaseRow:
-		err = s.Database.DeleteDevice(context.Background(), event.Body.(WorkloadTargetDatabaseRow).TargetId)
+		err = s.Database.DeleteWorkloadTarget(context.Background(), event.Body.(WorkloadTargetDatabaseRow).TargetId)
 	case DeploymentBundleRow:
 		//err = s.Database.DeleteDeploymentBundle(context.Background(), event.Body.(DeploymentBundleRow).DeviceClientId, false)
 	default:
@@ -332,22 +332,22 @@ func (dm *DeviceManager) OnboardWorkloadTarget(ctx context.Context, targetSpiffe
 		CreatedAt:        time.Now().UTC(),
 		UpdatedAt:        time.Now().UTC(),
 	}); err != nil {
-		return fmt.Errorf("failed to save workloadTarget details: %w", err)
+		return fmt.Errorf("OnboardWorkloadTarget: failed to upsert workloadTarget: %w", err)
 	}
 
 	// Log successful onboarding
-	deviceLogger.InfofCtx(context.Background(), "Successfully onboarded workload target", "workloadTargetId", workloadTargetID)
+	deviceLogger.InfofCtx(context.Background(), "successfully onboarded workload target for workloadTargetId", workloadTargetID)
 
 	return nil
 }
 
-func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.DeviceListResp, error) {
+func (dm *DeviceManager) ListWorkloadTargets(ctx context.Context) (margoNonStdAPI.DeviceListResp, error) {
 	devices := margoNonStdAPI.DeviceListResp{
 		Items:    []margoNonStdAPI.DeviceManifestResp{},
 		Metadata: &margoNonStdAPI.PaginationMetadata{},
 	}
 
-	rows, err := dm.Database.ListDevices(ctx)
+	rows, err := dm.Database.ListWorkloadTargets(ctx)
 	if err != nil {
 		return devices, err
 	}
@@ -359,11 +359,12 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 			},
 			Id:             &row.TargetId,
 			SpiffeIdentity: &row.TargetSpiffeId,
-			// Spec: margoNonStdAPI.DeviceSpec{
-			// 	Profile: margoNonStdAPI.DeviceProfile{
-			// 		Characteristics: []margoNonStdAPI.DeviceCharacteristic{},
-			// 	},
-			// },
+			Spec: margoNonStdAPI.DeviceSpec{
+				// convert SBI profile to nbi profile
+				Profile: margoNonStdAPI.DeviceProfile{
+					Characteristics: convertMargoSbiCharacteristicsToNbiCharacteristics(row.Profile.Characteristics),
+				},
+			},
 			// setting unknown eligibility here, as it is not checked while fetching. after fetching, it should be checked for eligibility
 			Eligible: p.Ptr(margoNonStdAPI.Unknown),
 			State: margoNonStdAPI.DeviceState{
@@ -373,6 +374,21 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 	}
 	deviceLogger.DebugfCtx(ctx, "Devices: ", len(devices.Items))
 	return devices, nil
+}
+
+func convertMargoSbiCharacteristicsToNbiCharacteristics(sbiCharacteristics []margoStdAPI.Characteristic) []margoNonStdAPI.DeviceCharacteristic {
+	if sbiCharacteristics == nil {
+		return nil
+	}
+
+	nbiCharacteristics := make([]margoNonStdAPI.DeviceCharacteristic, len(sbiCharacteristics))
+	for i, sbiChar := range sbiCharacteristics {
+		nbiCharacteristics[i] = margoNonStdAPI.DeviceCharacteristic{
+			Key:        sbiChar.Key,
+			Properties: sbiChar.Properties,
+		}
+	}
+	return nbiCharacteristics
 }
 
 // ShouldReplaceBundle determines whether a device client should receive a new deployment bundle
@@ -406,8 +422,8 @@ func (dm *DeviceManager) ListDevices(ctx context.Context) (margoNonStdAPI.Device
 //   - ETags match        → returns (false, archivePath, manifest, etag, nil)  [304-equivalent]
 //   - ETags differ or
 //     no client ETag     → returns (true,  archivePath, manifest, etag, nil)  [200-equivalent]
-func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, string, error) {
-	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Processing request for device %s", deviceClientId)
+func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, workloadTargetID string, clientETag *string) (bool, string, *margoStdAPI.UnsignedAppStateManifest, string, error) {
+	deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Processing request for workloadTarget: %s", workloadTargetID)
 
 	// Log client's ETag if provided
 	if clientETag != nil && *clientETag != "" {
@@ -417,15 +433,15 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	}
 
 	// Call GetBundle to retrieve bundle information
-	bundleArchivePath, bundleManifest, err := s.GetBundle(ctx, deviceClientId, nil)
+	bundleArchivePath, bundleManifest, err := s.GetBundle(ctx, workloadTargetID, nil)
 	// Log the return values from GetBundle
 	if err != nil {
 		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: GetBundle returned error: %v", err)
-		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No bundle found for device %s, creating initial empty bundle", deviceClientId)
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: No bundle found for workloadTarget %s, creating initial empty bundle", workloadTargetID)
 
 		// Create initial empty bundle (version 1) per WFM-SBI.yaml spec
 		initialBundle := DeploymentBundleRow{
-			DeviceClientId: deviceClientId,
+			DeviceClientId: workloadTargetID,
 			Manifest: margoStdAPI.UnsignedAppStateManifest{
 				ManifestVersion: margoStdAPI.ManifestVersion(1.0),
 				Bundle:          nil,
@@ -436,11 +452,11 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 
 		// Store the initial bundle
 		if createErr := s.Database.UpsertDeploymentBundle(ctx, initialBundle, false); createErr != nil {
-			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to create initial bundle for device %s: %v", deviceClientId, createErr)
+			deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: Failed to create initial bundle for workloadTarget %s: %v", workloadTargetID, createErr)
 			return false, "", nil, "", fmt.Errorf("failed to create initial bundle: %w", createErr)
 		}
 
-		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Created initial empty bundle (version 1) for device %s", deviceClientId)
+		deviceLogger.InfofCtx(ctx, "ShouldReplaceBundle: Created initial empty bundle (version 1) for workloadTarget %s", workloadTargetID)
 
 		// Return the initial bundle (client needs to fetch it)
 
@@ -459,8 +475,8 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 
 	// Validate manifest
 	if bundleManifest == nil {
-		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: GetBundle returned nil manifest for device %s", deviceClientId)
-		return false, "", nil, "", fmt.Errorf("bundle manifest is nil for device %s", deviceClientId)
+		deviceLogger.ErrorfCtx(ctx, "ShouldReplaceBundle: GetBundle returned nil manifest for workload target: %s", workloadTargetID)
+		return false, "", nil, "", fmt.Errorf("bundle manifest is nil for workload target %s", workloadTargetID)
 	}
 
 	bundleVersionInt := uint64(bundleManifest.ManifestVersion)
@@ -510,44 +526,44 @@ func (s *DeviceManager) ShouldReplaceBundle(ctx context.Context, deviceClientId 
 	return true, bundleArchivePath, bundleManifest, serverETag, nil
 }
 
-func (s *DeviceManager) GetBundle(ctx context.Context, deviceClientId string, digest *string) (bundleArchivePath string, bundleManifest *margoStdAPI.UnsignedAppStateManifest, err error) {
-	bundle, err := s.Database.GetDeploymentBundle(ctx, deviceClientId)
+func (s *DeviceManager) GetBundle(ctx context.Context, workloadTargetID string, digest *string) (bundleArchivePath string, bundleManifest *margoStdAPI.UnsignedAppStateManifest, err error) {
+	bundle, err := s.Database.GetDeploymentBundle(ctx, workloadTargetID)
 	if err != nil {
 		return "", nil, err
 	}
 
 	// Check if bundle is nil
 	if bundle == nil {
-		return "", nil, fmt.Errorf("bundle is nil for device %s", deviceClientId)
+		return "", nil, fmt.Errorf("bundle is nil for workloadTarget %s", workloadTargetID)
 	}
 
 	// SPEC: Empty bundles (no deployments) have Bundle = nil
 	// This is VALID and expected
 	if len(bundle.Manifest.Deployments) == 0 {
 		if bundle.Manifest.Bundle != nil {
-			deviceLogger.WarnfCtx(ctx, "GetBundle: SPEC VIOLATION - Empty deployments but Bundle is not null for device %s", deviceClientId)
+			deviceLogger.WarnfCtx(ctx, "GetBundle: SPEC VIOLATION - Empty deployments but Bundle is not null for device %s", workloadTargetID)
 		}
 		// Return empty bundle (Bundle field is nil, which is correct)
 		deviceLogger.InfofCtx(ctx, "GetBundle: Returning empty bundle for device %s, version: %d",
-			deviceClientId, uint64(bundle.Manifest.ManifestVersion))
+			workloadTargetID, uint64(bundle.Manifest.ManifestVersion))
 		return bundle.ArchivePath, &bundle.Manifest, nil
 	}
 
 	// SPEC: Bundles with deployments MUST have Bundle field populated
 	if bundle.Manifest.Bundle == nil {
-		deviceLogger.ErrorfCtx(ctx, "GetBundle: SPEC VIOLATION - Has deployments but Bundle is nil for device %s", deviceClientId)
-		return "", nil, fmt.Errorf("invalid bundle structure: has deployments but Bundle field is nil for device %s", deviceClientId)
+		deviceLogger.ErrorfCtx(ctx, "GetBundle: SPEC VIOLATION - Has deployments but Bundle is nil for device %s", workloadTargetID)
+		return "", nil, fmt.Errorf("invalid bundle structure: has deployments but Bundle field is nil for device %s", workloadTargetID)
 	}
 
 	if bundle.Manifest.Bundle.Digest == nil {
-		deviceLogger.ErrorfCtx(ctx, "GetBundle: Bundle digest is nil for device %s", deviceClientId)
-		return "", nil, fmt.Errorf("bundle digest is nil for device %s", deviceClientId)
+		deviceLogger.ErrorfCtx(ctx, "GetBundle: Bundle digest is nil for workloadTarget %s", workloadTargetID)
+		return "", nil, fmt.Errorf("bundle digest is nil for workloadTarget %s", workloadTargetID)
 	}
 
 	// Check digest match if provided
 	if digest != nil && *bundle.Manifest.Bundle.Digest != *digest {
-		deviceLogger.InfofCtx(ctx, "GetBundle: Digest mismatch for device %s - requested: %s, found: %s",
-			deviceClientId, *digest, *bundle.Manifest.Bundle.Digest)
+		deviceLogger.InfofCtx(ctx, "GetBundle: Digest mismatch for workloadTarget %s - requested: %s, found: %s",
+			workloadTargetID, *digest, *bundle.Manifest.Bundle.Digest)
 		return "", nil, nil
 	}
 
@@ -593,13 +609,13 @@ func (s *DeviceManager) SaveWorkloadTargetProfile(ctx context.Context, workloadT
 	return nil
 }
 
-func (s *DeviceManager) UpdateWorkloadTargetProfile(ctx context.Context, targetSpiffeId string, targetId string, profile margoStdAPI.Profile) error {
-	err := s.Database.UpsertDeviceIdentity(ctx, targetSpiffeId, targetId)
+func (s *DeviceManager) UpdateWorkloadTargetProfile(ctx context.Context, targetSpiffeId string, workloadTargetId string, profile margoStdAPI.Profile) error {
+	err := s.Database.UpsertDeviceIdentity(ctx, targetSpiffeId, workloadTargetId)
 	if err != nil {
 		return err
 	}
 
-	err = s.Database.UpdateWorkloadTargetProfile(ctx, targetId, &profile)
+	err = s.Database.UpdateWorkloadTargetProfile(ctx, workloadTargetId, &profile)
 	if err == nil {
 		return nil
 	}
@@ -614,7 +630,7 @@ func (s *DeviceManager) UpdateWorkloadTargetProfile(ctx context.Context, targetS
 	}
 
 	// NOT FOUND ERROR HERE -- enroll it.
-	return s.OnboardWorkloadTarget(ctx, targetSpiffeId, targetId, profile)
+	return s.OnboardWorkloadTarget(ctx, targetSpiffeId, workloadTargetId, profile)
 }
 
 func (s *DeviceManager) GetWorkloadTargetProfile(ctx context.Context, workloadTargetId string) (*margoStdAPI.Profile, error) {
@@ -634,7 +650,7 @@ func (s *DeviceManager) GetDeviceClientUsingId(ctx context.Context, workloadTarg
 
 	if workloadTarget == nil {
 		deviceLogger.ErrorfCtx(ctx, "GetDeviceClientUsingId: workloadTarget %s not found", workloadTarget)
-		return nil, fmt.Errorf("workloadTarget %s not found", workloadTarget)
+		return nil, fmt.Errorf("workloadTarget %s not found", workloadTargetId)
 	}
 
 	return workloadTarget, nil

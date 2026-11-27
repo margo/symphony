@@ -484,72 +484,16 @@ func (t *MargoTransformer) convertConfigurationSchema(
 
 // ConvertDeploymentProfile converts the deployment profile cleanly
 func (t *MargoTransformer) ConvertDeploymentProfile(profile margoNonStdAPI.DeploymentExecutionProfile) (sbi.AppDeploymentProfile, error) {
-	characteristics, err := t.convertProfileCharacteristics(profile.Characteristics)
+	pc, err := t.convertPlacementConstraints(profile.PlacementConstraints)
 	if err != nil {
-		transformerLogger.Error("Failed to convert profile characteristics", "error", err)
-		return sbi.AppDeploymentProfile{}, fmt.Errorf("failed to convert profile characteristics: %w", err)
+		return sbi.AppDeploymentProfile{}, fmt.Errorf("failed to convert nbi placement constraints to sbi placement constraints: %w", err)
 	}
-
-	return sbi.AppDeploymentProfile{
-		Key:             profile.Key,
-		Components:      t.convertComponents(profile.Components),
-		Characteristics: characteristics,
-	}, nil
-}
-
-func (t *MargoTransformer) convertProfileCharacteristics(characteristics *[]margoNonStdAPI.Characteristics) (*[]sbi.Characteristics, error) {
-	if characteristics == nil {
-		return nil, nil
+	deploymentProfile := sbi.AppDeploymentProfile{
+		Components:           t.convertComponents(profile.Components),
+		Key:                  profile.Key,
+		PlacementConstraints: pc,
 	}
-
-	result := make([]sbi.Characteristics, len(*characteristics))
-	for i, c := range *characteristics {
-		matchExpressions := make([]sbi.MatchExpression, len(c.MatchExpressions))
-		for i, me := range c.MatchExpressions {
-			operator, err := toSbiMatchExpressionOperator(me.Operator)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert match expression operator: %w", err)
-			}
-
-			matchExpressions[i] = sbi.MatchExpression{
-				Key:      me.Key,
-				Operator: operator,
-				Values:   me.Values,
-			}
-		}
-
-		result[i] = sbi.Characteristics{
-			MatchExpressions: matchExpressions,
-		}
-	}
-	return &result, nil
-}
-
-func toSbiMatchExpressionOperator(operator margoNonStdAPI.CharacteristicMatchExpressionOperator) (sbi.MatchExpressionOperator, error) {
-	switch operator {
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorDoesNotExist:
-		return sbi.MatchExpressionOperatorDoesNotExist, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorExists:
-		return sbi.MatchExpressionOperatorExists, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorGt:
-		return sbi.MatchExpressionOperatorGt, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorGtEq:
-		return sbi.MatchExpressionOperatorGtEq, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorLt:
-		return sbi.MatchExpressionOperatorLt, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorLtEq:
-		return sbi.MatchExpressionOperatorLtEq, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorNotIn:
-		return sbi.MatchExpressionOperatorNotIn, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorContainsAll:
-		return sbi.MatchExpressionOperatorContainsAll, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorContainsAny:
-		return sbi.MatchExpressionOperatorContainsAny, nil
-	case margoNonStdAPI.CharacteristicMatchExpressionOperatorIn:
-		return sbi.MatchExpressionOperatorIn, nil
-	default:
-		return sbi.MatchExpressionOperatorIn, fmt.Errorf("unknown match expression operator: %s", operator)
-	}
+	return deploymentProfile, nil
 }
 
 // convertComponents converts deployment profile components
@@ -559,6 +503,29 @@ func (t *MargoTransformer) convertComponents(components []margoNonStdAPI.Deploym
 		result[i] = t.convertComponent(comp)
 	}
 	return result
+}
+
+func (t *MargoTransformer) convertPlacementConstraints(pc *[]margoNonStdAPI.PlacementConstraints) (*[]sbi.PlacementConstraints, error) {
+	// placement constraints are not a required parameter, if not present, omit it.
+	if pc == nil {
+		return nil, nil
+	}
+
+	placementConstraints := make([]sbi.PlacementConstraints, len(*pc))
+
+	for i, constraint := range *pc {
+		rawJson, err := json.Marshal(constraint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal nbi placement constraints: %w", err)
+		}
+		var sbiPlacementConstraint sbi.PlacementConstraints
+		err = json.Unmarshal(rawJson, &sbiPlacementConstraint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal into sbi placement constraints: %w", err)
+		}
+		placementConstraints[i] = sbiPlacementConstraint
+	}
+	return &placementConstraints, nil
 }
 
 // convertComponent converts a single component
@@ -603,6 +570,11 @@ func (t *MargoTransformer) MergeWithAppPackage(req *margoNonStdAPI.ApplicationDe
 	targetProfile := t.findMatchingProfileInApp(req.Spec.DeploymentProfile.Key, appPkg.Description.DeploymentProfiles)
 	if targetProfile == nil {
 		return nil // No matching profile found, continue without merging
+	}
+
+	// as placement constraints are not a required field
+	if targetProfile.PlacementConstraints != nil {
+		req.Spec.DeploymentProfile.PlacementConstraints = targetProfile.PlacementConstraints
 	}
 
 	appComponents := t.buildComponentMap(*targetProfile)

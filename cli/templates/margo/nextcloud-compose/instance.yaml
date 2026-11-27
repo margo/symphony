@@ -10,14 +10,14 @@ spec:
   deviceRef:
     id: {{DEVICE_ID}}
   deploymentProfile:
-    type: compose
+    key: margo.org/deployment/compose
     components:
       - name: nextcloud-stack
         properties:  
           repository: {{REPOSITORY}}
           revision: 1.0.0
           wait: true
-          timeout: 5m
+          timeout: 5m0s
   parameters:
     nextcloudPort:
       value: 81
