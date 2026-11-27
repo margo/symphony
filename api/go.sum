@@ -294,8 +294,8 @@ github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de h1:9TO3cAIGXtEhn
 github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de/go.mod h1:zAbeS9B/r2mtpb6U+EI2rYA5OAXxsYw6wTamcNW+zcE=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
-github.com/margo/sandbox v1.0.0-rc.3.2.0.20261125042051-8c4f3db72f38 h1:chUk17Gt7KCRtgTy1gg0QDpCAyW/lUJveBB49OYpZOg=
-github.com/margo/sandbox v1.0.0-rc.3.2.0.20261125042051-8c4f3db72f38/go.mod h1:J6KPS3dJlCVGWHsqmVqfmzZ9JzfOw5/t+rWWARLNlw0=
+github.com/margo/sandbox v1.0.0-rc.3.2.0.20261127060531-ad945272850a h1:J3ABVcXzNAVyd035rv1bVz9dSK1TS1Cx3Ce6/mQz8AY=
+github.com/margo/sandbox v1.0.0-rc.3.2.0.20261127060531-ad945272850a/go.mod h1:J6KPS3dJlCVGWHsqmVqfmzZ9JzfOw5/t+rWWARLNlw0=
 github.com/matryer/is v1.3.0 h1:9qiso3jaJrOe6qBRJRBt2Ldht05qDiFP9le0JOIhRSI=
 github.com/matryer/is v1.3.0/go.mod h1:2fLPjFQM9rhQ15aVEtbuwhJinnOqrmgXPNdZsdwlWXA=
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=

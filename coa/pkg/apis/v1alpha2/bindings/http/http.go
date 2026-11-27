@@ -216,28 +216,14 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 
 		leaf, intermediate := parser.SplitLeafAndChain(cert)
 
-		spiffeId, err := validators.ValidateX509SVID(leaf, validators.PrincipalWFM)
+		spiffeId, err := validateMIAFCertificate(leaf, key, intermediate)
 		if err != nil {
-			return fmt.Errorf("failed to validate SVID, err: %w", err)
-		}
-
-		if err := validators.ValidatePrivateKey(key); err != nil {
-			return fmt.Errorf("failed to validate private key, err: %w", err)
-		}
-
-		// Validate Cert And Key
-		if err := validators.ValidateCertKeyPair(leaf, key); err != nil {
-			return fmt.Errorf("failed to verify certificate against provided key, err: %w", err)
+			return err
 		}
 
 		td, err := parser.ParseTrustDomain(spiffeId)
 		if err != nil {
 			return fmt.Errorf("failed to parse trust domain from spiffeId, err: %w", err)
-		}
-
-		err = validators.ValidateIntermediateCACertificates(intermediate)
-		if err != nil {
-			return fmt.Errorf("validation failed for intermediate chains, err: %w", err)
 		}
 
 		// assign validated items here
@@ -544,4 +530,25 @@ func toHttpState(state v1alpha2.State) int {
 	default:
 		return fasthttp.StatusInternalServerError
 	}
+}
+
+func validateMIAFCertificate(leaf, key, intermediate []byte) (string, error) {
+	spiffeID, err := validators.ValidateX509SVID(leaf, validators.PrincipalWFM)
+	if err != nil {
+		return "", fmt.Errorf("failed to validate SVID, err: %w", err)
+	}
+
+	if err := validators.ValidatePrivateKey(key); err != nil {
+		return "", fmt.Errorf("failed to validate private key, err: %w", err)
+	}
+
+	if err := validators.ValidateCertKeyPair(leaf, key); err != nil {
+		return "", fmt.Errorf("failed to verify certificate against provided key, err: %w", err)
+	}
+
+	if err := validators.ValidateIntermediateCACertificates(intermediate); err != nil {
+		return "", fmt.Errorf("validation failed for intermediate chains, err: %w", err)
+	}
+
+	return spiffeID, nil
 }
