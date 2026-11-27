@@ -308,7 +308,7 @@ func (s *AppPkgManager) processPackageAsync(
 		// Update the package with processed data
 		appPkg.Description = processedPkg.Description
 		appPkg.Resources = processedPkg.Resources
-		contextualInfo = "Package processed and Symphony objects created successfully"
+		contextualInfo = "Package processed successfully"
 
 	default:
 		processingError = fmt.Errorf(
@@ -543,55 +543,6 @@ func (s *AppPkgManager) processOciRepositoryWithStateTracking(
 		len(allResources),
 	)
 
-	// Phase 8: Convert to Symphony objects
-	appPkgLogger.Info("Phase 8: Converting application to Symphony objects",
-		"packageId", packageId,
-		"appId", appDesc.Id)
-
-	dbRow := AppPackageDatabaseRow{
-		PackageRequest: pkg.Package,
-		AppDescription: appDesc,
-		AppResources:   allResources,
-	}
-
-	catalog, solution, solutionContainer, err := s.Transformer.AppPackageToSymphonyObjects(
-		ctx,
-		dbRow,
-		allResources,
-	)
-	if err != nil {
-		appPkgLogger.Error("Failed to convert to Symphony objects",
-			"packageId", packageId,
-			"appId", appDesc.Id,
-			"error", err)
-		return nil, fmt.Errorf("failed to convert to Symphony objects: %w", err)
-	}
-
-	appPkgLogger.Info("Successfully converted to Symphony objects",
-		"packageId", packageId,
-		"catalogId", catalog.ObjectMeta.Name,
-		"solutionId", solution.ObjectMeta.Name,
-		"containerId", solutionContainer.ObjectMeta.Name)
-
-	// Phase 9: Store Symphony objects
-	appPkgLogger.Info("Phase 9: Storing Symphony objects in state provider",
-		"packageId", packageId)
-
-	if err := s.storeSymphonyObjects(
-		ctx,
-		catalog,
-		solution,
-		solutionContainer,
-		solutionsManager,
-		solutionContainerManager,
-		catalogsManager,
-	); err != nil {
-		appPkgLogger.Error("Failed to store Symphony objects",
-			"packageId", packageId,
-			"error", err)
-		return nil, fmt.Errorf("failed to store Symphony objects: %w", err)
-	}
-
 	totalProcessDuration := time.Since(ociProcessStart)
 	appPkgLogger.Info("OCI repository processing completed successfully",
 		"packageId", packageId,
@@ -754,6 +705,11 @@ func (s *AppPkgManager) getResourceFileNames(
 func (s *AppPkgManager) validateApplicationDescription(
 	appDesc *margoNonStdAPI.AppDescription,
 ) error {
+
+   if appDesc == nil {
+		return fmt.Errorf("application description is required")
+	}
+
 	appPkgLogger.Debug("Validating application description",
 		"appId", appDesc.Id,
 		"appName", appDesc.Metadata.Name)
