@@ -88,6 +88,7 @@ func (s *DeploymentBundleManager) Init(pCtx *contexts.VendorContext, config mana
 }
 
 // upsertObjectInCache handles the "newDeployment" event.
+// TODO: update this after the latest SUP on desired state DeviceRef.Id update to workloadTargetId
 func (s *DeploymentBundleManager) upsertObjectInCache(topic string, event v1alpha2.Event) error {
 	deploymentBundleLogger.InfofCtx(context.Background(), "upsertObjectInCache: Received event on topic '%s'", topic)
 

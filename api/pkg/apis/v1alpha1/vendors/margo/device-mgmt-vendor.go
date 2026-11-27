@@ -84,7 +84,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 	appPkgId := request.Parameters["appPackageId"]
 	devices, err := self.DeviceManager.ListWorkloadTargets(pCtx)
 	if err != nil {
-		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to list devices", v1alpha2.InternalError)
+		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "failed to list devices", v1alpha2.InternalError)
 	}
 
 	if appPkgId == "" {
@@ -97,7 +97,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 	appPkgRow, err := self.DeviceManager.Database.GetAppPackage(pCtx, appPkgId)
 	if err != nil {
 		deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to get app package by appPkgId: %s, err: %s", appPkgId, err.Error())
-		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to get application package for checking eligible devices", v1alpha2.InternalError)
+		return createErrorResponse2(deviceMgmtVendorLogger, span, err, "failed to get application package for checking eligible devices", v1alpha2.InternalError)
 	}
 
 	matcher := matcher.New()
@@ -125,7 +125,7 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 			sbiPlacementConstraints, err := convertToSbiPlacementConstraints(*dp.PlacementConstraints)
 			if err != nil {
 				deviceMgmtVendorLogger.ErrorfCtx(pCtx, "V (MargoDeviceMgmtVendor): failed to convert workload placement constraints, err: %s, rawWorkloadPlacementConstraints: %s", err.Error(), pretty.Sprint(*dp.PlacementConstraints))
-				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "Failed to convert workload placement constraints for checking eligible devices", v1alpha2.InternalError)
+				return createErrorResponse2(deviceMgmtVendorLogger, span, err, "failed to convert workload placement constraints for checking eligible devices", v1alpha2.InternalError)
 			}
 			deviceMgmtVendorLogger.InfofCtx(pCtx, "V (MargoDeviceMgmtVendor): printing converted device constraints here, : %s", pretty.Sprint(sbiPlacementConstraints))
 
@@ -136,13 +136,13 @@ func (self *DeviceMgmtVendor) listDevices(request v1alpha2.COARequest) v1alpha2.
 			}
 			if !ok {
 				eligible = false
-				deviceMgmtVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceMgmtVendor): device is not eligible, checking for next, deviceId : %s, reason: %s", *d.Id, reason)
+				deviceMgmtVendorLogger.WarnfCtx(pCtx, "V (MargoDeviceMgmtVendor): workloadTarget is not eligible, checking for next, workloadTargetId : %s, reason: %s", *d.Id, reason)
 				break
 			}
 		}
 
 		if unknown {
-			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): device eligibility unknown (no constraints to evaluate)")
+			deviceMgmtVendorLogger.InfoCtx(pCtx, "V (MargoDeviceMgmtVendor): workload target eligibility unknown")
 			devices.Items[i].Eligible = pointers.Ptr(nbi.Unknown)
 			continue
 		}
