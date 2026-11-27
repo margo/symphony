@@ -214,7 +214,9 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			return err
 		}
 
-		spiffeId, err := validators.ValidateX509SVID(cert, validators.PrincipalWFM)
+		leaf, intermediate := parser.SplitLeafAndChain(cert)
+
+		spiffeId, err := validators.ValidateX509SVID(leaf, validators.PrincipalWFM)
 		if err != nil {
 			return fmt.Errorf("failed to validate SVID, err: %w", err)
 		}
@@ -224,7 +226,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 		}
 
 		// Validate Cert And Key
-		if err := validators.ValidateCertKeyPair(cert, key); err != nil {
+		if err := validators.ValidateCertKeyPair(leaf, key); err != nil {
 			return fmt.Errorf("failed to verify certificate against provided key, err: %w", err)
 		}
 
@@ -233,8 +235,14 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			return fmt.Errorf("failed to parse trust domain from spiffeId, err: %w", err)
 		}
 
+		err = validators.ValidateIntermediateCACertificates(intermediate)
+		if err != nil {
+			return fmt.Errorf("validation failed for intermediate chains, err: %w", err)
+		}
+
 		// assign validated items here
-		h.ParsedMIAFConfig.X509.CertPEM = cert
+		h.ParsedMIAFConfig.X509.CertPEM = leaf
+		h.ParsedMIAFConfig.X509.ChainPEM = intermediate
 		h.ParsedMIAFConfig.X509.KeyPEM = key
 		h.ParsedMIAFConfig.X509.SpiffeID = spiffeId
 		h.ParsedMIAFConfig.MIS.TrustDomain = td
@@ -296,7 +304,7 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 			}
 			serverErr = h.server.ListenAndServeTLSEmbed(fmt.Sprintf(":%d", config.Port), cert, key)
 		} else if config.MTLS {
-			serverCert, err := parser.CertificateFromBytes(h.ParsedMIAFConfig.X509.CertPEM, h.ParsedMIAFConfig.X509.KeyPEM)
+			serverCert, err := parser.CertificateFromBytes(h.ParsedMIAFConfig.X509.CertPEM, h.ParsedMIAFConfig.X509.KeyPEM, h.ParsedMIAFConfig.X509.ChainPEM)
 			if err != nil {
 				h.errChan <- v1alpha2.NewCOAError(nil, fmt.Sprintf("error getting TLS certificates: %s", err.Error()), v1alpha2.BadConfig)
 				return
