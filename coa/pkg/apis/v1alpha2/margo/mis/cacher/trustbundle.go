@@ -20,16 +20,20 @@ import (
 // TrustMaterialCacherConfig holds all configuration required to initialise a
 // TrustMaterialCacher.
 type TrustMaterialCacherConfig struct {
-	// MISEndpoint is the base URL of the Margo Infrastructure Service,
-	// e.g. "https://mis.margo.org:9443".
-	MISEndpoint string
+	// DiscoveryDocumentURL is the Discovery Document API URL of the Margo Infrastructure Service,
+	// e.g. "https://mis.margo.org:9443/.well-known/margo".
+	DiscoveryDocumentURL string
 
-	// MISCAPem is the PEM-encoded CA certificate used for TLS verification
-	// when connecting to the MIS endpoint.
-	MISCAPem []byte
+	// MISTrustAnchor is the PEM-encoded CA certificate used for TLS verification
+	// when connecting to the MIS Discovery Document URL OR TrustBundleURI.
+	MISTrustAnchor []byte
+
+	// TrustPins holds SPKI SHA-256 pins (RFC 7469 §2.4)
+	// for authenticating the MIS HTTPS server. Optional to MISCAPem
+	TrustPins []string
 
 	// TrustBundleURI is an optional well-known URI path
-	// (e.g. "/.well-known/spiffe/bundle.json"). May be empty.
+	// (e.g. "https://mis.margo.org:9443/.well-known/spiffe/bundle.json"). May be empty.
 	TrustBundleURI string
 
 	// TrustBundleJSON is an optional operator-supplied fallback SPIFFE bundle
@@ -173,18 +177,21 @@ func (c *TrustMaterialCacher) Start() error {
 	c.cfg.Logger.DebugCtx(
 		context.Background(),
 		"TrustMaterialCacher: starting, ",
-		"endpoint: ", c.cfg.MISEndpoint,
+		"endpoint: ", c.cfg.DiscoveryDocumentURL,
 		" interval: ", c.interval,
 	)
 
+	cfg := trustbundle.TrustBundleGetterConfig{
+		DiscoveryURL:   c.cfg.DiscoveryDocumentURL,
+		MISRootCA:      c.cfg.MISTrustAnchor,
+		MISTrustPins:   c.cfg.TrustPins,
+		TrustBundleURI: c.cfg.TrustBundleURI,
+		StaticBundle:   c.cfg.TrustBundleJSON,
+		TrustDomain:    c.cfg.TrustDomain,
+	}
+
 	// ── Build the trustbundle.Getter ─────────────────────────────────────────
-	getter, err := trustbundle.New(
-		c.cfg.MISEndpoint,
-		c.cfg.MISCAPem,
-		c.cfg.TrustBundleURI,
-		c.cfg.TrustBundleJSON,
-		c.cfg.TrustDomain,
-	)
+	getter, err := trustbundle.New(cfg)
 	if err != nil {
 		return fmt.Errorf("TrustMaterialCacher: failed to create trust-bundle getter: %w", err)
 	}
