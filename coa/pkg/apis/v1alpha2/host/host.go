@@ -378,7 +378,7 @@ func (h *APIHost) launchHTTP(config interface{}, endpoints []v1alpha2.Endpoint, 
 		}
 
 		// Parse MIAF Config here, almost everything except x509 SVID & key
-		pmc, err := mcp.ParseMIAFConfig(httpConfig.MIAF.ToMIAFInput(), "")
+		pmc, err := mcp.ParseMIAFConfig(httpConfig.MIAF.ToMIAFInput(), validators.PrincipalWFM)
 		if err != nil {
 			return nil, err
 		}

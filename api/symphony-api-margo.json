@@ -794,13 +794,14 @@
         "mtls": true,
         "miaf": {
           "mis": {
-            "endpoint": "https://mis.margo.org:9443",
-            "caPath": "./mis/https-ca.crt",
+            "discoveryDocumentURL": "https://mis.margo.org:9443/.well-known/margo",
+            "trustAnchor": "./mis/https-ca.crt",
             "trustPins": [
               "sha256/6DtZYsyT+9vuAwfAKHCLpjQv2pQHCc9n7nnZsltwEU4="
             ],
             "trustBundle": {
-              "path": "./mis/trust-bundle.json"
+              "staticPath": "./mis/trust-bundle.json",
+              "uri": "https://mis.margo.org:9443/.well-known/spiffe/bundle.json"
             },
             "cacheInterval": 60
           },

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -58,17 +59,17 @@ type HttpBindingConfig struct {
 
 // TrustBundle represents the operator provided SPIFFE trust bundle configuration.
 type TrustBundle struct {
-	URI  string `json:"uri"`
-	Path string `json:"path"`
+	URI        string `json:"uri"`
+	StaticPath string `json:"staticPath"`
 }
 
 // MIS represents the Margo Identity Service configuration.
 type MIS struct {
-	Endpoint      string      `json:"endpoint"`
-	CAPath        string      `json:"caPath"`
-	TrustPins     []string    `json:"trustPins"`
-	CacheInterval int         `json:"cacheInterval"`
-	TrustBundle   TrustBundle `json:"trustBundle"`
+	DiscoveryDocumentURL string      `json:"discoveryDocumentURL"`
+	TrustAnchor          string      `json:"trustAnchor"`
+	TrustPins            []string    `json:"trustPins"`
+	CacheInterval        int         `json:"cacheInterval"`
+	TrustBundle          TrustBundle `json:"trustBundle"`
 }
 
 // MIAF represents the Margo Identity and Authorization Framework configuration.
@@ -85,20 +86,20 @@ func (miaf *MIAF) ToMIAFInput() parser.MIAFInput {
 	// Map TrustBundle only when at least one field is populated,
 	// matching parser.ParseMIAFConfig's nil-check on MISInput.TrustBundle.
 	var trustBundle *parser.TrustBundleInput
-	if mis.TrustBundle.URI != "" || mis.TrustBundle.Path != "" {
+	if mis.TrustBundle.URI != "" || mis.TrustBundle.StaticPath != "" {
 		trustBundle = &parser.TrustBundleInput{
-			URI:  mis.TrustBundle.URI,
-			Path: mis.TrustBundle.Path,
+			URI:        mis.TrustBundle.URI,
+			StaticPath: mis.TrustBundle.StaticPath,
 		}
 	}
 
 	return parser.MIAFInput{
 		X509: parser.MIAFx509Input{},
 		MIS: parser.MISInput{
-			Endpoint:    mis.Endpoint,
-			CAPath:      mis.CAPath,
-			TrustBundle: trustBundle,
-			TrustPins:   mis.TrustPins,
+			DiscoveryDocumentURL: mis.DiscoveryDocumentURL,
+			TrustAnchorPath:      mis.TrustAnchor,
+			TrustBundle:          trustBundle,
+			TrustPins:            mis.TrustPins,
 		},
 		AuthzPath: miaf.AuthzPath,
 	}
@@ -116,12 +117,12 @@ type HttpBinding struct {
 }
 
 // ValidateMIAFConfig validates the MIAF configuration based on the following rules:
-//  1. MIS must not be nil.
-//  2. trustBundle.path is always required.
-//  3. mis.endpoint requires a trust anchor (caPath or trustPins), and vice versa.
-//     caPath takes precedence over trustPins when both are present.
-//  4. if trustBundle.uri is present, mis.endpoint & a trust anchor must be present.
-//  5. trustDomain is required when endpoint+trustAnchor are absent (static trust bundle mode).
+//  1. MIAF.AuthzPath and MIS.TrustBundle.StaticPath are always required.
+//  2. MIS.DiscoveryDocumentURL and MIS.TrustBundle.URI are optional, but if present
+//     they must be complete, valid absolute URLs (e.g. https://mis.margo.org/.well-known/margo).
+//  3. If either DiscoveryDocumentURL or TrustBundle.URI is present, a trust anchor is required:
+//     - if the URL host is an IP address, MIS.TrustPins must be present.
+//     - if the URL host is a domain name, MIS.TrustAnchor must be present.
 func ValidateMIAFConfig(miaf *MIAF) error {
 	if miaf == nil {
 		return v1alpha2.NewCOAError(nil, "MIAF config is required but missing", v1alpha2.BadConfig)
@@ -132,39 +133,87 @@ func ValidateMIAFConfig(miaf *MIAF) error {
 		return v1alpha2.NewCOAError(nil, "MIAF.MIS is required but missing", v1alpha2.BadConfig)
 	}
 
-	hasEndpoint := mis.Endpoint != ""
-	hasCAPath := mis.CAPath != ""
-	hasTrustPins := len(mis.TrustPins) > 0
-	hasTrustAnchor := hasCAPath || hasTrustPins
-	hasTrustBundlePath := mis.TrustBundle.Path != ""
+	// Rule 1: required fields.
+	if miaf.AuthzPath == "" {
+		return v1alpha2.NewCOAError(nil,
+			"MIAF.authzPath must always be configured",
+			v1alpha2.BadConfig,
+		)
+	}
+	if mis.TrustBundle.StaticPath == "" {
+		return v1alpha2.NewCOAError(nil,
+			"MIS.trustBundle.staticPath must always be configured",
+			v1alpha2.BadConfig,
+		)
+	}
+
+	// Rule 2: optional URLs, but must be valid when present.
+	hasEndpoint := mis.DiscoveryDocumentURL != ""
 	hasTrustBundleURI := mis.TrustBundle.URI != ""
 
-	// Rule 2: trustBundle.path is always required.
-	if !hasTrustBundlePath {
-		return v1alpha2.NewCOAError(nil,
-			"trustBundle.path must always be configured",
-			v1alpha2.BadConfig,
-		)
+	hosts := make([]string, 0)
+	if hasEndpoint {
+		host, err := validateAbsoluteURL(mis.DiscoveryDocumentURL)
+		if err != nil {
+			return v1alpha2.NewCOAError(nil,
+				fmt.Sprintf("MIS.discoveryDocumentURL is invalid: %s", err.Error()),
+				v1alpha2.BadConfig,
+			)
+		}
+		hosts = append(hosts, host)
+	}
+	if hasTrustBundleURI {
+		host, err := validateAbsoluteURL(mis.TrustBundle.URI)
+		if err != nil {
+			return v1alpha2.NewCOAError(nil,
+				fmt.Sprintf("MIS.trustBundle.uri is invalid: %s", err.Error()),
+				v1alpha2.BadConfig,
+			)
+		}
+		hosts = append(hosts, host)
 	}
 
-	// Rule 3: endpoint and a trust anchor (caPath or trustPins) must be present together.
-	// caPath takes precedence over trustPins when both are present.
-	if hasEndpoint != hasTrustAnchor {
-		return v1alpha2.NewCOAError(nil,
-			"MIS endpoint requires a trust anchor: configure caPath or trustPins alongside it",
-			v1alpha2.BadConfig,
-		)
-	}
+	// Rule 3: a trust anchor is required when any URL is configured.
+	if hasEndpoint || hasTrustBundleURI {
+		hasCAPath := mis.TrustAnchor != ""
+		// it contains trustpins & atleast 1 element is not empty
+		hasTrustPins := len(mis.TrustPins) > 0 && mis.TrustPins[0] != ""
 
-	// Rule 4: if trustBundle.uri is present, endpoint & a trust anchor must be present.
-	if hasTrustBundleURI && (!hasEndpoint || !hasTrustAnchor) {
-		return v1alpha2.NewCOAError(nil,
-			"MIS endpoint and a trust anchor (caPath or trustPins) are required when trustBundle.uri is specified",
-			v1alpha2.BadConfig,
-		)
+		// Check every configured URL host; an IP host requires trust pins.
+		for _, host := range hosts {
+			if net.ParseIP(host) != nil {
+				if !hasTrustPins {
+					return v1alpha2.NewCOAError(nil,
+						"MIS.trustPins must be configured when the MIS URL uses an IP address",
+						v1alpha2.BadConfig,
+					)
+				}
+			} else if !hasCAPath {
+				return v1alpha2.NewCOAError(nil,
+					"MIS.trustAnchor must be configured when the MIS URL uses a domain name",
+					v1alpha2.BadConfig,
+				)
+			}
+		}
 	}
 
 	return nil
+}
+
+// validateAbsoluteURL checks that raw is a complete absolute https URL with a host
+// and returns the host name (without port).
+func validateAbsoluteURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL '%s': %w", raw, err)
+	}
+	if u.Scheme != "https" {
+		return "", fmt.Errorf("URL '%s' must use the https scheme", raw)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("URL '%s' must include a host", raw)
+	}
+	return u.Hostname(), nil
 }
 
 // Launch fasthttp server
@@ -235,12 +284,12 @@ func (h *HttpBinding) Launch(config HttpBindingConfig, endpoints []v1alpha2.Endp
 
 		// Now setup ways to obtain trustbundle, and a cache which can be accessed here
 		ccfg := cacher.TrustMaterialCacherConfig{
-			MISEndpoint: h.ParsedMIAFConfig.MIS.Endpoint,
-			TrustPins:   h.ParsedMIAFConfig.MIS.TrustPins,
-			MISCAPem:    h.ParsedMIAFConfig.MIS.CAPEM,
-			TrustDomain: h.ParsedMIAFConfig.MIS.TrustDomain,
-			Interval:    config.MIAF.MIS.CacheInterval,
-			Logger:      httpLogger,
+			DiscoveryDocumentURL: h.ParsedMIAFConfig.MIS.DiscoveryDocumentURL,
+			TrustPins:            h.ParsedMIAFConfig.MIS.TrustPins,
+			MISTrustAnchor:       h.ParsedMIAFConfig.MIS.TrustAnchorPEM,
+			TrustDomain:          h.ParsedMIAFConfig.MIS.TrustDomain,
+			Interval:             config.MIAF.MIS.CacheInterval,
+			Logger:               httpLogger,
 		}
 
 		if h.ParsedMIAFConfig.MIS.TrustBundle != nil {
@@ -546,8 +595,11 @@ func validateMIAFCertificate(leaf, key, intermediate []byte) (string, error) {
 		return "", fmt.Errorf("failed to verify certificate against provided key, err: %w", err)
 	}
 
-	if err := validators.ValidateIntermediateCACertificates(intermediate); err != nil {
-		return "", fmt.Errorf("validation failed for intermediate chains, err: %w", err)
+	// as intermediates are optional
+	if len(intermediate) > 0 {
+		if err := validators.ValidateIntermediateCACertificates(intermediate); err != nil {
+			return "", fmt.Errorf("validation failed for intermediate chains, err: %w", err)
+		}
 	}
 
 	return spiffeID, nil
